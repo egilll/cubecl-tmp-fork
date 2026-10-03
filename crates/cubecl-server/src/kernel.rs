@@ -115,7 +115,9 @@ impl<C: Compiler> CompiledKernel<C> {
             });
         }
 
-        let lower_level_ir = compiler.compile(definition, compilation_options)?;
+        let lower_level_ir = compiler
+            .compile(definition, compilation_options)
+            .map_err(|err| err.in_kernel(kernel.name()))?;
 
         Ok(CompiledKernel {
             entrypoint_name,

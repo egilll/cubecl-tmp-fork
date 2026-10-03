@@ -79,6 +79,20 @@ impl CompilationError {
     pub fn is_refusal(&self) -> bool {
         !matches!(self, Self::ExpansionPanicked { .. }) && !self.is_device_poisoned()
     }
+
+    /// Name `kernel` in the reason of an error raised by a compiler, which only sees the
+    /// kernel's IR.
+    pub fn in_kernel(mut self, kernel: &str) -> Self {
+        match &mut self {
+            Self::UnsupportedInstruction { reason, .. }
+            | Self::Generic { reason, .. }
+            | Self::Validation { reason, .. } => {
+                *reason = alloc::format!("in kernel `{kernel}`: {reason}");
+            }
+            Self::DevicePoisoned(_) | Self::ExpansionPanicked { .. } => {}
+        }
+        self
+    }
 }
 
 impl core::fmt::Debug for CompilationError {

@@ -1,5 +1,6 @@
 //! A kernel carrying its own compiled text skips the compiler, and is only
-//! accepted by a compiler of its language.
+//! accepted by a compiler of its language. A kernel without it is compiled,
+//! and an error from the compiler names it.
 
 use cubecl_environment::backtrace::BackTrace;
 use cubecl_ir::{
@@ -78,6 +79,25 @@ impl CubeKernel for HandWritten {
     }
 }
 
+/// A kernel the compiler has to compile.
+struct Generated;
+
+impl KernelMetadata for Generated {
+    fn id(&self) -> KernelId {
+        KernelId::new::<Self>()
+    }
+
+    fn address_type(&self) -> ElemType {
+        ElemType::UInt(UIntKind::U32)
+    }
+}
+
+impl CubeKernel for Generated {
+    fn define(&self) -> KernelDefinition {
+        HandWritten { lang: "" }.define()
+    }
+}
+
 fn compile(
     kernel_lang: &'static str,
     compiler_lang: &'static str,
@@ -115,4 +135,17 @@ fn a_kernel_in_another_language_is_refused() {
         reason.contains("wgsl"),
         "names the compiler's language: {reason}"
     );
+}
+
+#[test]
+fn a_compiler_error_names_the_kernel() {
+    let kernel = Generated;
+    let definition = kernel.define();
+    let reason =
+        match CompiledKernel::compile(&kernel, definition, &mut TaggedCompiler("wgsl"), &()) {
+            Ok(_) => panic!("the compiler always fails"),
+            Err(CompilationError::Generic { reason, .. }) => reason,
+            Err(err) => panic!("expected a generic compilation error, got {err}"),
+        };
+    assert!(reason.contains(kernel.name()), "names the kernel: {reason}");
 }
