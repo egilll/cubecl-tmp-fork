@@ -8,6 +8,7 @@ use syn::{
 use crate::{
     expression::{Block, Expression, MatchArm},
     operator::Operator,
+    parse::helpers::at,
     paths::{frontend_path, frontend_type, prelude_path, prelude_type},
     scope::Context,
 };
@@ -209,7 +210,7 @@ impl Expression {
                 let call = with_debug_call(
                     context,
                     *span,
-                    quote_spanned![*span=>#path::expand #generics(scope, #(#args),*)],
+                    quote_spanned![at(*span)=>#path::expand #generics(scope, #(#args),*)],
                 );
 
                 quote_spanned! {*span=>{#call}}
@@ -979,7 +980,7 @@ fn with_span(context: &Context, span: Span, tokens: TokenStream) -> TokenStream 
 fn with_debug_call(context: &Context, span: Span, tokens: TokenStream) -> TokenStream {
     if context.debug_symbols {
         let debug_call = frontend_type("debug_call_expand");
-        quote_spanned! {span=>
+        quote_spanned! {at(span)=>
             #debug_call(scope, line!(), column!(), |scope| #tokens)
         }
     } else {

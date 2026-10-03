@@ -7,7 +7,7 @@ use generate::autotune::generate_autotune_key;
 use parse::{
     cube_impl::CubeImpl,
     cube_trait::{CubeTrait, CubeTraitImpl},
-    helpers::RemoveHelpers,
+    helpers::{RemoveHelpers, SeparateGeneratedLocals},
     kernel::{Launch, from_tokens},
 };
 use proc_macro::TokenStream;
@@ -66,6 +66,7 @@ pub fn cube(args: TokenStream, input: TokenStream) -> TokenStream {
 fn cube_impl(args: TokenStream, input: TokenStream) -> syn::Result<TokenStream> {
     let mut item: Item = syn::parse(input)?;
     let args = from_tokens(args.into())?;
+    SeparateGeneratedLocals.visit_item_mut(&mut item);
 
     let tokens = match item.clone() {
         Item::Fn(kernel) => {

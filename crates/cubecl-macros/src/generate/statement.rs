@@ -4,7 +4,7 @@ use syn::{Token, Type, spanned::Spanned};
 
 use crate::{
     expression::Expression,
-    parse::kernel::expand_kernel_ty,
+    parse::{helpers::at, kernel::expand_kernel_ty},
     paths::{frontend_type, prelude_type},
     scope::Context,
     statement::{DefineKind, Statement},
@@ -23,7 +23,9 @@ impl Statement {
                         init.as_ref().and_then(|it| it.as_const_primitive(context))
                     {
                         let expand = frontend_type("NativeExpand");
-                        Some(quote_spanned![as_const.span()=> #expand::from_lit(scope, #as_const)])
+                        Some(
+                            quote_spanned![at(as_const.span())=> #expand::from_lit(scope, #as_const)],
+                        )
                     } else if let Some(as_const) = init.as_ref().and_then(|it| it.as_const(context))
                     {
                         Some(quote_spanned![as_const.span()=> #as_const.clone()])
@@ -48,7 +50,7 @@ impl Statement {
                     (true, Some(init)) => {
                         let into_mut = frontend_type("IntoMut");
                         let init_ty =
-                            quote_spanned![init.span()=> #into_mut::into_mut(#init, scope)];
+                            quote_spanned![at(init.span())=> #into_mut::into_mut(#init, scope)];
                         Some(quote! {{
                             #init_ty
                         }})

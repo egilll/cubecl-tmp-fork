@@ -1,6 +1,7 @@
 use darling::FromMeta;
+use proc_macro2::{Group, Ident, Span, TokenStream, TokenTree};
 use syn::{
-    Attribute, Expr, Stmt, parse_quote,
+    Attribute, Expr, Macro, Stmt, parse_quote,
     visit_mut::{self, VisitMut},
 };
 
@@ -172,4 +173,68 @@ pub fn is_helper(attr: &Attribute) -> bool {
         || is_unroll_attr(attr)
         || is_expr_attribute(attr)
         || is_define_attribute(attr)
+}
+
+/// The names generated code binds for itself, like the `scope` every expand function takes.
+const GENERATED_LOCALS: &[&str] = &[
+    "scope",
+    "value",
+    "_value",
+    "builder",
+    "launcher",
+    "settings",
+    "device_properties",
+    "target_properties",
+];
+
+/// `span`'s location with call-site hygiene, for generated tokens placed at the kernel's code.
+/// Taking its hygiene instead would hide `scope` from them wherever [`SeparateGeneratedLocals`]
+/// changed it.
+pub fn at(span: Span) -> Span {
+    Span::call_site().located_at(span)
+}
+
+/// Gives the kernel's own uses of a name in [`GENERATED_LOCALS`] the hygiene of `macro_rules!`,
+/// so they and the generated code's never refer to each other: a kernel can name a variable
+/// `scope` without shadowing the one the expand function takes.
+pub struct SeparateGeneratedLocals;
+
+impl SeparateGeneratedLocals {
+    fn separate(ident: &mut Ident) {
+        if GENERATED_LOCALS.iter().any(|name| ident == name) {
+            ident.set_span(ident.span().resolved_at(Span::mixed_site()));
+        }
+    }
+
+    fn separate_tokens(tokens: TokenStream) -> TokenStream {
+        tokens
+            .into_iter()
+            .map(|token| match token {
+                TokenTree::Ident(mut ident) => {
+                    Self::separate(&mut ident);
+                    TokenTree::Ident(ident)
+                }
+                TokenTree::Group(group) => {
+                    let mut separated =
+                        Group::new(group.delimiter(), Self::separate_tokens(group.stream()));
+                    separated.set_span(group.span());
+                    TokenTree::Group(separated)
+                }
+                token => token,
+            })
+            .collect()
+    }
+}
+
+impl VisitMut for SeparateGeneratedLocals {
+    fn visit_ident_mut(&mut self, ident: &mut Ident) {
+        Self::separate(ident);
+    }
+
+    // A macro's body is only tokens to syn, but it can name the kernel's variables too, as in
+    // `comptime!(value + 1)`.
+    fn visit_macro_mut(&mut self, mac: &mut Macro) {
+        visit_mut::visit_macro_mut(self, mac);
+        mac.tokens = Self::separate_tokens(core::mem::take(&mut mac.tokens));
+    }
 }

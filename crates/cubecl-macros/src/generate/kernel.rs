@@ -267,10 +267,10 @@ impl Launch {
             .process_generic_names(&self.func.sig.generics);
 
         quote! {
-            let __name = <Self as #kernel_metadata>::id(self).entrypoint_name(&self.settings.kernel_name);
-            let mut builder = #kernel_builder::new(self.settings.clone().kernel_name(__name));
-            builder.runtime_properties(self.target_properties.as_ref().clone());
-            builder.device_properties(&self.device_properties);
+            let __name = <Self as #kernel_metadata>::id(self).entrypoint_name(&self.__settings.kernel_name);
+            let mut builder = #kernel_builder::new(self.__settings.clone().kernel_name(__name));
+            builder.runtime_properties(self.__target_properties.as_ref().clone());
+            builder.device_properties(&self.__device_properties);
 
             #register_type
             #io_map
@@ -425,9 +425,9 @@ impl Launch {
             quote! {
                 #[doc = #kernel_doc]
                 pub struct #kernel_name #generics #where_clause {
-                    settings: #kernel_settings,
-                    device_properties: #private::Arc<#device_properties>,
-                    target_properties: #private::Arc<#target_properties>,
+                    __settings: #kernel_settings,
+                    __device_properties: #private::Arc<#device_properties>,
+                    __target_properties: #private::Arc<#target_properties>,
                     #(#compilation_args,)*
                     #(#const_params,)*
                     #phantom_data
@@ -444,9 +444,9 @@ impl Launch {
                         #(#compilation_args,)*
                         #(#const_params),*) -> Self {
                         Self {
-                            settings: #settings,
-                            device_properties,
-                            target_properties,
+                            __settings: #settings,
+                            __device_properties: device_properties,
+                            __target_properties: target_properties,
                             #(#args,)*
                             #(#param_names,)*
                             #phantom_data_init
@@ -457,13 +457,13 @@ impl Launch {
                 impl #generics #kernel_metadata for #kernel_name #generic_names #where_clause {
                     fn id(&self) -> #kernel_id {
                         // We don't use any other kernel settings with the macro.
-                        let cube_dim = self.settings.cube_dim.clone();
-                        let address_type = self.settings.address_type;
+                        let cube_dim = self.__settings.cube_dim.clone();
+                        let address_type = self.__settings.address_type;
 
                         #kernel_id::new::<Self>()
                             .address_type(address_type)
-                            .cube_dim(self.settings.cube_dim.clone())
-                            .mode(self.settings.execution_mode)
+                            .cube_dim(self.__settings.cube_dim.clone())
+                            .mode(self.__settings.execution_mode)
                             .info(#info_ty_name #info_generics {
                                 #(#info_names: self.#info_names.clone(),)*
                                 #phantom_data_init
@@ -471,7 +471,7 @@ impl Launch {
                     }
 
                     fn address_type(&self) -> #elem_ty {
-                        self.settings.address_type.unsigned_type()
+                        self.__settings.address_type.unsigned_type()
                     }
                 }
 
