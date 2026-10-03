@@ -37,6 +37,17 @@ fn collatz_steps(start: u32, limit: u32) -> u32 {
     steps
 }
 
+/// Large enough to be kept as a call, and reads a builtin.
+#[cube(outline)]
+fn blend(x: f32, y: f32, t: f32) -> f32 {
+    let unit = f32::cast_from(UNIT_POS) * 0.25;
+    let a = x * (1.0 - t) + y * t;
+    let b = (a * a + unit) / (1.0 + a * a);
+    let c = b * 3.0 - a * 0.5 + t * t;
+    let d = c * c * 0.125 + b * 0.75 - unit * 0.5;
+    (d + a * 0.25) * (1.0 + t * 0.125) - c * 0.0625
+}
+
 #[cube(launch)]
 pub fn kernel_outlined_calls(input: &[f32], output: &mut [f32], steps: &mut [u32]) {
     let i = ABSOLUTE_POS;
@@ -49,6 +60,9 @@ pub fn kernel_outlined_calls(input: &[f32], output: &mut [f32], steps: &mut [u32
         }
         acc += pick(i % 2 == 0, x, acc * 0.001);
         acc += pick(i % 3 == 0, acc * 0.001, x);
+        let t = f32::cast_from(i % 4) * 0.25;
+        acc += blend(x, acc * 0.01, t);
+        acc += blend(acc * 0.01, x, 1.0 - t);
         output[i] = acc;
         steps[i] = collatz_steps(i as u32 + 1, 200) + collatz_steps(i as u32 + 7, 200);
     }
@@ -63,6 +77,15 @@ fn pick_ref(flag: bool, x: f32, y: f32) -> f32 {
         true => poly_ref(x, y, 1.0),
         false => poly_ref(y, x, 2.0),
     }
+}
+
+fn blend_ref(unit_pos: usize, x: f32, y: f32, t: f32) -> f32 {
+    let unit = unit_pos as f32 * 0.25;
+    let a = x * (1.0 - t) + y * t;
+    let b = (a * a + unit) / (1.0 + a * a);
+    let c = b * 3.0 - a * 0.5 + t * t;
+    let d = c * c * 0.125 + b * 0.75 - unit * 0.5;
+    (d + a * 0.25) * (1.0 + t * 0.125) - c * 0.0625
 }
 
 fn collatz_ref(start: u32, limit: u32) -> u32 {
@@ -107,6 +130,9 @@ pub fn test_outlined_calls<R: Runtime>(client: Client) {
         }
         acc += pick_ref(i % 2 == 0, x, acc * 0.001);
         acc += pick_ref(i % 3 == 0, acc * 0.001, x);
+        let t = (i % 4) as f32 * 0.25;
+        acc += blend_ref(i, x, acc * 0.01, t);
+        acc += blend_ref(i, acc * 0.01, x, 1.0 - t);
         let tolerance = 1e-3 * acc.abs().max(1.0);
         assert!(
             (output[i] - acc).abs() <= tolerance,

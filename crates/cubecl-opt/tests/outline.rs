@@ -284,12 +284,46 @@ fn a_target_inlines_a_callee_with_one_call_site() {
 }
 
 #[test]
-fn a_target_inlines_a_callee_that_reads_kernel_state() {
+fn a_builtin_a_callee_reads_becomes_its_parameter() {
+    use cubecl_ir::dialect::general::ReadBuiltinOp;
+
     let mut traced = trace(|scope| {
         calls_a_builtin_reader::expand(scope);
     });
     assert_eq!(count::<CallOp>(&traced.ctx, traced.module), 2);
     inline_for_target(&mut traced, 2);
-    assert_eq!(count::<CallOp>(&traced.ctx, traced.module), 0);
-    assert_eq!(count::<FuncOp>(&traced.ctx, traced.module), 1);
+    assert_eq!(
+        count::<CallOp>(&traced.ctx, traced.module),
+        2,
+        "the calls are kept"
+    );
+
+    let callee = functions(&traced)
+        .into_iter()
+        .find(|func| {
+            cubecl_ir::attributes::EntrypointInterface::get_entrypoint_abi(func, &traced.ctx)
+                .is_none()
+        })
+        .expect("the callee survives");
+    assert_eq!(
+        count::<ReadBuiltinOp>(&traced.ctx, callee.get_operation()),
+        0,
+        "the callee reads no builtin"
+    );
+    let params = callee
+        .get_entry_block(&traced.ctx)
+        .deref(&traced.ctx)
+        .get_num_arguments();
+    assert_eq!(params, 2, "`x`, then `UNIT_POS`");
+}
+
+fn functions(traced: &Traced) -> Vec<FuncOp> {
+    use pliron::linked_list::ContainsLinkedList;
+    let body = traced.module.deref(&traced.ctx).get_region(0);
+    let block = body.deref(&traced.ctx).get_head().unwrap();
+    block
+        .deref(&traced.ctx)
+        .iter(&traced.ctx)
+        .filter_map(|op| Operation::get_op::<FuncOp>(op, &traced.ctx))
+        .collect()
 }

@@ -194,6 +194,10 @@ impl Pass for InlinePass {
     ) -> Result<PassResult> {
         let mut res = PassResult::default();
 
+        if matches!(self.policy, InlinePolicy::Target { .. }) && hoist_builtin_reads(ctx, op) {
+            res.ir_changed |= IRStatus::Changed;
+        }
+
         // Inlining a body brings its own calls along, so repeat until a round
         // inlines nothing. Each round goes one level deeper into the call
         // graph.
@@ -415,4 +419,97 @@ fn order_callees_first(ctx: &mut Context, module: Ptr<Operation>) -> bool {
         op.insert_at_back(body, ctx);
     }
     true
+}
+
+/// Turn every builtin a device function reads into a parameter of it, read by
+/// its callers instead, until only kernels read builtins. A device function
+/// has no builtins of its own: on targets that have them, they are kernel
+/// parameters. Returns whether anything changed.
+fn hoist_builtin_reads(ctx: &mut Context, module: Ptr<Operation>) -> bool {
+    use cubecl_ir::{
+        FuncOpExt,
+        attributes::EntrypointInterface,
+        dialect::general::{BuiltinAttr, ReadBuiltinOp},
+    };
+
+    let mut changed = false;
+    // Each round moves the reads one level up the call graph.
+    for _ in 0..=MAX_INLINE_DEPTH {
+        let Some(module_op) = Operation::get_op::<ModuleOp>(module, ctx) else {
+            return changed;
+        };
+        let body = module_op.get_body(ctx, 0);
+        let funcs: Vec<FuncOp> = body
+            .deref(ctx)
+            .iter(ctx)
+            .filter_map(|op| Operation::get_op::<FuncOp>(op, ctx))
+            .filter(|func| func.get_entrypoint_abi(ctx).is_none())
+            .collect();
+
+        let mut round_changed = false;
+        for func in funcs {
+            let mut reads: Vec<ReadBuiltinOp> = Vec::new();
+            pliron::graph::walkers::uninterruptible::immutable::walk_op(
+                ctx,
+                &mut reads,
+                &WALKCONFIG_PREORDER_FORWARD,
+                func.get_operation(),
+                |ctx, reads, node| {
+                    if let IRNode::Operation(op) = node
+                        && let Some(read) = Operation::get_op::<ReadBuiltinOp>(op, ctx)
+                    {
+                        reads.push(read);
+                    }
+                },
+            );
+            if reads.is_empty() {
+                continue;
+            }
+
+            // One parameter per distinct builtin and type.
+            let mut params: Vec<(BuiltinAttr, TypeHandle, Value)> = Vec::new();
+            for read in &reads {
+                let builtin = read.builtin(ctx).clone();
+                let result = read.get_operation().deref(ctx).get_result(0);
+                let ty = result.get_type(ctx);
+                let param = match params.iter().find(|(b, t, _)| *b == builtin && *t == ty) {
+                    Some((_, _, param)) => *param,
+                    None => {
+                        let idx = func.push_argument(ctx, ty);
+                        let param = func.get_entry_block(ctx).deref(ctx).get_argument(idx);
+                        params.push((builtin, ty, param));
+                        param
+                    }
+                };
+                result.replace_all_uses_with(ctx, &param);
+                Operation::erase(read.get_operation(), ctx);
+            }
+
+            // Every call reads the builtins and passes them.
+            let symbol = func.get_symbol_name(ctx);
+            let new_ty = func.get_type(ctx);
+            for call in collect_calls(ctx, module) {
+                if call.callee_symbol(ctx) != symbol {
+                    continue;
+                }
+                let call_op = call.get_operation();
+                for (builtin, ty, _) in &params {
+                    let read = ReadBuiltinOp::new(ctx, *ty, builtin.clone());
+                    read.get_operation().insert_before(ctx, call_op);
+                    let value = read.get_operation().deref(ctx).get_result(0);
+                    Operation::push_operand(call_op, ctx, value);
+                }
+                pliron::builtin::op_interfaces::CallOpInterface::set_callee_type(
+                    &call, ctx, new_ty,
+                );
+            }
+            round_changed = true;
+        }
+
+        changed |= round_changed;
+        if !round_changed {
+            return changed;
+        }
+    }
+    changed
 }
