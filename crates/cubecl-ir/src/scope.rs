@@ -433,6 +433,12 @@ impl Scope {
         self.ctx.borrow()
     }
 
+    /// How many operations the kernel module holds, nested ones included: the
+    /// size of what the expansion traced, for compilation reports.
+    pub fn op_count(&self) -> usize {
+        crate::dialect::base::count_ops(self.ctx(), self.state().module.get_operation())
+    }
+
     // #[allow(clippy::mut_from_ref)]
     pub fn ctx_mut(&self) -> &mut Context {
         self.ctx.borrow_mut()

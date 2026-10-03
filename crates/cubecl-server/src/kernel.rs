@@ -120,6 +120,7 @@ impl<C: Compiler> CompiledKernel<C> {
             });
         }
 
+        let traced_ops = definition.body.op_count() as u64;
         let start = cubecl_environment::time::Instant::now();
         let lower_level_ir = compiler
             .compile(definition, compilation_options)
@@ -135,6 +136,7 @@ impl<C: Compiler> CompiledKernel<C> {
             cube_dim,
             debug_info: None,
             stats: CompilationStats {
+                traced_ops: Some(traced_ops),
                 compile_micros: Some(compile_micros),
                 ..Default::default()
             },

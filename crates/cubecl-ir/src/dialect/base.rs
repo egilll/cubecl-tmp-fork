@@ -231,6 +231,27 @@ macro_rules! pure_binop {
 }
 pub(crate) use pure_binop;
 
+/// The operations nested anywhere inside `op`, `op` itself excluded.
+pub fn count_ops(ctx: &Context, op: Ptr<Operation>) -> usize {
+    use pliron::graph::walkers::{
+        IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op,
+    };
+
+    let mut count = 0usize;
+    walk_op(
+        ctx,
+        &mut count,
+        &WALKCONFIG_PREORDER_FORWARD,
+        op,
+        |_, count, node| {
+            if let IRNode::Operation(_) = node {
+                *count += 1;
+            }
+        },
+    );
+    count.saturating_sub(1)
+}
+
 pub fn ptr_value_ty(ctx: &Context, input: &Value) -> TypeHandle {
     let in_ty = input.get_type(ctx).deref(ctx);
     let ptr_ty = in_ty.downcast_ref::<PointerType>();

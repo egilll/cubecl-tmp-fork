@@ -123,11 +123,15 @@ pub fn define_kernel_timed<K: CubeKernel + ?Sized>(
     Ok((definition, start.elapsed().as_micros() as u64))
 }
 
-/// Where the time of one kernel's compilation went, in microseconds, for the
-/// compilation log and [`Activity`](crate::logging::Activity). A stage a
-/// backend does not measure, or does not have, is `None`.
+/// How big one kernel's compilation was and where its time went, for the
+/// compilation log and [`Activity`](crate::logging::Activity). Times are in
+/// microseconds. A stage a backend does not measure, or does not have, is
+/// `None`.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct CompilationStats {
+    /// Operations in the IR the expansion produced, before any pass: what
+    /// inlining and unrolling at expansion time multiply.
+    pub traced_ops: Option<u64>,
     /// Running the kernel's Rust expansion: tracing `#[cube]` code into IR.
     pub define_micros: Option<u64>,
     /// `CubeCL`'s compiler: passes and emission of the target source.
@@ -151,6 +155,10 @@ impl core::fmt::Display for CompilationStats {
             ("driver", self.driver_micros),
         ];
         let mut first = true;
+        if let Some(ops) = self.traced_ops {
+            write!(f, "{ops} traced ops")?;
+            first = false;
+        }
         for (name, micros) in stages {
             if let Some(micros) = micros {
                 if !first {
