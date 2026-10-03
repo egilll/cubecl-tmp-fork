@@ -194,6 +194,17 @@ pub fn at(span: Span) -> Span {
     Span::call_site().located_at(span)
 }
 
+/// Generated `tokens` placed at `span`, so an error in them points there.
+pub fn respan(tokens: TokenStream, span: Span) -> TokenStream {
+    tokens
+        .into_iter()
+        .map(|mut token| {
+            token.set_span(span);
+            token
+        })
+        .collect()
+}
+
 /// Gives the kernel's own uses of a name in [`GENERATED_LOCALS`] the hygiene of `macro_rules!`,
 /// so they and the generated code's never refer to each other: a kernel can name a variable
 /// `scope` without shadowing the one the expand function takes.

@@ -8,7 +8,7 @@ use syn::{
 use crate::{
     expression::{Block, Expression, MatchArm},
     operator::Operator,
-    parse::helpers::at,
+    parse::helpers::{at, respan},
     paths::{frontend_path, frontend_type, prelude_path, prelude_type},
     scope::Context,
 };
@@ -22,6 +22,13 @@ macro_rules! error {
 fn into_expand(tokens: TokenStream) -> TokenStream {
     let into_expand = prelude_type("IntoExpand");
     quote![#into_expand::into_expand(#tokens, scope)]
+}
+
+/// [`into_expand`] placed at `span`, so an error about the operand points there.
+fn into_expand_at(tokens: TokenStream, span: Span) -> TokenStream {
+    let into_expand = prelude_type("IntoExpand");
+    let into_expand = respan(quote![#into_expand], at(span));
+    quote_spanned![at(span)=> #into_expand::into_expand(#tokens, scope)]
 }
 
 impl Expression {
@@ -87,19 +94,25 @@ impl Expression {
                 span,
                 ..
             } => {
-                let op = format_ident!("__expand_{}_method", operator.op_name());
-                let left = into_expand(left.to_tokens(context));
-                let right = into_expand(right.to_tokens(context));
+                let op = format_ident!("__expand_{}_method", operator.op_name(), span = at(*span));
+                let left = into_expand_at(left.to_tokens(context), *span);
+                let right = into_expand_at(right.to_tokens(context), *span);
                 // An operator is called through its trait rather than as a method of the left
                 // operand, so either operand can give the other its type, as with `core::ops`:
-                // an untyped literal on the left takes the type of the right.
+                // an untyped literal on the left takes the type of the right. The call is
+                // placed at the expression, so an error in it points there, not at `#[cube]`.
                 let call = if operator.is_assign() {
-                    quote![#left.#op(scope, #right)]
+                    quote_spanned![at(*span)=> #left.#op(scope, #right)]
                 } else {
                     let expand_trait = frontend_type(operator.expand_trait());
+                    let expand_trait = respan(quote![#expand_trait], at(*span));
                     match operator.is_cmp() {
-                        true => quote![#expand_trait::#op(&#left, scope, &#right)],
-                        false => quote![#expand_trait::#op(#left, scope, #right)],
+                        true => {
+                            quote_spanned![at(*span)=> #expand_trait::#op(&#left, scope, &#right)]
+                        }
+                        false => {
+                            quote_spanned![at(*span)=> #expand_trait::#op(#left, scope, #right)]
+                        }
                     }
                 };
                 let expand = with_span(context, *span, call);
@@ -130,8 +143,12 @@ impl Expression {
                 ..
             } => {
                 let input = input.to_tokens(context);
-                let op = format_ident!("__expand_{}_method", operator.op_name());
-                let expand = with_span(context, *span, quote![#input.#op(scope)]);
+                let op = format_ident!("__expand_{}_method", operator.op_name(), span = at(*span));
+                let expand = with_span(
+                    context,
+                    *span,
+                    quote_spanned![at(*span)=> #input.#op(scope)],
+                );
                 quote! {
                     {
                         #expand
@@ -159,7 +176,7 @@ impl Expression {
             }
             Expression::Literal { value, .. } => {
                 let expand_elem = frontend_type("NativeExpand");
-                quote![#expand_elem::from_lit(scope, #value)]
+                quote_spanned![at(value.span())=> #expand_elem::from_lit(scope, #value)]
             }
             Expression::Assignment { left, right, .. } => {
                 let right = into_expand(right.to_tokens(context));
