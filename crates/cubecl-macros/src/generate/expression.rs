@@ -1,7 +1,7 @@
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::{Span, TokenStream, TokenTree};
 use quote::{format_ident, quote, quote_spanned};
 use syn::{
-    GenericArgument, Ident, Member, Pat, PatIdent, PatPath, PatStruct, PatTupleStruct, Path,
+    GenericArgument, Ident, Lit, Member, Pat, PatIdent, PatPath, PatStruct, PatTupleStruct, Path,
     PathArguments, parse_quote, spanned::Spanned,
 };
 
@@ -90,17 +90,19 @@ impl Expression {
                 let op = format_ident!("__expand_{}_method", operator.op_name());
                 let left = into_expand(left.to_tokens(context));
                 let right = into_expand(right.to_tokens(context));
-                let rhs = match operator.is_cmp() {
-                    true => quote![&#right],
-                    false => quote![#right],
+                // An operator is called through its trait rather than as a method of the left
+                // operand, so either operand can give the other its type, as with `core::ops`:
+                // an untyped literal on the left takes the type of the right.
+                let call = if operator.is_assign() {
+                    quote![#left.#op(scope, #right)]
+                } else {
+                    let expand_trait = frontend_type(operator.expand_trait());
+                    match operator.is_cmp() {
+                        true => quote![#expand_trait::#op(&#left, scope, &#right)],
+                        false => quote![#expand_trait::#op(#left, scope, #right)],
+                    }
                 };
-                let expand = with_span(
-                    context,
-                    *span,
-                    quote![
-                        #left.#op(scope, #rhs)
-                    ],
-                );
+                let expand = with_span(context, *span, call);
                 quote! {{#expand}}
             }
             Expression::Unary {
@@ -550,6 +552,11 @@ impl Expression {
                 let body = context.in_fn_mut(scope, |ctx| body.to_tokens(ctx));
                 quote![|scope, #(#params),*| #body]
             }
+            // A constant folded from untyped literals, like `-2.0`, is still untyped.
+            Expression::Verbatim { tokens, .. } if is_untyped_literal(tokens) => {
+                let expand_elem = frontend_type("NativeExpand");
+                quote![#expand_elem::from_lit(scope, #tokens)]
+            }
             Expression::Verbatim { tokens, .. } => tokens.clone(),
             Expression::Block(block) => block.to_tokens(context),
             Expression::Unsafe(unsafe_token, block) => {
@@ -964,6 +971,27 @@ fn init_fields<'a>(
             }
         }
     })
+}
+
+/// Whether `tokens` only combine numeric literals without a type suffix.
+fn is_untyped_literal(tokens: &TokenStream) -> bool {
+    fn literals(tokens: TokenStream, count: &mut usize) -> bool {
+        tokens.into_iter().all(|token| match token {
+            TokenTree::Literal(literal) => {
+                *count += 1;
+                match Lit::new(literal) {
+                    Lit::Int(int) => int.suffix().is_empty(),
+                    Lit::Float(float) => float.suffix().is_empty(),
+                    _ => false,
+                }
+            }
+            TokenTree::Group(group) => literals(group.stream(), count),
+            TokenTree::Punct(_) => true,
+            TokenTree::Ident(_) => false,
+        })
+    }
+    let mut count = 0;
+    literals(tokens.clone(), &mut count) && count > 0
 }
 
 fn with_span(context: &Context, span: Span, tokens: TokenStream) -> TokenStream {

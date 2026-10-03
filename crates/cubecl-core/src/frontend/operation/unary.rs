@@ -163,7 +163,7 @@ macro_rules! impl_normalize {
             }
 
             $(impl $trait_name for $type {})*
-            impl<T: $trait_name + CubePrimitive<WithScalar<<T as Abs>::AbsElem> = T>> [<$trait_name Expand>] for NativeExpand<T> where NativeExpand<T>: DivExpand {
+            impl<T: $trait_name + CubePrimitive<WithScalar<<T as Abs>::AbsElem> = T>> [<$trait_name Expand>] for NativeExpand<T> where NativeExpand<T>: DivExpand<Output = NativeExpand<T>> {
                 fn [<__expand_ $method_name _method>](self, scope: &Scope) -> Self {
                     if self.__expand_vector_size_method(scope) == 1 {
                         // Sign might work, but dividing by `abs` preserves the NaN when normalizing 0.0

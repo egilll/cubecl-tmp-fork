@@ -9,6 +9,28 @@ use crate::frontend::NativeExpand;
 use crate::ir::Scope;
 use crate::prelude::*;
 
+/// Implements a comparison's expand trait for operands behind references, by comparing the values
+/// behind them, as `core::cmp` does.
+macro_rules! forward_ref_cmp {
+    ($trait: ident, $bound: ident, $($method: ident -> $out: ty),*) => {
+        impl<T: $bound> $trait<&NativeExpand<T>> for NativeExpand<T> {
+            $(fn $method(&self, scope: &Scope, rhs: &&NativeExpand<T>) -> $out {
+                $trait::$method(self, scope, *rhs)
+            })*
+        }
+        impl<T: $bound> $trait<NativeExpand<T>> for &NativeExpand<T> {
+            $(fn $method(&self, scope: &Scope, rhs: &NativeExpand<T>) -> $out {
+                $trait::$method(*self, scope, rhs)
+            })*
+        }
+        impl<T: $bound> $trait<&NativeExpand<T>> for &NativeExpand<T> {
+            $(fn $method(&self, scope: &Scope, rhs: &&NativeExpand<T>) -> $out {
+                $trait::$method(*self, scope, *rhs)
+            })*
+        }
+    };
+}
+
 /// These `Scalar` traits fix Rust's broken inference on the `Scalar` associated type
 pub trait ScalarPartialEq: CubePartialEq + PartialEqNativeExpand {}
 impl<T: CubePartialEq + PartialEqNativeExpand> ScalarPartialEq for T {}
@@ -44,9 +66,11 @@ pub trait CubePartialEq:
         lhs.__expand_ne_method(scope, rhs)
     }
 }
-pub trait PartialEqExpand {
-    fn __expand_eq_method(&self, scope: &Scope, rhs: &Self) -> NativeExpand<bool>;
-    fn __expand_ne_method(&self, scope: &Scope, rhs: &Self) -> NativeExpand<bool>;
+/// The expansion of `==` and `!=`, which the macro calls as `Trait::method(&lhs, scope, &rhs)` so
+/// either operand can give the other its type.
+pub trait PartialEqExpand<Rhs = Self> {
+    fn __expand_eq_method(&self, scope: &Scope, rhs: &Rhs) -> NativeExpand<bool>;
+    fn __expand_ne_method(&self, scope: &Scope, rhs: &Rhs) -> NativeExpand<bool>;
 }
 pub trait PartialEqNativeExpand {
     fn __expand_native_eq(scope: &Scope, lhs: ExpandValue, rhs: ExpandValue) -> ExpandValue;
@@ -73,6 +97,12 @@ impl<T: CubePartialEq> PartialEqExpand for NativeExpand<T> {
         T::Scalar::__expand_native_ne(scope, this.expand, rhs.expand).into()
     }
 }
+forward_ref_cmp!(
+    PartialEqExpand,
+    CubePartialEq,
+    __expand_eq_method -> NativeExpand<bool>,
+    __expand_ne_method -> NativeExpand<bool>
+);
 
 macro_rules! impl_partial_eq {
     ($($ty: ty),*; $eq: ty, $ne: ty) => {
@@ -344,12 +374,13 @@ pub trait CubePartialOrd:
     }
 }
 
-pub trait PartialOrdExpand {
-    fn __expand_partial_cmp_method(&self, scope: &Scope, rhs: &Self) -> OptionExpand<Ordering>;
-    fn __expand_lt_method(&self, scope: &Scope, rhs: &Self) -> NativeExpand<bool>;
-    fn __expand_le_method(&self, scope: &Scope, rhs: &Self) -> NativeExpand<bool>;
-    fn __expand_gt_method(&self, scope: &Scope, rhs: &Self) -> NativeExpand<bool>;
-    fn __expand_ge_method(&self, scope: &Scope, rhs: &Self) -> NativeExpand<bool>;
+/// The expansion of `<`, `<=`, `>` and `>=`, called like [`PartialEqExpand`].
+pub trait PartialOrdExpand<Rhs = Self> {
+    fn __expand_partial_cmp_method(&self, scope: &Scope, rhs: &Rhs) -> OptionExpand<Ordering>;
+    fn __expand_lt_method(&self, scope: &Scope, rhs: &Rhs) -> NativeExpand<bool>;
+    fn __expand_le_method(&self, scope: &Scope, rhs: &Rhs) -> NativeExpand<bool>;
+    fn __expand_gt_method(&self, scope: &Scope, rhs: &Rhs) -> NativeExpand<bool>;
+    fn __expand_ge_method(&self, scope: &Scope, rhs: &Rhs) -> NativeExpand<bool>;
 }
 
 pub trait PartialOrdNativeExpand {
@@ -440,3 +471,12 @@ impl<T: CubePartialOrd> PartialOrdExpand for NativeExpand<T> {
         T::Scalar::__expand_native_ge(scope, this.into(), rhs.into()).into()
     }
 }
+forward_ref_cmp!(
+    PartialOrdExpand,
+    CubePartialOrd,
+    __expand_partial_cmp_method -> OptionExpand<Ordering>,
+    __expand_lt_method -> NativeExpand<bool>,
+    __expand_le_method -> NativeExpand<bool>,
+    __expand_gt_method -> NativeExpand<bool>,
+    __expand_ge_method -> NativeExpand<bool>
+);

@@ -113,6 +113,27 @@ impl Operator {
         )
     }
 
+    /// The frontend trait that expands this binary operator.
+    pub fn expand_trait(&self) -> &'static str {
+        match self {
+            Operator::Add => "AddExpand",
+            Operator::Sub => "SubExpand",
+            Operator::Mul => "MulExpand",
+            Operator::Div => "DivExpand",
+            Operator::Rem => "RemExpand",
+            Operator::And => "AndExpand",
+            Operator::Or => "OrExpand",
+            Operator::BitXor => "BitXorExpand",
+            Operator::BitAnd => "BitAndExpand",
+            Operator::BitOr => "BitOrExpand",
+            Operator::Shl => "ShlExpand",
+            Operator::Shr => "ShrExpand",
+            Operator::Eq | Operator::Ne => "PartialEqExpand",
+            Operator::Lt | Operator::Le | Operator::Gt | Operator::Ge => "PartialOrdExpand",
+            _ => unreachable!("`{self}` is not a binary operator"),
+        }
+    }
+
     /// Get the expanded op name for this operation
     pub fn op_name(&self) -> String {
         if self.is_assign() {

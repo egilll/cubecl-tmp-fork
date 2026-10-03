@@ -167,7 +167,7 @@ mod impls {
     impl<T: CubeType> OptionExpand<T> {
         pub fn __expand_is_some_method(&self, scope: &Scope) -> NativeExpand<bool> {
             self.discriminant
-                .__expand_eq_method(scope, &discriminant("Some").into())
+                .__expand_eq_method(scope, &NativeExpand::from(discriminant("Some")))
         }
 
         pub fn __expand_is_some_and_method(

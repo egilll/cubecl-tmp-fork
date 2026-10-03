@@ -346,6 +346,31 @@ macro_rules! impl_binary_func_mixed_types {
     }
 }
 
+/// Implements an operator's expand trait for operands behind references, by reading the values
+/// behind them, as `core::ops` does for the primitives.
+macro_rules! forward_ref_binop {
+    ($trait: ident, $method: ident, $bound: ident) => {
+        impl<T: $bound> $trait<&NativeExpand<T>> for NativeExpand<T> {
+            type Output = NativeExpand<T>;
+            fn $method(self, scope: &Scope, rhs: &NativeExpand<T>) -> Self::Output {
+                $trait::$method(self, scope, *rhs)
+            }
+        }
+        impl<T: $bound> $trait<NativeExpand<T>> for &NativeExpand<T> {
+            type Output = NativeExpand<T>;
+            fn $method(self, scope: &Scope, rhs: NativeExpand<T>) -> Self::Output {
+                $trait::$method(*self, scope, rhs)
+            }
+        }
+        impl<T: $bound> $trait<&NativeExpand<T>> for &NativeExpand<T> {
+            type Output = NativeExpand<T>;
+            fn $method(self, scope: &Scope, rhs: &NativeExpand<T>) -> Self::Output {
+                $trait::$method(*self, scope, *rhs)
+            }
+        }
+    };
+}
+
 macro_rules! define_core_binop {
     ($trait: ident, $method: ident) => {
         paste::paste! {
@@ -354,7 +379,7 @@ macro_rules! define_core_binop {
 
             pub trait [<Cube $trait>]:
                 $trait<Output = Self> + CubePrimitive<Scalar: [<$trait NativeExpand>]> + IntoRuntime
-                + CubeType<ExpandType: [<$trait Expand>]> + Sized {
+                + CubeType<ExpandType: [<$trait Expand>]<Output = NativeExpand<Self>>> + Sized {
                 fn [<__expand_ $method _method>](self, scope: &Scope, rhs: NativeExpand<Self>) -> NativeExpand<Self> {
                     let this = self.__expand_runtime_method(scope);
                     this.[<__expand_ $method _method>](scope, rhs)
@@ -369,8 +394,11 @@ macro_rules! define_core_binop {
                 }
             }
 
-            pub trait [<$trait Expand>] {
-                fn [<__expand_ $method _method>](self, scope: &Scope, rhs: Self) -> Self;
+            /// The expansion of the operator, which the macro calls as
+            /// `Trait::method(lhs, scope, rhs)` so either operand can give the other its type.
+            pub trait [<$trait Expand>]<Rhs = Self> {
+                type Output;
+                fn [<__expand_ $method _method>](self, scope: &Scope, rhs: Rhs) -> Self::Output;
             }
 
             pub trait [<$trait NativeExpand>] {
@@ -379,10 +407,12 @@ macro_rules! define_core_binop {
 
             impl<T: $trait<Output = Self> + CubePrimitive<Scalar: [<$trait NativeExpand>]> + IntoRuntime> [<Cube $trait>] for T {}
             impl<T: [<Cube $trait>]> [<$trait Expand>] for NativeExpand<T> {
-                fn [<__expand_ $method _method>](self, scope: &Scope, rhs: Self) -> Self {
+                type Output = Self;
+                fn [<__expand_ $method _method>](self, scope: &Scope, rhs: Self) -> Self::Output {
                     T::Scalar::[<__expand_native_ $method>](scope, self.into(), rhs.into()).into()
                 }
             }
+            forward_ref_binop!([<$trait Expand>], [<__expand_ $method _method>], [<Cube $trait>]);
         }
     };
 }
@@ -485,7 +515,10 @@ impl BitOrNativeExpand for bool {
 }
 
 pub trait CubeAnd:
-    CubePrimitive + Into<ExpandValue> + CubeType<ExpandType: AndExpand> + Sized
+    CubePrimitive
+    + Into<ExpandValue>
+    + CubeType<ExpandType: AndExpand<Output = NativeExpand<Self>>>
+    + Sized
 {
     fn __expand_and_method(self, scope: &Scope, rhs: NativeExpand<Self>) -> NativeExpand<Self> {
         let this: ExpandValue = self.into();
@@ -500,19 +533,25 @@ pub trait CubeAnd:
         lhs.__expand_and_method(scope, rhs)
     }
 }
-pub trait AndExpand {
-    fn __expand_and_method(self, scope: &Scope, rhs: Self) -> Self;
+pub trait AndExpand<Rhs = Self> {
+    type Output;
+    fn __expand_and_method(self, scope: &Scope, rhs: Rhs) -> Self::Output;
 }
 
 impl CubeAnd for bool {}
-impl<T: CubeAnd + CubePrimitive> AndExpand for NativeExpand<T> {
-    fn __expand_and_method(self, scope: &Scope, rhs: Self) -> Self {
+impl<T: CubeAnd> AndExpand for NativeExpand<T> {
+    type Output = Self;
+    fn __expand_and_method(self, scope: &Scope, rhs: Self) -> Self::Output {
         binary_expand(scope, self.into(), rhs.into(), BoolAndOp::new).into()
     }
 }
+forward_ref_binop!(AndExpand, __expand_and_method, CubeAnd);
 
 pub trait CubeOr:
-    CubePrimitive + Into<ExpandValue> + CubeType<ExpandType: OrExpand> + Sized
+    CubePrimitive
+    + Into<ExpandValue>
+    + CubeType<ExpandType: OrExpand<Output = NativeExpand<Self>>>
+    + Sized
 {
     fn __expand_or_method(self, scope: &Scope, rhs: NativeExpand<Self>) -> NativeExpand<Self> {
         let this: ExpandValue = self.into();
@@ -527,16 +566,19 @@ pub trait CubeOr:
         lhs.__expand_or_method(scope, rhs)
     }
 }
-pub trait OrExpand {
-    fn __expand_or_method(self, scope: &Scope, rhs: Self) -> Self;
+pub trait OrExpand<Rhs = Self> {
+    type Output;
+    fn __expand_or_method(self, scope: &Scope, rhs: Rhs) -> Self::Output;
 }
 
 impl CubeOr for bool {}
-impl<T: CubeOr + CubePrimitive> OrExpand for NativeExpand<T> {
-    fn __expand_or_method(self, scope: &Scope, rhs: Self) -> Self {
+impl<T: CubeOr> OrExpand for NativeExpand<T> {
+    type Output = Self;
+    fn __expand_or_method(self, scope: &Scope, rhs: Self) -> Self::Output {
         binary_expand(scope, self.into(), rhs.into(), BoolOrOp::new).into()
     }
 }
+forward_ref_binop!(OrExpand, __expand_or_method, CubeOr);
 
 define_binary_func!(Powf, powf);
 impl_binary_func!(f16, bf16, flex32, tf32, f32, f64; Powf, powf, PowfOp);

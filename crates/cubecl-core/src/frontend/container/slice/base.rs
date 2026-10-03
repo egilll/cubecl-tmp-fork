@@ -137,13 +137,13 @@ impl<E: Scalar, N: Size> SliceExpand<Vector<E, N>> {
 
         if current < vector_size {
             let ratio = vector_size / current;
-            let offset = offset.__expand_div_method(scope, ratio.into());
-            let length = length.__expand_div_method(scope, ratio.into());
+            let offset = offset.__expand_div_method(scope, NativeExpand::from(ratio));
+            let length = length.__expand_div_method(scope, NativeExpand::from(ratio));
             from_raw_parts(scope, new_ptr, offset, length)
         } else {
             let ratio = current / vector_size;
-            let offset = offset.__expand_mul_method(scope, ratio.into());
-            let length = length.__expand_mul_method(scope, ratio.into());
+            let offset = offset.__expand_mul_method(scope, NativeExpand::from(ratio));
+            let length = length.__expand_mul_method(scope, NativeExpand::from(ratio));
             from_raw_parts(scope, new_ptr, offset, length)
         }
     }
