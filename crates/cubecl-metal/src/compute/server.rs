@@ -34,7 +34,6 @@ use cubecl_server::{
         EventStreamBackend, ExecuteScope, FailureStore, MultiStream, ResolvedStreams, WriteScoped,
         failed_writing,
     },
-    timestamp_profiler::TimestampProfiler,
 };
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
@@ -52,7 +51,6 @@ pub struct MetalServer {
     context: MetalContext,
     streams: MultiStream<MetalStreamBackend>,
     pub(crate) utilities: Arc<ServerUtilities>,
-    timestamps: TimestampProfiler,
 }
 
 impl MetalServer {
@@ -81,7 +79,6 @@ impl MetalServer {
             context,
             streams: MultiStream::new(logger, backend, max_streams),
             utilities,
-            timestamps: TimestampProfiler::default(),
         }
     }
 }
@@ -154,10 +151,16 @@ fn write_pitched(dst: *mut u8, data: &[u8], shape: &[usize], strides: &[usize], 
 }
 
 impl MetalServer {
-    /// Mark every open profile invalid: a failure inside a profiling window
-    /// invalidates the measurement. A no-op with no profile open.
-    fn profile_failure(&mut self, error: &ServerError) {
-        self.timestamps.failure(error);
+    /// Mark every profile open on `stream_id` invalid: a failure inside a
+    /// profiling window invalidates the measurement. A no-op with no profile
+    /// open.
+    fn profile_failure(&mut self, stream_id: StreamId, error: &ServerError) {
+        self.streams
+            .resolve(stream_id, std::iter::empty())
+            .expect("creating a Metal stream never fails")
+            .current()
+            .timestamps
+            .failure(error);
     }
 }
 
@@ -170,10 +173,10 @@ impl WriteScoped for MetalServer {
         &mut self.streams
     }
 
-    fn on_failure(&mut self, _stream: StreamId, error: &ServerError) {
-        // Measured per device on this backend, so the scope's stream does not
-        // narrow which measurement a failure invalidates.
-        self.profile_failure(error);
+    fn on_failure(&mut self, stream: StreamId, error: &ServerError) {
+        // Measured per stream on this backend, so the scope's stream is the
+        // one whose measurement a failure invalidates.
+        self.profile_failure(stream, error);
     }
 }
 
@@ -378,7 +381,7 @@ impl Server for MetalServer {
                     written.extend(bindings.buffers_written(None).cloned());
                     failed_writing(self, stream_id, written, ServerError::Launch(err));
                 } else {
-                    self.profile_failure(&ServerError::Launch(err));
+                    self.profile_failure(stream_id, &ServerError::Launch(err));
                 }
                 return;
             }
@@ -615,12 +618,13 @@ impl Server for MetalServer {
             log::warn!("{err}");
         }
         // Begin collecting this window's work-bearing command buffers on the stream.
-        self.streams
+        let mut resolved = self
+            .streams
             .resolve(stream_id, std::iter::empty())
-            .expect("creating a Metal stream never fails")
-            .current()
-            .profiling = Some(Vec::new());
-        Ok(self.timestamps.start())
+            .expect("creating a Metal stream never fails");
+        let stream = resolved.current();
+        stream.profiling = Some(Vec::new());
+        Ok(stream.timestamps.start())
     }
 
     fn end_profile(
@@ -631,30 +635,29 @@ impl Server for MetalServer {
         // Flush the final encoder and wait for GPU completion so timestamps are valid.
         if let Err(err) = cubecl_environment::future::block_on(self.sync(Vec::new(), stream_id)) {
             // Drop any collected buffers so a retry can't accumulate stale work.
-            self.streams
+            let mut resolved = self
+                .streams
                 .resolve(stream_id, std::iter::empty())
-                .expect("creating a Metal stream never fails")
-                .current()
-                .profiling = None;
-            self.timestamps.failure(&err);
+                .expect("creating a Metal stream never fails");
+            let stream = resolved.current();
+            stream.profiling = None;
+            stream.timestamps.failure(&err);
         }
 
         // The collector disarms whatever the token says below: left armed, it
         // would retain every later flush's command buffer until the next
         // start_profile — and a failed profile is exactly when the token
         // errors, since a failure anywhere in the window lands in it.
-        let buffers = self
+        let mut resolved = self
             .streams
             .resolve(stream_id, std::iter::empty())
-            .expect("creating a Metal stream never fails")
-            .current()
-            .profiling
-            .take()
-            .unwrap_or_default();
+            .expect("creating a Metal stream never fails");
+        let stream = resolved.current();
+        let buffers = stream.profiling.take().unwrap_or_default();
 
         // Clear the token (propagates any recorded profiling error). Its system-time result
         // is discarded in favor of GPU timestamps below.
-        self.timestamps.stop(token)?;
+        stream.timestamps.stop(token)?;
 
         // `sync()` waits on the stream's shared event, which can be signaled slightly before
         // a command buffer reaches `Completed` status. `GPUStartTime`/`GPUEndTime` are only
@@ -693,12 +696,13 @@ impl Server for MetalServer {
         // would hold every later flush's command buffers until the next
         // `start_profile`. No sync, which is the whole difference from
         // `end_profile`: nothing is going to read these timestamps.
-        self.streams
+        let mut resolved = self
+            .streams
             .resolve(stream_id, std::iter::empty())
-            .expect("creating a Metal stream never fails")
-            .current()
-            .profiling = None;
-        self.timestamps.abandon(token);
+            .expect("creating a Metal stream never fails");
+        let stream = resolved.current();
+        stream.profiling = None;
+        stream.timestamps.abandon(token);
     }
 
     fn memory_report(

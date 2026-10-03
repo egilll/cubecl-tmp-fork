@@ -9,6 +9,7 @@ use cubecl_server::{
     memory_management::{ErrorGraph, FailureId, MemoryManagement, MemoryManagementOptions},
     server::BufferBinding,
     stream::{EventStreamBackend, StreamMemory},
+    timestamp_profiler::TimestampProfiler,
 };
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
@@ -113,6 +114,8 @@ pub struct MetalStream {
     /// buffer committed during the window is collected here so its GPU timestamps
     /// (`GPUStartTime`/`GPUEndTime`) can be read after completion.
     pub profiling: Option<Vec<Retained<ProtocolObject<dyn MTLCommandBuffer>>>>,
+    /// The profiling windows open on this stream, which a failure on it invalidates.
+    pub timestamps: TimestampProfiler,
     /// The first GPU-time fault a completed command buffer reported, sticky
     /// for the stream's life. Shared with every completion handler and every
     /// [`MetalEvent`], whose waits fail on it — see
@@ -393,6 +396,7 @@ impl EventStreamBackend for MetalStreamBackend {
             max_submitted_ops,
             last_command_buffer: None,
             profiling: None,
+            timestamps: TimestampProfiler::default(),
             fault: Arc::new(Mutex::new(None)),
         })
     }
