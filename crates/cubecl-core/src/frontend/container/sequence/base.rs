@@ -38,6 +38,13 @@ impl<T: CubeType> IntoMut for Sequence<T> {
 }
 impl<T: CubeType> CubeDebug for Sequence<T> {}
 
+// Every argument is passed through `Into`, which Rust's reborrow does not reach.
+impl<'a, T: CubeType> From<&'a mut SequenceExpand<T>> for &'a SequenceExpand<T> {
+    fn from(value: &'a mut SequenceExpand<T>) -> Self {
+        value
+    }
+}
+
 impl<T: CubeType<ExpandType: Clone>> DerefExpand for SequenceExpand<T> {
     type Target = Self;
 

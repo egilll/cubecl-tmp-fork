@@ -218,9 +218,22 @@ pub trait AsDerefMutExpand: AsDerefExpand {
     fn __expand_as_deref_mut_method(&mut self, scope: &Scope) -> &mut Self::Target;
 }
 
+impl<T> AsDerefExpand for &T {
+    type Target = T;
+    fn __expand_as_deref_method(&self, _: &Scope) -> &T {
+        self
+    }
+}
+
 impl<T> AsDerefExpand for &mut T {
     type Target = T;
     fn __expand_as_deref_method(&self, _: &Scope) -> &T {
+        self
+    }
+}
+
+impl<T> AsDerefMutExpand for &mut T {
+    fn __expand_as_deref_mut_method(&mut self, _: &Scope) -> &mut T {
         self
     }
 }
@@ -655,6 +668,14 @@ impl<T: ?Sized> AsRefExpand for NativeExpand<T> {
 impl<T: CubePrimitive> AsMutExpand for NativeExpand<T> {
     fn __expand_ref_mut_method(&mut self, _scope: &Scope) -> &mut Self {
         self
+    }
+}
+
+// Every argument is passed through `Into`, which Rust's reborrow does not reach. The derive emits
+// the same impl for every expand type it generates.
+impl<'a, T: ?Sized> From<&'a mut NativeExpand<T>> for &'a NativeExpand<T> {
+    fn from(value: &'a mut NativeExpand<T>) -> Self {
+        value
     }
 }
 

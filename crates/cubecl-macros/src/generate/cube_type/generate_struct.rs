@@ -2,6 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Ident, Type, Visibility, WhereClause};
 
+use super::generate::reference_impls;
 use crate::{
     generate::bounded_where_clause,
     parse::cube_type::{CubeTypeStruct, TypeField},
@@ -278,6 +279,10 @@ impl CubeTypeStruct {
         let scope = prelude_type("Scope");
 
         let name_expand = &self.name_expand;
+        let reference_impls = reference_impls(
+            name_expand.as_ref().expect("should be set when parsed"),
+            &self.generics,
+        );
         let (generics, generic_names, where_clause) = self.generics.split_for_impl();
         let body = self
             .fields
@@ -319,6 +324,7 @@ impl CubeTypeStruct {
                     self
                 }
             }
+            #reference_impls
         }
     }
 

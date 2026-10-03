@@ -1,5 +1,6 @@
 use core::iter;
 
+use super::generate::reference_impls;
 use crate::{
     generate::bounded_where_clause,
     parse::{
@@ -147,6 +148,7 @@ impl CubeTypeEnum {
 
         let name = &self.ident;
         let name_expand = &self.name_expand;
+        let reference_impls = reference_impls(name_expand, &self.generics);
         let (generics, generic_names, where_clause) = self.generics.split_for_impl();
 
         let body_init = self.match_impl(
@@ -217,6 +219,8 @@ impl CubeTypeEnum {
                     self
                 }
             }
+
+            #reference_impls
 
             #constructors
         }

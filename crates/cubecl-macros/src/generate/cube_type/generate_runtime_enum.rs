@@ -4,6 +4,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::Ident;
 
+use super::generate::reference_impls;
 use crate::{
     parse::cube_type::{CubeTypeEnum, CubeTypeVariant, VariantKind},
     paths::{frontend_type, prelude_type},
@@ -102,6 +103,7 @@ impl CubeTypeEnum {
 
         let name = &self.ident;
         let name_expand = &self.name_expand;
+        let reference_impls = reference_impls(name_expand, &self.generics);
         let (generics, generic_names, where_clause) = self.generics.split_for_impl();
 
         let constructors = if self.with_constructors {
@@ -166,6 +168,8 @@ impl CubeTypeEnum {
                     }
                 }
             }
+
+            #reference_impls
 
             #constructors
         }

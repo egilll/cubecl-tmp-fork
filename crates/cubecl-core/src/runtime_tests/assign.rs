@@ -69,6 +69,34 @@ fn assign_mut_expression(output: &mut [u32]) {
     }
 }
 
+#[derive(CubeType, Clone, Copy)]
+pub struct Pair<F: Float> {
+    first: F,
+    second: F,
+}
+
+#[cube]
+fn product<F: Float>(pair: &Pair<F>) -> F {
+    pair.first * pair.second
+}
+
+// `*pair` copies the struct, so writing the copy leaves the original as it was, and `&mut pair`
+// passes where `&Pair` is expected.
+#[cube(launch)]
+pub fn kernel_assign_struct_copy<F: Float>(output: &mut [F]) {
+    if UNIT_POS == 0 {
+        let mut pair = Pair::<F> {
+            first: F::new(2.0f32),
+            second: F::new(3.0f32),
+        };
+        let original = &mut pair;
+        let mut copy = *original;
+        copy.first = F::new(10.0f32);
+        output[0] = product(original);
+        output[1] = product(&copy);
+    }
+}
+
 pub fn test_kernel_assign_scalar<R: Runtime, F: Float + CubeElement>(client: Client) {
     let handle = client.create_from_slice(F::as_bytes(&[F::new(0.0), F::new(1.0)]));
 
@@ -171,6 +199,22 @@ pub fn test_assign_mut_expr<R: Runtime>(client: Client) {
     client.read_one(output).unwrap();
 }
 
+pub fn test_kernel_assign_struct_copy<R: Runtime, F: Float + CubeElement>(client: Client) {
+    let handle = client.create_from_slice(F::as_bytes(&[F::new(0.0), F::new(0.0)]));
+
+    kernel_assign_struct_copy::launch::<F>(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new(&client, 1),
+        unsafe { BufferArg::from_raw_parts(handle.clone(), 2) },
+    );
+
+    let actual = client.read_one(handle).unwrap();
+    let actual = F::from_bytes(&actual);
+
+    assert_eq!(actual, &[F::new(6.0), F::new(30.0)]);
+}
+
 #[allow(missing_docs)]
 #[macro_export]
 macro_rules! testgen_assign {
@@ -183,6 +227,15 @@ macro_rules! testgen_assign {
             cubecl_core::runtime_tests::assign::test_kernel_assign_scalar::<TestRuntime, FloatType>(
                 client,
             );
+        }
+
+        #[$crate::runtime_tests::test_log::test]
+        fn test_assign_struct_copy() {
+            let client = TestRuntime::client(&Default::default());
+            cubecl_core::runtime_tests::assign::test_kernel_assign_struct_copy::<
+                TestRuntime,
+                FloatType,
+            >(client);
         }
 
         #[$crate::runtime_tests::test_log::test]
