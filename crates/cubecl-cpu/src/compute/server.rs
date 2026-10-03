@@ -162,13 +162,14 @@ impl CpuServer {
         if self.compilation_cache.contains_key(&kernel_id) {
             return Ok(());
         }
-        let definition = cubecl_core::define_kernel(kernel)?;
+        let (definition, define_micros) = cubecl_core::define_kernel_timed(kernel)?;
         let options = PlironOptions {
             cpu_buffer_alignment: Some(alignment),
             ..self.compilation_options.clone()
         };
-        let compiled =
+        let mut compiled =
             CompiledKernel::compile(kernel, definition, &mut CpuCompiler::default(), &options)?;
+        compiled.stats.define_micros = Some(define_micros);
         // The executable artifact here is the JIT engine the compiler built,
         // not the text. A precompiled kernel brings text and no engine.
         if compiled.repr.is_none() {
@@ -180,6 +181,7 @@ impl CpuServer {
                 backtrace: BackTrace::capture(),
             });
         }
+        compiled.log(&self.utilities.logger);
         self.compilation_cache
             .insert(kernel_id, CpuKernel::new(compiled));
         Ok(())

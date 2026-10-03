@@ -255,11 +255,12 @@ impl<C: WgpuCompiler> WgpuServer<C> {
         validate_cube_dim(&self.utilities.properties, &kernel_id)?;
         validate_units(&self.utilities.properties, &kernel_id)?;
 
-        let definition = cubecl_core::define_kernel(&*kernel)?;
+        let (definition, define_micros) = cubecl_core::define_kernel_timed(&*kernel)?;
         recording.defined(&definition);
 
         let mut compiler = C::init(self.backend, &self.compilation_options);
         let mut compiled = compiler.compile_kernel(self, kernel, definition)?;
+        compiled.stats.define_micros = Some(define_micros);
 
         if self.scheduler.logger.compilation_source_activated() {
             compiled.debug_info = Some(DebugInformation::new(
@@ -267,7 +268,7 @@ impl<C: WgpuCompiler> WgpuServer<C> {
                 kernel_id.clone(),
             ));
         }
-        self.scheduler.logger.log_compilation(&compiled);
+        compiled.log(&self.scheduler.logger);
 
         compiler.validate_ir(&compiled.repr, &self.utilities.properties)?;
         // The compiled kernel's per-buffer answer, before the repr is

@@ -206,14 +206,15 @@ impl CudaContext {
         validate_cube_dim(&self.properties, kernel_id)?;
         validate_units(&self.properties, kernel_id)?;
 
-        let definition = cubecl_core::define_kernel(&*kernel)?;
+        let (definition, define_micros) = cubecl_core::define_kernel_timed(&*kernel)?;
         recording.defined(&definition);
-        let jitc_kernel = CompiledKernel::compile(
+        let mut jitc_kernel = CompiledKernel::compile(
             &*kernel,
             definition,
             &mut CudaCompiler::default(),
             &self.compilation_options,
         )?;
+        jitc_kernel.stats.define_micros = Some(define_micros);
 
         self.validate_shared(&jitc_kernel.repr)?;
         recording.source(&jitc_kernel.source);
@@ -277,7 +278,7 @@ impl CudaContext {
         if logger.compilation_source_activated() {
             jitc_kernel.debug_info = Some(DebugInformation::new("ll", kernel_id.clone()));
         }
-        logger.log_compilation(&jitc_kernel);
+        jitc_kernel.log(&logger);
 
         let ptx = module.ptx.clone();
         let shared_mem_bytes = module.shared_memory_size;
@@ -354,7 +355,7 @@ impl CudaContext {
             None
         };
 
-        logger.log_compilation(&jitc_kernel);
+        jitc_kernel.log(&logger);
 
         let ptx = self.compile_to_ptx(&jitc_kernel.source)?;
 

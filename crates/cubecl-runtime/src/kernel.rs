@@ -113,6 +113,57 @@ pub trait CubeKernel: KernelMetadata {
     }
 }
 
+/// [`define_kernel`], and how long the expansion took in microseconds, for
+/// [`CompilationStats::define_micros`].
+pub fn define_kernel_timed<K: CubeKernel + ?Sized>(
+    kernel: &K,
+) -> Result<(KernelDefinition, u64), CompilationError> {
+    let start = cubecl_environment::time::Instant::now();
+    let definition = define_kernel(kernel)?;
+    Ok((definition, start.elapsed().as_micros() as u64))
+}
+
+/// Where the time of one kernel's compilation went, in microseconds, for the
+/// compilation log and [`Activity`](crate::logging::Activity). A stage a
+/// backend does not measure, or does not have, is `None`.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct CompilationStats {
+    /// Running the kernel's Rust expansion: tracing `#[cube]` code into IR.
+    pub define_micros: Option<u64>,
+    /// `CubeCL`'s compiler: passes and emission of the target source.
+    pub compile_micros: Option<u64>,
+    /// The driver or toolchain compiling that source, where measured.
+    pub driver_micros: Option<u64>,
+}
+
+impl CompilationStats {
+    /// The time spent in `CubeCL` itself, before the driver.
+    pub fn cubecl_micros(&self) -> u64 {
+        self.define_micros.unwrap_or(0) + self.compile_micros.unwrap_or(0)
+    }
+}
+
+impl core::fmt::Display for CompilationStats {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let stages = [
+            ("define", self.define_micros),
+            ("compile", self.compile_micros),
+            ("driver", self.driver_micros),
+        ];
+        let mut first = true;
+        for (name, micros) in stages {
+            if let Some(micros) = micros {
+                if !first {
+                    f.write_str(", ")?;
+                }
+                first = false;
+                write!(f, "{name} {:.1} ms", micros as f64 / 1000.0)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 /// `kernel`'s [definition](CubeKernel::define), or the panic its expansion raised, as a
 /// [`CompilationError`].
 ///

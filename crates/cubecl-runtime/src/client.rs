@@ -294,6 +294,12 @@ impl Client {
     }
 
     fn do_read(&self, descriptors: Vec<CopyDescriptor>) -> DynFut<Result<Vec<Bytes>, ServerError>> {
+        self.utilities.logger.activity().read(
+            descriptors
+                .iter()
+                .map(|it| (it.shape.iter().product::<usize>() * it.elem_size) as u64)
+                .sum(),
+        );
         if let Some(err) = descriptors
             .iter()
             .find_map(|descriptor| self.local(&descriptor.handle).err())
@@ -1109,6 +1115,7 @@ impl Client {
         bindings: KernelArguments,
         stream_id: StreamId,
     ) {
+        self.utilities.logger.activity().launch();
         // No work, and some drivers reject a zero grid dim.
         if let CubeCount::Static(x, y, z) = &count
             && (*x == 0 || *y == 0 || *z == 0)
@@ -1420,6 +1427,7 @@ impl Client {
         &self,
         handles: impl IntoIterator<Item = &'a Handle>,
     ) -> DynFut<Result<(), ServerError>> {
+        self.utilities.logger.activity().sync();
         let stream_id = self.stream_id();
         let bindings = match self.bindings(handles) {
             Ok(bindings) => bindings,
@@ -1451,6 +1459,13 @@ impl Client {
                 Ok(binding)
             })
             .collect()
+    }
+
+    /// What this client's device has been asked to do so far: launches,
+    /// syncs, reads and compilations, counted across every client of the
+    /// device. Subtract two readings to count a region of an application.
+    pub fn activity(&self) -> crate::logging::Activity {
+        self.utilities.logger.activity().reading()
     }
 
     /// Get the features supported by the compute server.

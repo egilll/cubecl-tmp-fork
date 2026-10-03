@@ -10,7 +10,7 @@ use cubecl_common::profile::ProfileDuration;
 use cubecl_environment::future::channel::{Receiver, Sender};
 use cubecl_environment::future::spawn_detached;
 
-use super::{ProfileLevel, Profiled};
+use super::{ActivityCounters, ProfileLevel, Profiled};
 
 enum LogMessage {
     Execution(String),
@@ -30,6 +30,7 @@ pub struct ServerLogger {
     log_streaming: StreamingLogLevel,
     log_channel: Option<Sender<LogMessage>>,
     log_memory: MemoryLogLevel,
+    activity: ActivityCounters,
 }
 
 impl Default for ServerLogger {
@@ -56,6 +57,7 @@ impl Default for ServerLogger {
                 log_streaming: StreamingLogLevel::Disabled,
                 log_channel: None,
                 log_memory: MemoryLogLevel::Disabled,
+                activity: ActivityCounters::default(),
             };
         }
         let profile_level = match logger.config.profiling.logger.level {
@@ -96,11 +98,18 @@ impl Default for ServerLogger {
             log_streaming,
             log_memory,
             log_channel: Some(send),
+            activity: ActivityCounters::default(),
         }
     }
 }
 
 impl ServerLogger {
+    /// What the device has been asked to do, counted whether or not anything
+    /// is logged.
+    pub fn activity(&self) -> &ActivityCounters {
+        &self.activity
+    }
+
     /// Returns the profile level, none if profiling is deactivated.
     pub fn profile_level(&self) -> Option<ProfileLevel> {
         self.profile_level

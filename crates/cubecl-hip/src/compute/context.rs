@@ -187,14 +187,15 @@ impl HipContext {
 
         // CubeCL compilation
         // jitc = just-in-time compiled
-        let definition = cubecl_core::define_kernel(&*cube_kernel)?;
+        let (definition, define_micros) = cubecl_core::define_kernel_timed(&*cube_kernel)?;
         recording.defined(&definition);
-        let jitc_kernel = CompiledKernel::compile(
+        let mut jitc_kernel = CompiledKernel::compile(
             &*cube_kernel,
             definition,
             &mut HipCompiler::default(),
             &self.compilation_options,
         )?;
+        jitc_kernel.stats.define_micros = Some(define_micros);
 
         self.validate_shared(&jitc_kernel.repr)?;
         recording.source(&jitc_kernel.source);
@@ -256,7 +257,7 @@ impl HipContext {
         if logger.compilation_source_activated() {
             jitc_kernel.debug_info = Some(DebugInformation::new("ll", kernel_id.clone()));
         }
-        logger.log_compilation(&jitc_kernel);
+        jitc_kernel.log(&logger);
 
         let code = to_signed(&module.code_object);
         let shared_mem_bytes = module.shared_memory_size;
@@ -309,7 +310,7 @@ impl HipContext {
                 jitc_kernel.source = formatted;
             }
         }
-        logger.log_compilation(&jitc_kernel);
+        jitc_kernel.log(&logger);
 
         // `try_load_cached` hands back a key exactly when there is a cache to put it in, and
         // both stores are opened together in `HipContext::new`.

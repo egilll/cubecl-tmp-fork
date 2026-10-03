@@ -16,6 +16,7 @@ use crate::{
     compiler::{CompilationError, Compiler},
     config::{CubeClRuntimeConfig, RuntimeConfig, compilation::CompilationLogLevel},
     id::KernelId,
+    logging::ServerLogger,
     server::CubeDim,
 };
 
@@ -65,6 +66,9 @@ pub struct CompiledKernel<C: Compiler> {
     pub io: Option<alloc::vec::Vec<BufferIOAttr>>,
     /// Extra debugging information about the compiled kernel.
     pub debug_info: Option<DebugInformation>,
+    /// Where the compilation's time went. `CompiledKernel::compile` fills in
+    /// its own stage; the backend adds the ones around it.
+    pub stats: CompilationStats,
 }
 
 /// Extra debugging information about the compiled kernel.
@@ -112,12 +116,15 @@ impl<C: Compiler> CompiledKernel<C> {
                 repr: None,
                 cube_dim,
                 debug_info: None,
+                stats: CompilationStats::default(),
             });
         }
 
+        let start = cubecl_environment::time::Instant::now();
         let lower_level_ir = compiler
             .compile(definition, compilation_options)
             .map_err(|err| err.in_kernel(kernel.name()))?;
+        let compile_micros = start.elapsed().as_micros() as u64;
 
         Ok(CompiledKernel {
             entrypoint_name,
@@ -127,7 +134,19 @@ impl<C: Compiler> CompiledKernel<C> {
             repr: Some(lower_level_ir),
             cube_dim,
             debug_info: None,
+            stats: CompilationStats {
+                compile_micros: Some(compile_micros),
+                ..Default::default()
+            },
         })
+    }
+
+    /// Count this compilation in the device's [activity](crate::logging::Activity)
+    /// and log it, when the compilation logger is on. Call once per fresh
+    /// compilation, after the stages the backend measures are filled in.
+    pub fn log(&self, logger: &ServerLogger) {
+        logger.activity().compilation(self.stats.cubecl_micros());
+        logger.log_compilation(self);
     }
 }
 
@@ -168,8 +187,18 @@ impl<C: Compiler> CompiledKernel<C> {
                 f.write_fmt(format_args!(" {}", name.split('<').next().unwrap_or("")))?;
             }
         }
+        self.format_stats(f)
+    }
 
-        Ok(())
+    /// Source size and stage times, for comparing a kernel across versions
+    /// without reading its source.
+    fn format_stats(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let lines = self.source.lines().count();
+        f.write_fmt(format_args!(" ({} bytes, {lines} lines", self.source.len()))?;
+        if self.stats != CompilationStats::default() {
+            f.write_fmt(format_args!("; {}", self.stats))?;
+        }
+        f.write_str(")")
     }
 
     fn format_full(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -187,6 +216,9 @@ impl<C: Compiler> CompiledKernel<C> {
         if let Some(info) = &self.debug_info {
             f.write_fmt(format_args!("\nid: {:#?}", info.id))?;
         }
+
+        f.write_str("\nstats:")?;
+        self.format_stats(f)?;
 
         f.write_fmt(format_args!(
             "

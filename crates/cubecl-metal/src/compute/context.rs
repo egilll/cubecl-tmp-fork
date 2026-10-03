@@ -126,7 +126,7 @@ impl MetalContext {
 
         log::trace!("Compiling kernel to MSL");
 
-        let definition = cubecl_core::define_kernel(&*kernel)?;
+        let (definition, define_micros) = cubecl_core::define_kernel_timed(&*kernel)?;
         recording.defined(&definition);
         let mut kernel_compiled = cubecl_server::kernel::CompiledKernel::compile(
             &*kernel,
@@ -134,12 +134,11 @@ impl MetalContext {
             &mut MetalCompiler::default(),
             &self.compilation_options,
         )?;
+        kernel_compiled.stats.define_micros = Some(define_micros);
 
         if logger.compilation_source_activated() {
             kernel_compiled.debug_info = Some(DebugInformation::new("msl", kernel_id.clone()));
         }
-
-        logger.log_compilation(&kernel_compiled);
 
         let entrypoint_name = kernel_compiled.entrypoint_name.clone();
         let cube_dim = kernel_compiled.cube_dim;
@@ -163,7 +162,13 @@ impl MetalContext {
             ));
         }
 
-        let mut compiled = self.create_pipeline_from_source(&source, &entrypoint_name, cube_dim)?;
+        let driver_start = std::time::Instant::now();
+        let compiled = self.create_pipeline_from_source(&source, &entrypoint_name, cube_dim);
+        kernel_compiled.stats.driver_micros = Some(driver_start.elapsed().as_micros() as u64);
+        // Logged after the driver, so the line carries its time, and also when
+        // the driver refuses the source, which is when the source matters most.
+        kernel_compiled.log(&logger);
+        let mut compiled = compiled?;
         compiled.shared_memory_bytes = shared_memory_bytes;
         compiled.io = io.clone().map(std::sync::Arc::from);
         recording.source(&source);
