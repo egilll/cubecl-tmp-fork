@@ -60,3 +60,50 @@ fn oversized_shared_memory_is_a_resource_limit_error() {
         other => panic!("expected a shared memory resource limit error, got: {other}"),
     }
 }
+
+/// Reads the first element of every input into the output, so every input is a
+/// binding of its own.
+#[cube(launch_unchecked)]
+fn gather_first(inputs: &Sequence<Box<[u32]>>, output: &mut [u32]) {
+    let mut total = 0u32;
+    #[unroll]
+    for i in 0..inputs.len() {
+        total += inputs[i][0];
+    }
+    output[0] = total;
+}
+
+fn launch_gather_first(client: &Client, inputs: usize) -> Result<u32, ServerError> {
+    let inputs: Vec<_> = (0..inputs)
+        .map(|_| client.create_from_slice(u32::as_bytes(&[1])))
+        .collect();
+    let output = client.create_from_slice(u32::as_bytes(&[0]));
+    unsafe {
+        gather_first::launch_unchecked(
+            client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            inputs
+                .iter()
+                .map(|input| BufferArg::from_raw_parts(input.clone(), 1))
+                .collect(),
+            BufferArg::from_raw_parts(output.clone(), 1),
+        );
+    }
+    client
+        .read_one(output)
+        .map(|bytes| u32::from_bytes(&bytes[..])[0])
+}
+
+/// With the output, `max_bindings` buffers runs and one more is refused.
+#[test]
+fn max_bindings_is_the_limit() {
+    let client = R::client(&Default::default());
+    let max = client.properties().hardware.max_bindings as usize;
+
+    let total = launch_gather_first(&client, max - 1).expect("the kernel is within the limit");
+    assert_eq!(total, max as u32 - 1);
+
+    let err = launch_gather_first(&client, max).expect_err("the kernel is over the limit");
+    assert!(err.is_refusal(), "expected a refusal, got: {err}");
+}

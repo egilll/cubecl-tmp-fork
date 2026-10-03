@@ -663,11 +663,12 @@ fn try_create_server<C: WgpuCompiler>(
         plane_size_max: 32,
         #[cfg(not(apple_silicon))]
         plane_size_max: adapter_info.subgroup_max_size,
-        // wgpu uses an additional buffer for variable-length buffers,
-        // so we have to use one buffer less on our side to make room for that wgpu internal buffer.
-        // See: https://github.com/gfx-rs/wgpu/blob/a9638c8e3ac09ce4f27ac171f8175671e30365fd/wgpu-hal/src/metal/device.rs#L799
+        // Besides its buffers, a kernel binds one info buffer for its scalars and metadata, a
+        // uniform or a storage buffer depending on the compiler. Both kinds count towards the
+        // combined limit, which on Metal is as low as the storage one.
         max_bindings: limits
             .max_storage_buffers_per_shader_stage
+            .min(limits.max_buffers_and_acceleration_structures_per_shader_stage)
             .saturating_sub(1),
         max_shared_memory_size: limits.max_compute_workgroup_storage_size as usize,
         max_cube_count: (max_count, max_count, max_count),

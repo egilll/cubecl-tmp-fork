@@ -27,12 +27,44 @@ fn gather_first(inputs: &Sequence<Box<[u32]>>, output: &mut [u32]) {
     output[0] = total;
 }
 
+/// `max_bindings` is what a kernel can take, so a kernel at the limit runs.
+#[test]
+fn a_kernel_with_max_bindings_runs() {
+    let client = <WgpuRuntime>::client(&Default::default());
+    // With the output, `max_bindings` buffers.
+    let at_limit = client.properties().hardware.max_bindings as usize - 1;
+
+    let inputs: Vec<_> = (0..at_limit)
+        .map(|_| client.create_from_slice(u32::as_bytes(&[1])))
+        .collect();
+    let output = client.create_from_slice(u32::as_bytes(&[0]));
+
+    unsafe {
+        gather_first::launch_unchecked(
+            &client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            inputs
+                .iter()
+                .map(|input| BufferArg::from_raw_parts(input.clone(), 1))
+                .collect(),
+            BufferArg::from_raw_parts(output.clone(), 1),
+        );
+    }
+
+    let output = client
+        .read_one(output)
+        .expect("the kernel is within the limit");
+    assert_eq!(u32::from_bytes(&output), &[at_limit as u32]);
+}
+
 /// More storage buffers than the device binds, which no check before wgpu
 /// catches: the kernel compiles, and the device refuses its module.
 #[test]
 fn a_kernel_the_device_refuses_fails_the_read() {
     let client = <WgpuRuntime>::client(&Default::default());
-    let over_limit = client.properties().hardware.max_bindings as usize + 8;
+    // With the output, one buffer more than `max_bindings`.
+    let over_limit = client.properties().hardware.max_bindings as usize;
 
     let inputs: Vec<_> = (0..over_limit)
         .map(|_| client.create_from_slice(u32::as_bytes(&[1])))

@@ -37,7 +37,8 @@ pub struct HardwareProperties {
     pub plane_size_min: u32,
     /// The maximum size of a plane on this device
     pub plane_size_max: u32,
-    /// minimum number of bindings for a kernel that can be used at once.
+    /// Maximum number of buffers a kernel can take, not counting the one the runtime binds for
+    /// its scalars and metadata.
     pub max_bindings: u32,
     /// Maximum amount of shared memory, in bytes
     pub max_shared_memory_size: usize,
