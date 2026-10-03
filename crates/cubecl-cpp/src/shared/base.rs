@@ -191,6 +191,17 @@ where
         ctx.set_aux_ty(CudaCmmaCompiler::Cpp);
         ctx.set_aux_ty(HipCmmaCompiler::RocWmma);
 
+        #[cfg(feature = "pliron-dump")]
+        let dump_dir = kernel_dir_name(&kernel.settings.kernel_name);
+
+        // Written before verifying, so a module that fails verification can be read.
+        #[cfg(feature = "pliron-dump")]
+        if let Some(dir) = &dump_dir {
+            use pliron::printable::Printable;
+            let module = std::format!("{}", module_op.disp(&ctx));
+            std::fs::write(dir.join("initial.plir"), module).unwrap();
+        }
+
         verify_operation(module.get_operation(), &ctx)?;
 
         // This is an op so it can be inserted after the includes, which is important for scalars
@@ -217,9 +228,6 @@ where
                 .get_operation()
                 .insert_before(&ctx, entry_func.get_operation());
         }
-
-        #[cfg(feature = "pliron-dump")]
-        let dump_dir = kernel_dir_name(&kernel.settings.kernel_name);
 
         let config = PMConfig {
             #[cfg(feature = "pliron-dump")]
