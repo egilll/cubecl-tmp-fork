@@ -28,6 +28,42 @@ pub enum CubeImplItem {
     Other,
 }
 
+/// The impl's arguments, with what a method's own `#[cube(...)]` adds, which
+/// for now is only `outline`. The attribute is removed from the method.
+pub(crate) fn take_method_args(
+    attrs: &mut Vec<syn::Attribute>,
+    args: &KernelArgs,
+) -> syn::Result<KernelArgs> {
+    let mut args = args.clone();
+    let mut error = None;
+    attrs.retain(|attr| {
+        if !attr.path().is_ident("cube") {
+            return true;
+        }
+        let parsed = attr
+            .meta
+            .require_list()
+            .and_then(|list| crate::parse::kernel::from_tokens::<KernelArgs>(list.tokens.clone()));
+        match parsed {
+            Ok(method) if method.outline.is_present() => {
+                args.outline = method.outline;
+            }
+            Ok(_) => {
+                error = Some(syn::Error::new_spanned(
+                    attr,
+                    "only `#[cube(outline)]` can be set on a method",
+                ));
+            }
+            Err(err) => error = Some(err),
+        }
+        false
+    });
+    match error {
+        Some(err) => Err(err),
+        None => Ok(args),
+    }
+}
+
 impl CubeImplItem {
     pub fn from_impl_item(
         struct_ty_name: &Type,
@@ -35,7 +71,9 @@ impl CubeImplItem {
         args: &KernelArgs,
     ) -> syn::Result<Vec<Self>> {
         let res = match item {
-            ImplItem::Fn(func) => {
+            ImplItem::Fn(mut func) => {
+                let method_args = take_method_args(&mut func.attrs, args)?;
+                let args = &method_args;
                 let name = func.sig.ident.clone();
                 let full_name = quote!(#struct_ty_name::#name).to_string();
 
@@ -234,6 +272,11 @@ impl CubeImpl {
             .iter_mut()
             .map(|item| {
                 let expands = CubeImplItem::from_impl_item(&struct_name, item.clone(), args)?;
+                // A method's own `#[cube(...)]` is read above, and the plain
+                // method emitted next to the expansion must not expand again.
+                if let syn::ImplItem::Fn(func) = item {
+                    func.attrs.retain(|attr| !attr.path().is_ident("cube"));
+                }
                 let is_intrinsic = expands.iter().any(|it| it.is_intrinsic());
                 if is_intrinsic {
                     *item = parse_quote! {

@@ -130,7 +130,9 @@ impl CubeTraitImplItem {
         args: &KernelArgs,
     ) -> syn::Result<Self> {
         let res = match item {
-            ImplItem::Fn(func) => {
+            ImplItem::Fn(mut func) => {
+                let method_args = super::cube_impl::take_method_args(&mut func.attrs, args)?;
+                let args = &method_args;
                 let is_method = has_receiver(&func.sig);
                 let name = func.sig.ident.clone();
                 let full_name = quote!(#struct_ty::#name).to_string();
@@ -238,6 +240,11 @@ impl CubeTraitImpl {
             .map(|item| {
                 let impl_item =
                     CubeTraitImplItem::from_impl_item(&item_impl.self_ty, item.clone(), args)?;
+                // A method's own `#[cube(...)]` is read above, and the plain
+                // method emitted next to the expansion must not expand again.
+                if let ImplItem::Fn(func) = item {
+                    func.attrs.retain(|attr| !attr.path().is_ident("cube"));
+                }
                 if impl_item.is_intrinsic() {
                     *item = parse_quote! {
                         #[allow(unused_variables)]

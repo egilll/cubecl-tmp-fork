@@ -4,7 +4,7 @@ use darling::usage::{CollectLifetimes as _, CollectTypeParams as _, GenericsExt 
 use inflections::case::to_snake_case;
 use proc_macro2::TokenStream;
 use quote::{ToTokens, format_ident, quote, quote_spanned};
-use syn::{Ident, TypeParamBound, parse_quote};
+use syn::{Ident, Type, TypeParamBound, parse_quote};
 
 use crate::{
     parse::{
@@ -84,7 +84,10 @@ impl KernelFn {
                 quote![#fast_math(scope, #value, |scope| {#body})]
             })
             .unwrap_or_else(|| quote![#body]);
-        let body = match self.args.outline.is_present() {
+        // Only the item holding the function's own body is outlined: a
+        // method's other items forward to it.
+        let outlined = self.args.outline.is_present() && matches!(self.body, KernelBody::Block(_));
+        let body = match outlined {
             true => self.outline_body(body),
             false => body,
         };
@@ -116,13 +119,6 @@ impl KernelFn {
     /// once per specialization, into a device function its calls call. See
     /// `cubecl_core::frontend::outline`.
     fn outline_body(&self, body: TokenStream) -> TokenStream {
-        if self.sig.receiver_arg.is_some() {
-            return syn::Error::new(
-                self.span,
-                "`#[cube(outline)]` is only supported on free functions for now",
-            )
-            .into_compile_error();
-        }
         if self.args.is_launch() {
             return syn::Error::new(
                 self.span,
@@ -130,24 +126,66 @@ impl KernelFn {
             )
             .into_compile_error();
         }
+        if let Some(param) = self
+            .sig
+            .runtime_params()
+            .find(|param| matches!(&param.ty, Type::Reference(r) if r.mutability.is_some()))
+        {
+            return syn::Error::new(
+                param.name.span(),
+                "`#[cube(outline)]` functions can't take `&mut` arguments yet",
+            )
+            .into_compile_error();
+        }
 
         let outline = frontend_type("outline");
         let scope_ty = prelude_type("Scope");
         let name = self.full_name.as_str();
+        let self_ident = format_ident!("__outline_self");
+        let has_self = self.sig.runtime_params().any(|param| param.name == "self");
+        let in_impl = has_self || self.full_name.contains("::");
+
         let runtime: Vec<_> = self.sig.runtime_params().map(|it| &it.name).collect();
+        let bindings: Vec<_> = self
+            .sig
+            .runtime_params()
+            .map(|param| match param.name == "self" {
+                true => self_ident.clone(),
+                false => param.name.clone(),
+            })
+            .collect();
+        // A reference argument arrives as the value it refers to, which the
+        // body borrows again.
+        let reborrows: Vec<_> = self
+            .sig
+            .runtime_params()
+            .zip(bindings.iter())
+            .filter(|(param, _)| matches!(param.ty, Type::Reference(_)))
+            .map(|(_, binding)| quote![let #binding = &#binding;])
+            .collect();
         let comptime: Vec<_> = self.sig.comptime_params().map(|it| &it.name).collect();
-        let type_params: Vec<_> = self
+        let mut type_names: Vec<TokenStream> = self
             .sig
             .generics
             .type_params()
-            .map(|it| &it.ident)
+            .map(|it| {
+                let ident = &it.ident;
+                quote![::core::any::type_name::<#ident>()]
+            })
             .collect();
+        if in_impl {
+            type_names.push(quote![::core::any::type_name::<Self>()]);
+        }
         let const_params: Vec<_> = self
             .sig
             .generics
             .const_params()
             .map(|it| &it.ident)
             .collect();
+        let body = match has_self {
+            true => rename_self(body, &self_ident),
+            false => body,
+        };
 
         quote! {
             let __outline_comptime = {
@@ -159,16 +197,52 @@ impl KernelFn {
             #outline::outline_call(
                 scope,
                 ::core::concat!(::core::module_path!(), "::", #name),
-                &[#(::core::any::type_name::<#type_params>()),*],
+                &[#(#type_names),*],
                 __outline_comptime,
                 (#(#runtime,)*),
-                |scope: &#scope_ty, (#(#runtime,)*)| {
+                |scope: &#scope_ty, (#(#bindings,)*)| {
+                    #(#reborrows)*
                     #(let #comptime = ::core::clone::Clone::clone(&#comptime);)*
                     #body
                 },
             )
         }
     }
+}
+
+/// `tokens` with the `self` keyword replaced by `with`, except as the start
+/// of a path (`self::`): inside the closure an outlined method's body becomes,
+/// `self` can't name the receiver.
+fn rename_self(tokens: TokenStream, with: &Ident) -> TokenStream {
+    use proc_macro2::{Group, TokenTree};
+
+    let tokens: Vec<TokenTree> = tokens.into_iter().collect();
+    let mut out = Vec::with_capacity(tokens.len());
+    for (i, token) in tokens.iter().enumerate() {
+        match token {
+            TokenTree::Ident(ident) if ident == "self" => {
+                let is_path = matches!(
+                    tokens.get(i + 1),
+                    Some(TokenTree::Punct(p)) if p.as_char() == ':'
+                );
+                match is_path {
+                    true => out.push(token.clone()),
+                    false => {
+                        let mut renamed = with.clone();
+                        renamed.set_span(ident.span());
+                        out.push(TokenTree::Ident(renamed));
+                    }
+                }
+            }
+            TokenTree::Group(group) => {
+                let mut renamed = Group::new(group.delimiter(), rename_self(group.stream(), with));
+                renamed.set_span(group.span());
+                out.push(TokenTree::Group(renamed));
+            }
+            other => out.push(other.clone()),
+        }
+    }
+    out.into_iter().collect()
 }
 
 fn trait_imports() -> TokenStream {

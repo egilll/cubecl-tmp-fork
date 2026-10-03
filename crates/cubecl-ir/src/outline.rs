@@ -57,6 +57,9 @@ pub struct OutlineKey {
     pub args: Vec<OutlineArgKey>,
     /// Fast-math and other modes in effect at the call.
     pub modes: InstructionModes,
+    /// A hash of what the arguments carry besides their runtime values, such
+    /// as a struct's comptime fields.
+    pub arg_comptime: u64,
     /// A hash of the kernel's type and size registrations.
     pub registrations: u64,
 }

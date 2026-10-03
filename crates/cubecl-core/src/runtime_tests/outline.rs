@@ -1,3 +1,4 @@
+use crate::frontend::outline::Outlinable;
 use crate::prelude::*;
 use crate::{self as cubecl};
 use alloc::vec::Vec;
@@ -65,6 +66,131 @@ pub fn kernel_outlined_calls(input: &[f32], output: &mut [f32], steps: &mut [u32
         acc += blend(acc * 0.01, x, 1.0 - t);
         output[i] = acc;
         steps[i] = collatz_steps(i as u32 + 1, 200) + collatz_steps(i as u32 + 7, 200);
+    }
+}
+
+#[derive(CubeType, Clone, Copy)]
+struct Curve {
+    scale: f32,
+    shift: f32,
+    #[cube(comptime)]
+    steps: u32,
+}
+
+#[cube]
+impl Curve {
+    fn new(scale: f32, shift: f32, #[comptime] steps: u32) -> Curve {
+        Curve {
+            scale,
+            shift,
+            steps,
+        }
+    }
+
+    #[cube(outline)]
+    fn eval(&self, x: f32) -> f32 {
+        let mut y = x * self.scale + self.shift;
+        #[unroll]
+        for _ in 0..self.steps {
+            y = y * 0.5 + x * self.scale * 0.25 - self.shift * 0.125;
+        }
+        y
+    }
+}
+
+#[cube]
+trait Response: CubeType {
+    fn respond(&self, x: f32) -> f32;
+}
+
+#[cube]
+impl Response for Curve {
+    #[cube(outline)]
+    fn respond(&self, x: f32) -> f32 {
+        let a = self.eval(x);
+        let b = self.eval(x * 0.5);
+        (a - b) * self.scale + a * b * 0.0625 + self.shift
+    }
+}
+
+#[cube(outline)]
+fn sum_responses<R: Response + Outlinable>(response: &R, x: f32) -> f32 {
+    response.respond(x) + response.respond(x + 1.0) + response.respond(x * 2.0)
+}
+
+#[cube(launch)]
+pub fn kernel_outlined_methods(input: &[f32], output: &mut [f32]) {
+    let i = ABSOLUTE_POS;
+    if i < input.len() {
+        let x = input[i];
+        let a = Curve::new(x, 0.5, 3u32);
+        let b = Curve::new(0.25, x, 3u32);
+        let c = Curve::new(x * 0.5, x, 5u32);
+        output[i] = a.eval(x)
+            + b.eval(x)
+            + c.eval(x)
+            + sum_responses::<Curve>(&a, x)
+            + sum_responses::<Curve>(&c, x);
+    }
+}
+
+#[derive(Clone, Copy)]
+struct CurveRef {
+    scale: f32,
+    shift: f32,
+    steps: u32,
+}
+
+impl CurveRef {
+    fn eval(&self, x: f32) -> f32 {
+        let mut y = x * self.scale + self.shift;
+        for _ in 0..self.steps {
+            y = y * 0.5 + x * self.scale * 0.25 - self.shift * 0.125;
+        }
+        y
+    }
+
+    fn respond(&self, x: f32) -> f32 {
+        let a = self.eval(x);
+        let b = self.eval(x * 0.5);
+        (a - b) * self.scale + a * b * 0.0625 + self.shift
+    }
+
+    fn sum_responses(&self, x: f32) -> f32 {
+        self.respond(x) + self.respond(x + 1.0) + self.respond(x * 2.0)
+    }
+}
+
+pub fn test_outlined_methods<R: Runtime>(client: Client) {
+    let n = 64usize;
+    let input: Vec<f32> = (0..n).map(|i| (i as f32) * 0.02 - 0.5).collect();
+    let input_handle = client.create_from_slice(f32::as_bytes(&input));
+    let output_handle = client.empty(n * core::mem::size_of::<f32>());
+
+    kernel_outlined_methods::launch(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(n as u32),
+        unsafe { BufferArg::from_raw_parts(input_handle, n) },
+        unsafe { BufferArg::from_raw_parts(output_handle.clone(), n) },
+    );
+
+    let output = client.read_one_unchecked(output_handle);
+    let output = f32::from_bytes(&output);
+    for (i, &x) in input.iter().enumerate() {
+        let curve = |scale, shift, steps| CurveRef {
+            scale,
+            shift,
+            steps,
+        };
+        let (a, b, c) = (curve(x, 0.5, 3), curve(0.25, x, 3), curve(x * 0.5, x, 5));
+        let expected = a.eval(x) + b.eval(x) + c.eval(x) + a.sum_responses(x) + c.sum_responses(x);
+        let tolerance = 1e-3 * expected.abs().max(1.0);
+        assert!(
+            (output[i] - expected).abs() <= tolerance,
+            "output[{i}] = {}, expected {expected}",
+            output[i]
+        );
     }
 }
 
@@ -155,6 +281,12 @@ macro_rules! testgen_outline {
         fn test_outlined_calls() {
             let client = TestRuntime::client(&Default::default());
             cubecl_core::runtime_tests::outline::test_outlined_calls::<TestRuntime>(client);
+        }
+
+        #[$crate::runtime_tests::test_log::test]
+        fn test_outlined_methods() {
+            let client = TestRuntime::client(&Default::default());
+            cubecl_core::runtime_tests::outline::test_outlined_methods::<TestRuntime>(client);
         }
     };
 }

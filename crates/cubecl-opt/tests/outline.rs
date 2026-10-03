@@ -327,3 +327,95 @@ fn functions(traced: &Traced) -> Vec<FuncOp> {
         .filter_map(|op| Operation::get_op::<FuncOp>(op, &traced.ctx))
         .collect()
 }
+
+#[derive(CubeType, Clone, Copy)]
+struct Curve {
+    scale: f32,
+    shift: f32,
+    #[cube(comptime)]
+    power: u32,
+}
+
+#[cube]
+impl Curve {
+    fn new(scale: f32, shift: f32, #[comptime] power: u32) -> Curve {
+        Curve {
+            scale,
+            shift,
+            power,
+        }
+    }
+
+    #[cube(outline)]
+    fn eval(&self, x: f32) -> f32 {
+        let mut y = x * self.scale + self.shift;
+        #[unroll]
+        for _ in 0..self.power {
+            y = y * x + f32::exp(y * 0.01);
+        }
+        y
+    }
+}
+
+#[cube(outline)]
+fn through_reference(curve: &Curve, x: f32) -> f32 {
+    curve.eval(x) * 2.0 + curve.shift
+}
+
+#[cube]
+fn method_calls() -> f32 {
+    let x = f32::cast_from(UNIT_POS);
+    let a = Curve::new(x, x * 2.0, 3u32);
+    let b = Curve::new(x * 3.0, x, 3u32);
+    let c = Curve::new(x, x, 4u32);
+    // `a` and `b` share `eval` (same comptime power), `c` has its own.
+    a.eval(x) + b.eval(x + 1.0) + c.eval(x) + through_reference(&a, x) + through_reference(&b, x)
+}
+
+#[test]
+fn methods_and_struct_arguments_are_outlined() {
+    let traced = trace(|scope| {
+        method_calls::expand(scope);
+    });
+    pliron::operation::verify_operation(traced.module, &traced.ctx).expect("the module verifies");
+    // Three direct `eval` calls, two `through_reference` calls, and the
+    // `eval` call inside `through_reference`'s body.
+    assert_eq!(count::<CallOp>(&traced.ctx, traced.module), 6);
+    // The kernel, `eval` for power 3, `eval` for power 4, `through_reference`.
+    assert_eq!(count::<FuncOp>(&traced.ctx, traced.module), 4);
+}
+
+#[cube]
+trait Decay: CubeType {
+    fn decay(&self, x: f32) -> f32;
+}
+
+#[cube]
+impl Decay for Curve {
+    #[cube(outline)]
+    fn decay(&self, x: f32) -> f32 {
+        f32::powf(1.0 + x / (9.0 * self.scale), -1.0) * self.shift + f32::exp(-x * self.scale)
+    }
+}
+
+#[cube]
+fn decays<D: Decay>(law: &D, x: f32) -> f32 {
+    law.decay(x) + law.decay(x * 2.0) + law.decay(x * 3.0)
+}
+
+#[cube]
+fn trait_method_calls() -> f32 {
+    let x = f32::cast_from(UNIT_POS);
+    let curve = Curve::new(x, x * 2.0, 3u32);
+    decays::<Curve>(&curve, x)
+}
+
+#[test]
+fn trait_impl_methods_are_outlined() {
+    let traced = trace(|scope| {
+        trait_method_calls::expand(scope);
+    });
+    pliron::operation::verify_operation(traced.module, &traced.ctx).expect("the module verifies");
+    assert_eq!(count::<CallOp>(&traced.ctx, traced.module), 3);
+    assert_eq!(count::<FuncOp>(&traced.ctx, traced.module), 2);
+}
