@@ -55,6 +55,24 @@ pub fn closure_captures(ctx: &Context, func: &FuncOp) -> Vec<Value> {
     captures
 }
 
+/// Whether `value` is defined inside `func`: an argument of one of its blocks,
+/// or a result of one of its operations.
+pub fn defined_in(ctx: &Context, func: Ptr<Operation>, value: Value) -> bool {
+    match value.defining_entity() {
+        DefiningEntity::Op(op) => op_is_in_func(ctx, func, op),
+        DefiningEntity::Block(block) => {
+            let mut parent = block.deref(ctx).get_parent_op(ctx);
+            while let Some(op) = parent {
+                if op == func {
+                    return true;
+                }
+                parent = op.deref(ctx).get_parent_op(ctx);
+            }
+            false
+        }
+    }
+}
+
 fn op_is_in_func(ctx: &Context, func: Ptr<Operation>, mut op: Ptr<Operation>) -> bool {
     while let Some(parent) = op.deref(ctx).get_parent_op(ctx) {
         if parent == func {

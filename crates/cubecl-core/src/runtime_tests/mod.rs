@@ -26,6 +26,7 @@ pub mod metadata;
 pub mod minifloat;
 pub mod numeric;
 pub mod out_of_memory;
+pub mod outline;
 pub mod plane;
 pub mod profiling;
 pub mod properties;
@@ -171,6 +172,7 @@ macro_rules! testgen_untyped {
         cubecl_core::testgen_all_reduce!();
 
         cubecl_core::testgen_short_circuit!();
+        cubecl_core::testgen_outline!();
         cubecl_core::testgen_stream_errors!();
         cubecl_core::testgen_allocation_mode!();
         cubecl_core::testgen_out_of_memory!();

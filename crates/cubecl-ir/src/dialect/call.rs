@@ -93,8 +93,39 @@ impl control_flow::CallOpInterface for CallOp {
 
 #[op_interface_impl]
 impl MemoryEffectsOp for CallOp {
-    fn memory_effects(&self, _ctx: &Context) -> Vec<MemoryEffect> {
-        vec![MemoryEffect::Opaque]
+    /// The callee's effects, as the caller sees them: an effect on memory
+    /// the callee allocates itself is invisible outside it and dropped, one
+    /// on a parameter applies to the argument passed for it, and one on
+    /// memory at large is kept. Opaque when the callee can't be found.
+    fn memory_effects(&self, ctx: &Context) -> Vec<MemoryEffect> {
+        let Some(callee) = resolve_callee(ctx, self) else {
+            return vec![MemoryEffect::Opaque];
+        };
+        let func_op = callee.get_operation();
+        let params: Vec<Value> = callee.get_entry_block(ctx).deref(ctx).arguments().collect();
+        let args: Vec<Value> = self.get_operation().deref(ctx).operands().collect();
+        let as_seen_by_caller = |value: Value| -> Option<Option<Value>> {
+            if let Some(i) = params.iter().position(|param| *param == value) {
+                return Some(Some(args[i]));
+            }
+            match crate::convert::defined_in(ctx, func_op, value) {
+                true => None,
+                false => Some(None),
+            }
+        };
+
+        let mut effects = Vec::new();
+        for effect in crate::interfaces::side_effects::get_nested_memory_effects(ctx, func_op) {
+            let mapped = match effect {
+                MemoryEffect::Read(value) => as_seen_by_caller(value)
+                    .map(|it| it.map_or(MemoryEffect::Opaque, MemoryEffect::Read)),
+                MemoryEffect::Write(value) => as_seen_by_caller(value)
+                    .map(|it| it.map_or(MemoryEffect::Opaque, MemoryEffect::Write)),
+                other => Some(other),
+            };
+            effects.extend(mapped);
+        }
+        effects
     }
 }
 

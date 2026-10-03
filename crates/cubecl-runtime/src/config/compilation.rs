@@ -17,6 +17,24 @@ pub struct CompilationConfig {
     /// chooses by whether the host computes in f16 directly. Other runtimes ignore it.
     #[serde(default)]
     pub f16_evaluation: Option<F16Evaluation>,
+    /// Whether device functions survive as calls on targets that can emit
+    /// them. `CUBECL_INLINE` overrides it.
+    #[serde(default)]
+    pub inline: InlineMode,
+}
+
+/// What happens to calls of `#[cube(outline)]` functions.
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum InlineMode {
+    /// Targets that can emit calls keep the calls worth keeping, and their
+    /// own compilers decide what to inline. The others inline every call.
+    #[default]
+    #[serde(rename = "auto")]
+    Auto,
+    /// Every call is inlined, on every target: the code a kernel had before
+    /// device functions existed.
+    #[serde(rename = "all")]
+    All,
 }
 
 /// How far an f32 intermediate is allowed to travel before it is rounded back to f16.

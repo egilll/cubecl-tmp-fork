@@ -33,6 +33,7 @@ use cubecl_opt::{
     pipeline::{add_call_passes, add_kernel_entry_passes, add_structured_cleanup_passes},
 };
 use cubecl_server::compiler::CompilationError;
+use cubecl_server::config::{CubeClRuntimeConfig, RuntimeConfig, compilation::InlineMode};
 use cubecl_server::kernel;
 
 const MAX_VECTOR_SIZE: usize = 4;
@@ -130,7 +131,12 @@ impl WgslCompiler {
         analyses.set_config(config);
 
         let mut passes = OpPass::<ModuleOp, Passes>::default();
-        add_call_passes(&mut passes, InlinePolicy::All);
+        // WGSL has functions, and the shader compiler decides what to inline.
+        let inline = match CubeClRuntimeConfig::get().compilation.inline {
+            InlineMode::Auto => InlinePolicy::target(),
+            InlineMode::All => InlinePolicy::All,
+        };
+        add_call_passes(&mut passes, inline);
         let mut func_passes = OpPass::<FuncOp, Passes>::default();
 
         add_kernel_entry_passes(

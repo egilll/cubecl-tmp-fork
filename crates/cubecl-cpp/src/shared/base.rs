@@ -47,7 +47,10 @@ use cubecl_opt::{
     },
     pipeline::{add_call_passes, add_kernel_entry_passes, add_structured_cleanup_passes},
 };
-use cubecl_runtime::compiler::{CompilationError, Compiler};
+use cubecl_runtime::{
+    compiler::{CompilationError, Compiler},
+    config::{CubeClRuntimeConfig, RuntimeConfig, compilation::InlineMode},
+};
 use pliron::{
     builtin::ops::{FuncOp, ModuleOp},
     context::Context,
@@ -241,7 +244,13 @@ where
         analyses.set_config(config);
 
         let mut passes = OpPass::<ModuleOp, Passes>::default();
-        add_call_passes(&mut passes, InlinePolicy::All);
+        // Metal compiles device functions and decides itself what to inline.
+        // CUDA and HIP inline every call until their calls are validated.
+        let inline = match (T::target(), CubeClRuntimeConfig::get().compilation.inline) {
+            (Target::Metal, InlineMode::Auto) => InlinePolicy::target(),
+            _ => InlinePolicy::All,
+        };
+        add_call_passes(&mut passes, inline);
         let mut func_passes = OpPass::<FuncOp, Passes>::default();
 
         func_passes.add_pass(LowerInfoPass);

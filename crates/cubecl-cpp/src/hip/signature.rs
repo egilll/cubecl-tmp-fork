@@ -29,7 +29,11 @@ hip_op!(FuncOp, |op, ctx| {
     let func_name = op.get_symbol_name(ctx);
     let ty = op.get_type(ctx).deref(ctx);
     let func_ty = ty.downcast_ref::<FunctionType>().unwrap();
-    let return_ty = func_ty.res_types()[0].to_cpp(ctx);
+    let return_ty = match func_ty.res_types().first() {
+        Some(ty) => ty.to_cpp(ctx),
+        // A device function that returns nothing.
+        None => "void".to_string(),
+    };
     let attributes = if let Some(abi) = op.get_entrypoint_abi(ctx) {
         format!(
             r#"extern "C" __global__ {return_ty} __launch_bounds__({})"#,

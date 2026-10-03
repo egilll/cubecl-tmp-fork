@@ -213,3 +213,83 @@ fn a_body_that_terminates_the_kernel_is_traced_inline() {
     assert_eq!(count::<CallOp>(&traced.ctx, traced.module), 0);
     assert_eq!(count::<FuncOp>(&traced.ctx, traced.module), 1);
 }
+
+#[cube(outline)]
+fn reads_a_builtin(x: f32) -> f32 {
+    x + f32::cast_from(UNIT_POS) * 2.0 + f32::exp(x) * f32::ln(x + 1.0)
+}
+
+#[cube]
+fn calls_a_builtin_reader() -> f32 {
+    let x = f32::cast_from(UNIT_POS);
+    reads_a_builtin(x) + reads_a_builtin(x + 1.0)
+}
+
+#[cube]
+fn one_call() -> f32 {
+    let x = f32::cast_from(UNIT_POS);
+    heavy(x, x)
+}
+
+fn inline_for_target(traced: &mut Traced, max_inline_ops: usize) {
+    InlinePass::new(InlinePolicy::Target { max_inline_ops })
+        .run(
+            traced.module,
+            &mut traced.ctx,
+            &mut AnalysisManager::default(),
+        )
+        .expect("inlining succeeds");
+    pliron::operation::verify_operation(traced.module, &traced.ctx).expect("the module verifies");
+}
+
+#[test]
+fn a_target_keeps_calls_to_a_large_callee() {
+    let mut traced = trace(|scope| {
+        four_outlined_calls::expand(scope);
+    });
+    inline_for_target(&mut traced, 2);
+    assert_eq!(count::<CallOp>(&traced.ctx, traced.module), 4);
+    assert_eq!(count::<FuncOp>(&traced.ctx, traced.module), 2);
+
+    // The kernel comes after the function it calls.
+    use pliron::linked_list::ContainsLinkedList;
+    let body = traced.module.deref(&traced.ctx).get_region(0);
+    let block = body.deref(&traced.ctx).get_head().unwrap();
+    let last = block.deref(&traced.ctx).get_tail().unwrap();
+    let last = Operation::get_op::<FuncOp>(last, &traced.ctx).expect("a function");
+    assert!(
+        cubecl_ir::attributes::EntrypointInterface::get_entrypoint_abi(&last, &traced.ctx)
+            .is_some()
+    );
+}
+
+#[test]
+fn a_target_inlines_a_small_callee() {
+    let mut traced = trace(|scope| {
+        four_outlined_calls::expand(scope);
+    });
+    inline_for_target(&mut traced, 10_000);
+    assert_eq!(count::<CallOp>(&traced.ctx, traced.module), 0);
+    assert_eq!(count::<FuncOp>(&traced.ctx, traced.module), 1);
+}
+
+#[test]
+fn a_target_inlines_a_callee_with_one_call_site() {
+    let mut traced = trace(|scope| {
+        one_call::expand(scope);
+    });
+    inline_for_target(&mut traced, 2);
+    assert_eq!(count::<CallOp>(&traced.ctx, traced.module), 0);
+    assert_eq!(count::<FuncOp>(&traced.ctx, traced.module), 1);
+}
+
+#[test]
+fn a_target_inlines_a_callee_that_reads_kernel_state() {
+    let mut traced = trace(|scope| {
+        calls_a_builtin_reader::expand(scope);
+    });
+    assert_eq!(count::<CallOp>(&traced.ctx, traced.module), 2);
+    inline_for_target(&mut traced, 2);
+    assert_eq!(count::<CallOp>(&traced.ctx, traced.module), 0);
+    assert_eq!(count::<FuncOp>(&traced.ctx, traced.module), 1);
+}

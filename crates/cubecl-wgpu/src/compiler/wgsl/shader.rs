@@ -19,7 +19,7 @@ use pliron::{
     builtin::{
         attributes::IdentifierAttr,
         ops::{FuncOp, ModuleOp},
-        types::UnitType,
+        types::{FunctionType, UnitType},
     },
     common_traits::Named,
     identifier::Identifier,
@@ -244,7 +244,13 @@ fn func_to_wgsl(ctx: &Context, op: &FuncOp) -> core::result::Result<String, fmt:
     let name = op.get_symbol_name(ctx);
     let entry = op.get_entry_block(ctx);
     let args = entry.arguments(ctx);
-    let ret = op.return_type(ctx);
+    let ret = {
+        let ty = op.get_type(ctx).deref(ctx);
+        let func_ty = ty
+            .downcast_ref::<FunctionType>()
+            .expect("a function has a function type");
+        func_ty.res_types().first().copied()
+    };
 
     let mut args = args.iter().enumerate().map(|(i, &arg)| {
         let name = arg.name(ctx);
@@ -255,7 +261,9 @@ fn func_to_wgsl(ctx: &Context, op: &FuncOp) -> core::result::Result<String, fmt:
         }
     });
     write!(f, "fn {name}({})", args.join(", "))?;
-    if !ret.deref(ctx).is::<UnitType>() {
+    if let Some(ret) = ret
+        && !ret.deref(ctx).is::<UnitType>()
+    {
         write!(f, " -> {}", ret.to_wgsl(ctx))?;
     }
 

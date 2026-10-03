@@ -1,6 +1,6 @@
 use cubecl_core::ir::{
     CanMaterialize, Pure,
-    attributes::{FuncInterface, IndexAttr},
+    attributes::{EntrypointInterface, FuncInterface, IndexAttr},
     dialect::general::{BufferLenOp, ReadScalarOp, ShapeOp, StrideOp},
     ident,
     interfaces::ScalarType,
@@ -93,6 +93,11 @@ impl Pass for LowerInfoPass {
             (info.has_info(), info.has_dynamic_meta)
         };
         let func = op.as_op::<FuncOp>(ctx).unwrap();
+        // Only the kernel receives the info buffer. A device function it
+        // calls never reads it: the inliner keeps no call to one that does.
+        if func.get_entrypoint_abi(ctx).is_none() {
+            return Ok(PassResult::default());
+        }
         let entry_block = func.get_entry_block(ctx);
         let supports_features = ctx.aux_ty::<CompilationOptions>().supports_features;
 

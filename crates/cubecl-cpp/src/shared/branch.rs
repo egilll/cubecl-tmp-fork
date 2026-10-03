@@ -1,5 +1,5 @@
 use cubecl_core::ir::{
-    dialect::{branch::*, general::SelectOp},
+    dialect::{branch::*, call::CallOp, general::SelectOp},
     prelude::*,
 };
 use pliron::{basic_block::BasicBlock, linked_list::ContainsLinkedList};
@@ -63,6 +63,21 @@ shared_op!(ReturnOp, |op, ctx| {
         format!("return {};", value.name(ctx))
     } else {
         "return;".into()
+    }
+});
+
+shared_op!(CallOp, |op, ctx| {
+    let callee = op.callee_symbol(ctx);
+    let args = op
+        .get_operation()
+        .deref(ctx)
+        .operands()
+        .map(|arg| arg.name(ctx).to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    match op.get_operation().deref(ctx).results().next() {
+        Some(result) => format!("{} = {callee}({args});\n", result.fmt_left(ctx)),
+        None => format!("{callee}({args});\n"),
     }
 });
 

@@ -226,7 +226,7 @@ impl ReturnOp {
     }
 
     pub fn value(&self, ctx: &Context) -> Option<Value> {
-        self.get_operation().deref(ctx).results().next()
+        self.get_operation().deref(ctx).operands().next()
     }
 }
 

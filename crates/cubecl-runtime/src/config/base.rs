@@ -155,6 +155,16 @@ impl RuntimeConfig for CubeClRuntimeConfig {
             }
         }
 
+        if let Ok(val) = std::env::var("CUBECL_INLINE") {
+            use super::compilation::InlineMode;
+
+            match val.as_str() {
+                "auto" => self.compilation.inline = InlineMode::Auto,
+                "all" => self.compilation.inline = InlineMode::All,
+                _ => {}
+            }
+        }
+
         if let Ok(val) = std::env::var("CUBECL_CPU_F16_EVAL") {
             match val.as_str() {
                 "per-operation" => {

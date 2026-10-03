@@ -1,4 +1,7 @@
-use cubecl_ir::dialect::branch::*;
+use cubecl_ir::{
+    dialect::{branch::*, call::CallOp},
+    prelude::Op,
+};
 use itertools::Itertools;
 use pliron::r#type::Typed;
 
@@ -18,6 +21,20 @@ wgsl_op!(ReturnOp, |op, ctx| {
     match op.value(ctx) {
         Some(value) => format!("return {};\n", value.name(ctx)),
         None => "return;\n".into(),
+    }
+});
+
+wgsl_op!(CallOp, |op, ctx| {
+    let callee = op.callee_symbol(ctx);
+    let args = op
+        .get_operation()
+        .deref(ctx)
+        .operands()
+        .map(|arg| arg.name(ctx).to_string())
+        .join(", ");
+    match op.get_operation().deref(ctx).results().next() {
+        Some(result) => format!("{} = {callee}({args});\n", result.fmt_left(ctx)),
+        None => format!("{callee}({args});\n"),
     }
 });
 
