@@ -40,11 +40,12 @@ use cubecl_core::{
 };
 use cubecl_environment::backtrace::BackTrace;
 use cubecl_opt::{
+    passes::inline::InlinePolicy,
     passes::{
         alloc_shared_memory::AllocateSharedMemoryBlockPass,
         annotate_buffer_visibility::AnnotateGlobalVisibilityPass,
     },
-    pipeline::{add_kernel_entry_passes, add_structured_cleanup_passes},
+    pipeline::{add_call_passes, add_kernel_entry_passes, add_structured_cleanup_passes},
 };
 use cubecl_runtime::compiler::{CompilationError, Compiler};
 use pliron::{
@@ -240,6 +241,7 @@ where
         analyses.set_config(config);
 
         let mut passes = OpPass::<ModuleOp, Passes>::default();
+        add_call_passes(&mut passes, InlinePolicy::All);
         let mut func_passes = OpPass::<FuncOp, Passes>::default();
 
         func_passes.add_pass(LowerInfoPass);

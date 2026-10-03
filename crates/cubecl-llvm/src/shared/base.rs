@@ -43,10 +43,12 @@ use cubecl_core::{
 use cubecl_environment::backtrace::BackTrace;
 #[cfg(feature = "amdgpu")]
 use cubecl_environment::bytes::Bytes;
+use cubecl_opt::passes::inline::InlinePolicy;
 use cubecl_opt::passes::{
     annotate_buffer_visibility::AnnotateGlobalVisibilityPass, inst_combine::InstCombinePass,
     sccp::SCCPPass, simple_cse::SimpleCSEPass, sroa::SROAPass,
 };
+use cubecl_opt::pipeline::add_call_passes;
 use cubecl_runtime::{
     compiler::CompilationError, config::compilation::F16Evaluation, kernel::BufferIOAttr,
 };
@@ -445,6 +447,7 @@ fn lower(
     lowering_passes.add_pass(Mem2RegPass);
 
     let mut passes = OpPass::<ModuleOp, Passes>::default();
+    add_call_passes(&mut passes, InlinePolicy::All);
     passes.add_pass(NestedOpsPass::new(func_passes));
     // Memory effects must be annotated before cube operations are lowered.
     passes.add_pass(AnnotateGlobalVisibilityPass);

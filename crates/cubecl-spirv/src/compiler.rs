@@ -44,7 +44,10 @@ use cubecl_opt::passes::{
     sroa::SROAPass,
     uniformity::{DYNAMICALLY_UNIFORM_ATTR, MarkDynamicallyUniformPass, UniformAttr},
 };
-use cubecl_opt::pipeline::add_kernel_entry_passes;
+use cubecl_opt::{
+    passes::inline::InlinePolicy,
+    pipeline::{add_call_passes, add_kernel_entry_passes},
+};
 use cubecl_runtime::compiler::CompilationError;
 use pliron::{
     basic_block::BasicBlock,
@@ -206,6 +209,7 @@ impl SpirvCompiler {
         analyses.set_config(config);
 
         let mut passes = OpPass::<ModuleOp, Passes>::default();
+        add_call_passes(&mut passes, InlinePolicy::All);
 
         let mut func_passes = OpPass::<FuncOp, Passes>::default();
         add_kernel_entry_passes(

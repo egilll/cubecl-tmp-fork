@@ -16,8 +16,19 @@ use pliron::{
 };
 
 use crate::passes::{
-    inst_combine::InstCombinePass, sccp::SCCPPass, simple_cse::SimpleCSEPass, sroa::SROAPass,
+    inline::{InlinePass, InlinePolicy},
+    inst_combine::InstCombinePass,
+    sccp::SCCPPass,
+    simple_cse::SimpleCSEPass,
+    sroa::SROAPass,
 };
+
+/// The module passes that run before any per-function pass: device function
+/// calls are inlined as `policy` says, so the per-function pipeline sees the
+/// calls the target will emit and nothing else.
+pub fn add_call_passes(passes: &mut Passes, policy: InlinePolicy) {
+    passes.add_pass(InlinePass::new(policy));
+}
 
 /// The first passes on a kernel function: split aggregates so their fields
 /// can be checked and promoted on their own, then bound-check buffer accesses

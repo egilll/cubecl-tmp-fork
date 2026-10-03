@@ -29,7 +29,8 @@ use cubecl_ir::{
 };
 use cubecl_opt::{
     passes::annotate_buffer_visibility::AnnotateGlobalVisibilityPass,
-    pipeline::{add_kernel_entry_passes, add_structured_cleanup_passes},
+    passes::inline::InlinePolicy,
+    pipeline::{add_call_passes, add_kernel_entry_passes, add_structured_cleanup_passes},
 };
 use cubecl_server::compiler::CompilationError;
 use cubecl_server::kernel;
@@ -129,6 +130,7 @@ impl WgslCompiler {
         analyses.set_config(config);
 
         let mut passes = OpPass::<ModuleOp, Passes>::default();
+        add_call_passes(&mut passes, InlinePolicy::All);
         let mut func_passes = OpPass::<FuncOp, Passes>::default();
 
         add_kernel_entry_passes(
