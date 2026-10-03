@@ -1,2 +1,5 @@
 [alias]
 xtask = "run --target-dir target/xtask --color always --package xtask --bin xtask --"
+# Local only, not for upstream: keep the target directory small. Debug info was most of it.
+[profile.dev]
+debug = false
