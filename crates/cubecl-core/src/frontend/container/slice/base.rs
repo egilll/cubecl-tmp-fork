@@ -48,7 +48,22 @@ impl<E: CubePrimitive> SliceExpand<E> {
 }
 
 pub(crate) fn buffer_idx(scope: &Scope, list: Value) -> usize {
-    buffer_binding(scope, list).buffer_pos
+    match kernel_buffer_binding(scope, list) {
+        Some(binding) => binding.buffer_pos,
+        // A device function's parameter: the pointer's address space still
+        // names the buffer, which is what made the function specific to it.
+        None => match list
+            .get_type(scope.ctx())
+            .deref(scope.ctx())
+            .downcast_ref::<PointerType>()
+        {
+            Some(PointerType {
+                address_space: cubecl_ir::AddressSpace::Global(idx),
+                ..
+            }) => *idx,
+            _ => panic!("Should be a pointer to a global buffer"),
+        },
+    }
 }
 
 pub(crate) fn ext_meta_idx(scope: &Scope, list: Value) -> usize {
@@ -58,6 +73,12 @@ pub(crate) fn ext_meta_idx(scope: &Scope, list: Value) -> usize {
 }
 
 fn buffer_binding(scope: &Scope, list: Value) -> BufferBindingAttr {
+    kernel_buffer_binding(scope, list).expect("Should be buffer binding")
+}
+
+/// The binding of the kernel argument `list` points into, or `None` when its
+/// root is a parameter of a device function rather than of the kernel.
+fn kernel_buffer_binding(scope: &Scope, list: Value) -> Option<BufferBindingAttr> {
     let ctx = scope.ctx();
     let (entry_block, idx) = match list.defining_entity() {
         // Op is only allowed as a source for pointers (i.e. slice), so chase the pointer to its root
@@ -72,9 +93,8 @@ fn buffer_binding(scope: &Scope, list: Value) -> BufferBindingAttr {
     };
     let func = entry_block.deref(ctx).get_parent_op(ctx).unwrap();
     let func = func.as_op::<FuncOp>(ctx).expect("Should be function");
-    *func
-        .get_arg_attr::<BufferBindingAttr>(scope.ctx(), idx, &ATTR_BUFFER_BINDING)
-        .expect("Should be buffer binding")
+    func.get_arg_attr::<BufferBindingAttr>(scope.ctx(), idx, &ATTR_BUFFER_BINDING)
+        .map(|binding| *binding)
 }
 
 pub trait SliceVectorExt<E: Scalar, N: Size> {

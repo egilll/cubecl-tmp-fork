@@ -126,14 +126,18 @@ impl KernelFn {
             )
             .into_compile_error();
         }
+        // A mutable slice writes its buffer in place, so it passes as a slice;
+        // any other `&mut` would need its referent copied back.
+        let is_mut_ref = |ty: &Type| matches!(ty, Type::Reference(r) if r.mutability.is_some());
+        let is_mut_slice = |ty: &Type| matches!(ty, Type::Reference(r) if r.mutability.is_some() && matches!(*r.elem, Type::Slice(_)));
         if let Some(param) = self
             .sig
             .runtime_params()
-            .find(|param| matches!(&param.ty, Type::Reference(r) if r.mutability.is_some()))
+            .find(|param| is_mut_ref(&param.ty) && !is_mut_slice(&param.ty))
         {
             return syn::Error::new(
                 param.name.span(),
-                "`#[cube(outline)]` functions can't take `&mut` arguments yet",
+                "`#[cube(outline)]` functions can't take `&mut` arguments other than slices yet",
             )
             .into_compile_error();
         }
@@ -154,14 +158,28 @@ impl KernelFn {
                 false => param.name.clone(),
             })
             .collect();
+        let patterns: Vec<_> = self
+            .sig
+            .runtime_params()
+            .zip(bindings.iter())
+            .map(|(param, binding)| match is_mut_ref(&param.ty) {
+                true => quote![mut #binding],
+                false => quote![#binding],
+            })
+            .collect();
         // A reference argument arrives as the value it refers to, which the
         // body borrows again.
         let reborrows: Vec<_> = self
             .sig
             .runtime_params()
             .zip(bindings.iter())
-            .filter(|(param, _)| matches!(param.ty, Type::Reference(_)))
-            .map(|(_, binding)| quote![let #binding = &#binding;])
+            .filter_map(|(param, binding)| match &param.ty {
+                Type::Reference(r) if r.mutability.is_some() => {
+                    Some(quote![let #binding = &mut #binding;])
+                }
+                Type::Reference(_) => Some(quote![let #binding = &#binding;]),
+                _ => None,
+            })
             .collect();
         let comptime: Vec<_> = self.sig.comptime_params().map(|it| &it.name).collect();
         let mut type_names: Vec<TokenStream> = self
@@ -200,7 +218,7 @@ impl KernelFn {
                 &[#(#type_names),*],
                 __outline_comptime,
                 (#(#runtime,)*),
-                |scope: &#scope_ty, (#(#bindings,)*)| {
+                |scope: &#scope_ty, (#(#patterns,)*)| {
                     #(#reborrows)*
                     #(let #comptime = ::core::clone::Clone::clone(&#comptime);)*
                     #body

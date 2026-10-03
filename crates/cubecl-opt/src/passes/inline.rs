@@ -46,6 +46,9 @@ pub enum InlinePolicy {
     Target {
         /// Callees this small are inlined at every call.
         max_inline_ops: usize,
+        /// Whether a function can take a pointer into a global buffer, as
+        /// MSL's can. WGSL's can't without an extension.
+        global_pointer_params: bool,
     },
 }
 
@@ -53,8 +56,11 @@ impl InlinePolicy {
     /// [`InlinePolicy::Target`] with the default size threshold: about the
     /// size of a call's own setup, so an inlined body costs no more than the
     /// call it replaces.
-    pub const fn target() -> Self {
-        Self::Target { max_inline_ops: 16 }
+    pub const fn target(global_pointer_params: bool) -> Self {
+        Self::Target {
+            max_inline_ops: 16,
+            global_pointer_params,
+        }
     }
 }
 
@@ -78,9 +84,12 @@ impl InlinePass {
     }
 
     fn should_inline(&self, ctx: &Context, call: &CallOp, round: &mut Round) -> bool {
-        let max_inline_ops = match self.policy {
+        let (max_inline_ops, global_pointer_params) = match self.policy {
             InlinePolicy::All => return true,
-            InlinePolicy::Target { max_inline_ops } => max_inline_ops,
+            InlinePolicy::Target {
+                max_inline_ops,
+                global_pointer_params,
+            } => (max_inline_ops, global_pointer_params),
         };
         let symbol = call.callee_symbol(ctx);
         let Some(callee) = resolve_callee(ctx, call) else {
@@ -90,6 +99,8 @@ impl InlinePass {
         let decision = round.decisions.entry(symbol.clone()).or_insert_with(|| {
             if let Some(op) = entry_only_op(ctx, callee) {
                 Decision::Inline(Reason::Requires(op))
+            } else if !global_pointer_params && takes_global_pointer(ctx, callee) {
+                Decision::Inline(Reason::Requires("a global pointer parameter".into()))
             } else if round.call_sites.get(&symbol).copied().unwrap_or(0) <= 1 {
                 Decision::Inline(Reason::SingleCallSite)
             } else {
@@ -131,6 +142,25 @@ enum Reason {
     Small(usize),
     /// The callee has no other caller.
     SingleCallSite,
+}
+
+/// Whether one of `func`'s parameters points into a global buffer.
+fn takes_global_pointer(ctx: &Context, func: FuncOp) -> bool {
+    use cubecl_ir::{AddressSpace, types::PointerType};
+
+    func.get_entry_block(ctx)
+        .deref(ctx)
+        .arguments()
+        .any(|param| {
+            let ty = param.get_type(ctx).deref(ctx);
+            matches!(
+                ty.downcast_ref::<PointerType>(),
+                Some(PointerType {
+                    address_space: AddressSpace::Global(_),
+                    ..
+                })
+            )
+        })
 }
 
 /// The first operation in `func` that a function other than the kernel
@@ -194,7 +224,7 @@ impl Pass for InlinePass {
     ) -> Result<PassResult> {
         let mut res = PassResult::default();
 
-        if matches!(self.policy, InlinePolicy::Target { .. }) && hoist_builtin_reads(ctx, op) {
+        if matches!(self.policy, InlinePolicy::Target { .. }) && hoist_kernel_state_reads(ctx, op) {
             res.ir_changed |= IRStatus::Changed;
         }
 
@@ -421,16 +451,13 @@ fn order_callees_first(ctx: &mut Context, module: Ptr<Operation>) -> bool {
     true
 }
 
-/// Turn every builtin a device function reads into a parameter of it, read by
-/// its callers instead, until only kernels read builtins. A device function
-/// has no builtins of its own: on targets that have them, they are kernel
-/// parameters. Returns whether anything changed.
-fn hoist_builtin_reads(ctx: &mut Context, module: Ptr<Operation>) -> bool {
-    use cubecl_ir::{
-        FuncOpExt,
-        attributes::EntrypointInterface,
-        dialect::general::{BuiltinAttr, ReadBuiltinOp},
-    };
+/// Turn every read of kernel state a device function makes (builtins,
+/// scalar arguments, buffer lengths) into a parameter of it, read by its
+/// callers instead, until only kernels read kernel state. On the targets
+/// that have them, these are kernel parameters, which a device function
+/// doesn't have. Returns whether anything changed.
+fn hoist_kernel_state_reads(ctx: &mut Context, module: Ptr<Operation>) -> bool {
+    use cubecl_ir::{FuncOpExt, attributes::EntrypointInterface};
 
     let mut changed = false;
     // Each round moves the reads one level up the call graph.
@@ -448,7 +475,7 @@ fn hoist_builtin_reads(ctx: &mut Context, module: Ptr<Operation>) -> bool {
 
         let mut round_changed = false;
         for func in funcs {
-            let mut reads: Vec<ReadBuiltinOp> = Vec::new();
+            let mut reads: Vec<Ptr<Operation>> = Vec::new();
             pliron::graph::walkers::uninterruptible::immutable::walk_op(
                 ctx,
                 &mut reads,
@@ -456,9 +483,9 @@ fn hoist_builtin_reads(ctx: &mut Context, module: Ptr<Operation>) -> bool {
                 func.get_operation(),
                 |ctx, reads, node| {
                     if let IRNode::Operation(op) = node
-                        && let Some(read) = Operation::get_op::<ReadBuiltinOp>(op, ctx)
+                        && kernel_state_key(ctx, op).is_some()
                     {
-                        reads.push(read);
+                        reads.push(op);
                     }
                 },
             );
@@ -466,42 +493,50 @@ fn hoist_builtin_reads(ctx: &mut Context, module: Ptr<Operation>) -> bool {
                 continue;
             }
 
-            // One parameter per distinct builtin and type.
-            let mut params: Vec<(BuiltinAttr, TypeHandle, Value)> = Vec::new();
-            for read in &reads {
-                let builtin = read.builtin(ctx).clone();
-                let result = read.get_operation().deref(ctx).get_result(0);
-                let ty = result.get_type(ctx);
-                let param = match params.iter().find(|(b, t, _)| *b == builtin && *t == ty) {
-                    Some((_, _, param)) => *param,
+            // One parameter per distinct read, and the read it stands for.
+            let mut params: Vec<(String, Ptr<Operation>, Value)> = Vec::new();
+            for read in reads {
+                let key = kernel_state_key(ctx, read).expect("filtered above");
+                let result = read.deref(ctx).get_result(0);
+                let param = match params.iter().find(|(k, _, _)| *k == key) {
+                    Some((_, _, param)) => {
+                        result.replace_all_uses_with(ctx, param);
+                        Operation::erase(read, ctx);
+                        continue;
+                    }
                     None => {
-                        let idx = func.push_argument(ctx, ty);
-                        let param = func.get_entry_block(ctx).deref(ctx).get_argument(idx);
-                        params.push((builtin, ty, param));
-                        param
+                        let idx = func.push_argument(ctx, result.get_type(ctx));
+                        func.get_entry_block(ctx).deref(ctx).get_argument(idx)
                     }
                 };
                 result.replace_all_uses_with(ctx, &param);
-                Operation::erase(read.get_operation(), ctx);
+                // Keep the read, unlinked, as the template callers clone.
+                read.unlink(ctx);
+                params.push((key, read, param));
             }
 
-            // Every call reads the builtins and passes them.
+            // Every call makes the reads and passes them.
             let symbol = func.get_symbol_name(ctx);
             let new_ty = func.get_type(ctx);
+            let mut rewriter = PassRewriter::default();
             for call in collect_calls(ctx, module) {
                 if call.callee_symbol(ctx) != symbol {
                     continue;
                 }
                 let call_op = call.get_operation();
-                for (builtin, ty, _) in &params {
-                    let read = ReadBuiltinOp::new(ctx, *ty, builtin.clone());
-                    read.get_operation().insert_before(ctx, call_op);
-                    let value = read.get_operation().deref(ctx).get_result(0);
+                for (_, template, _) in &params {
+                    let read =
+                        clone_operation(*template, ctx, &mut rewriter, &mut IrMapping::new());
+                    read.insert_before(ctx, call_op);
+                    let value = read.deref(ctx).get_result(0);
                     Operation::push_operand(call_op, ctx, value);
                 }
                 pliron::builtin::op_interfaces::CallOpInterface::set_callee_type(
                     &call, ctx, new_ty,
                 );
+            }
+            for (_, template, _) in params {
+                Operation::erase(template, ctx);
             }
             round_changed = true;
         }
@@ -512,4 +547,25 @@ fn hoist_builtin_reads(ctx: &mut Context, module: Ptr<Operation>) -> bool {
         }
     }
     changed
+}
+
+/// What a read of kernel state reads, as a key equal for two reads of the
+/// same thing, or `None` for any other operation.
+fn kernel_state_key(ctx: &Context, op: Ptr<Operation>) -> Option<String> {
+    use cubecl_ir::dialect::general::{BufferLenOp, ReadBuiltinOp, ReadScalarOp};
+
+    if op.deref(ctx).get_num_operands() != 0 || op.deref(ctx).get_num_results() != 1 {
+        return None;
+    }
+    let ty = op.deref(ctx).get_result(0).get_type(ctx);
+    if let Some(read) = Operation::get_op::<ReadBuiltinOp>(op, ctx) {
+        return Some(alloc::format!("builtin {:?} {ty:?}", read.builtin(ctx).0));
+    }
+    if let Some(read) = Operation::get_op::<ReadScalarOp>(op, ctx) {
+        return Some(alloc::format!("scalar {} {ty:?}", read.id(ctx).0));
+    }
+    if let Some(read) = Operation::get_op::<BufferLenOp>(op, ctx) {
+        return Some(alloc::format!("buffer_len {}", read.buffer_idx(ctx).0));
+    }
+    None
 }

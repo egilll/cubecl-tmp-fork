@@ -30,7 +30,7 @@ use cubecl_ir::{
 use cubecl_opt::{
     passes::annotate_buffer_visibility::AnnotateGlobalVisibilityPass,
     passes::inline::InlinePolicy,
-    pipeline::{add_call_passes, add_kernel_entry_passes, add_structured_cleanup_passes},
+    pipeline::{add_entry_and_call_passes, add_structured_cleanup_passes},
 };
 use cubecl_server::compiler::CompilationError;
 use cubecl_server::config::{CubeClRuntimeConfig, RuntimeConfig, compilation::InlineMode};
@@ -133,17 +133,17 @@ impl WgslCompiler {
         let mut passes = OpPass::<ModuleOp, Passes>::default();
         // WGSL has functions, and the shader compiler decides what to inline.
         let inline = match CubeClRuntimeConfig::get().compilation.inline {
-            InlineMode::Auto => InlinePolicy::target(),
+            InlineMode::Auto => InlinePolicy::target(false),
             InlineMode::All => InlinePolicy::All,
         };
-        add_call_passes(&mut passes, inline);
-        let mut func_passes = OpPass::<FuncOp, Passes>::default();
-
-        add_kernel_entry_passes(
-            &mut func_passes,
+        add_entry_and_call_passes(
+            &mut passes,
+            inline,
             value.settings.execution_mode,
             value.settings.kernel_name.clone(),
         );
+        let mut func_passes = OpPass::<FuncOp, Passes>::default();
+
         func_passes.add_pass(UnrollPass::new(MAX_VECTOR_SIZE));
         // After the unroll so that an fp8 vector is at most one word, see `types.rs`.
         func_passes.add_pass(LowerMinifloatCastPass::new(LowerMinifloatCast::new(

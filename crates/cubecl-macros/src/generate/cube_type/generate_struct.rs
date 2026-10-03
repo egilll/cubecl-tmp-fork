@@ -398,11 +398,13 @@ impl CubeTypeStruct {
 
                 fn outline_rebuild(
                     &self,
+                    scope: &#outline::__private::Scope,
                     params: &mut dyn ::core::iter::Iterator<Item = #outline::__private::Value>,
                 ) -> Self {
                     Self {
                         #(#runtime_names: #outline::OutlineArg::outline_rebuild(
                             &self.#runtime_names,
+                            scope,
                             params,
                         ),)*
                         #(#comptime_names: ::core::clone::Clone::clone(&self.#comptime_names),)*

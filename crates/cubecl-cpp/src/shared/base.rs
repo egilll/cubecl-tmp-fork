@@ -45,7 +45,7 @@ use cubecl_opt::{
         alloc_shared_memory::AllocateSharedMemoryBlockPass,
         annotate_buffer_visibility::AnnotateGlobalVisibilityPass,
     },
-    pipeline::{add_call_passes, add_kernel_entry_passes, add_structured_cleanup_passes},
+    pipeline::{add_entry_and_call_passes, add_structured_cleanup_passes},
 };
 use cubecl_runtime::{
     compiler::{CompilationError, Compiler},
@@ -247,18 +247,18 @@ where
         // Metal compiles device functions and decides itself what to inline.
         // CUDA and HIP inline every call until their calls are validated.
         let inline = match (T::target(), CubeClRuntimeConfig::get().compilation.inline) {
-            (Target::Metal, InlineMode::Auto) => InlinePolicy::target(),
+            (Target::Metal, InlineMode::Auto) => InlinePolicy::target(true),
             _ => InlinePolicy::All,
         };
-        add_call_passes(&mut passes, inline);
+        add_entry_and_call_passes(
+            &mut passes,
+            inline,
+            kernel.settings.execution_mode,
+            kernel.settings.kernel_name.clone(),
+        );
         let mut func_passes = OpPass::<FuncOp, Passes>::default();
 
         func_passes.add_pass(LowerInfoPass);
-        add_kernel_entry_passes(
-            &mut func_passes,
-            kernel.settings.execution_mode,
-            kernel.settings.kernel_name,
-        );
         func_passes.add_pass(AllocateSharedMemoryBlockPass);
 
         // CUDA converts fp8 with cuda_fp8.h, which carries its own software path below sm_89.

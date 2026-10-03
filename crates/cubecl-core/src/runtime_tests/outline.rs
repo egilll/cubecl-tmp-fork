@@ -194,6 +194,70 @@ pub fn test_outlined_methods<R: Runtime>(client: Client) {
     }
 }
 
+#[cube(outline)]
+fn weighted_sum(values: &[f32], weights: &[f32], start: usize, count: usize) -> f32 {
+    let mut acc = 0.0f32;
+    for i in start..start + count {
+        acc += values[i] * weights[i % weights.len()] + values[i] * 0.125;
+    }
+    acc
+}
+
+#[cube(outline)]
+fn scale_into(values: &mut [f32], at: usize, factor: f32, shift: f32) {
+    values[at] = values[at] * factor + shift * 0.5 - factor * 0.25 + shift * factor;
+}
+
+#[cube(launch)]
+pub fn kernel_outlined_slices(values: &[f32], weights: &[f32], output: &mut [f32]) {
+    let i = ABSOLUTE_POS;
+    if i < output.len() {
+        let a = weighted_sum(values, weights, i, 4);
+        let b = weighted_sum(values, weights, i + 4, 4);
+        output[i] = a;
+        scale_into(output, i, b, a);
+        scale_into(output, i, a * 0.5, b * 0.25);
+    }
+}
+
+pub fn test_outlined_slices<R: Runtime>(client: Client) {
+    let n = 32usize;
+    let values: Vec<f32> = (0..n + 8).map(|i| (i as f32) * 0.03 - 0.4).collect();
+    let weights: Vec<f32> = (0..5).map(|i| 1.0 + i as f32 * 0.5).collect();
+    let values_handle = client.create_from_slice(f32::as_bytes(&values));
+    let weights_handle = client.create_from_slice(f32::as_bytes(&weights));
+    let output_handle = client.empty(n * core::mem::size_of::<f32>());
+
+    kernel_outlined_slices::launch(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(n as u32),
+        unsafe { BufferArg::from_raw_parts(values_handle, n + 8) },
+        unsafe { BufferArg::from_raw_parts(weights_handle, 5) },
+        unsafe { BufferArg::from_raw_parts(output_handle.clone(), n) },
+    );
+
+    let output = client.read_one_unchecked(output_handle);
+    let output = f32::from_bytes(&output);
+    let weighted = |start: usize| {
+        (start..start + 4)
+            .map(|i| values[i] * weights[i % weights.len()] + values[i] * 0.125)
+            .sum::<f32>()
+    };
+    let scale =
+        |v: f32, factor: f32, shift: f32| v * factor + shift * 0.5 - factor * 0.25 + shift * factor;
+    for i in 0..n {
+        let (a, b) = (weighted(i), weighted(i + 4));
+        let expected = scale(scale(a, b, a), a * 0.5, b * 0.25);
+        let tolerance = 1e-3 * expected.abs().max(1.0);
+        assert!(
+            (output[i] - expected).abs() <= tolerance,
+            "output[{i}] = {}, expected {expected}",
+            output[i]
+        );
+    }
+}
+
 fn poly_ref(x: f32, a: f32, b: f32) -> f32 {
     (x * a + b) * x - a
 }
@@ -287,6 +351,12 @@ macro_rules! testgen_outline {
         fn test_outlined_methods() {
             let client = TestRuntime::client(&Default::default());
             cubecl_core::runtime_tests::outline::test_outlined_methods::<TestRuntime>(client);
+        }
+
+        #[$crate::runtime_tests::test_log::test]
+        fn test_outlined_slices() {
+            let client = TestRuntime::client(&Default::default());
+            cubecl_core::runtime_tests::outline::test_outlined_slices::<TestRuntime>(client);
         }
     };
 }

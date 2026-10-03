@@ -232,13 +232,20 @@ fn one_call() -> f32 {
 }
 
 fn inline_for_target(traced: &mut Traced, max_inline_ops: usize) {
-    InlinePass::new(InlinePolicy::Target { max_inline_ops })
-        .run(
-            traced.module,
-            &mut traced.ctx,
-            &mut AnalysisManager::default(),
-        )
-        .expect("inlining succeeds");
+    inline_for(traced, max_inline_ops, true);
+}
+
+fn inline_for(traced: &mut Traced, max_inline_ops: usize, global_pointer_params: bool) {
+    InlinePass::new(InlinePolicy::Target {
+        max_inline_ops,
+        global_pointer_params,
+    })
+    .run(
+        traced.module,
+        &mut traced.ctx,
+        &mut AnalysisManager::default(),
+    )
+    .expect("inlining succeeds");
     pliron::operation::verify_operation(traced.module, &traced.ctx).expect("the module verifies");
 }
 
@@ -418,4 +425,67 @@ fn trait_impl_methods_are_outlined() {
     pliron::operation::verify_operation(traced.module, &traced.ctx).expect("the module verifies");
     assert_eq!(count::<CallOp>(&traced.ctx, traced.module), 3);
     assert_eq!(count::<FuncOp>(&traced.ctx, traced.module), 2);
+}
+
+#[cube(outline)]
+fn weighted_sum(values: &[f32], weights: &[f32], start: usize, count: usize) -> f32 {
+    let mut acc = 0.0f32;
+    for i in start..start + count {
+        acc += values[i] * weights[i] + f32::exp(values[i] * 0.01);
+    }
+    acc
+}
+
+#[cube(outline)]
+fn scale_into(values: &mut [f32], factor: f32, count: usize) {
+    for i in 0..count {
+        values[i] = values[i] * factor + f32::ln(factor + 1.0);
+    }
+}
+
+#[cube]
+fn slice_calls(values: &mut [f32], weights: &[f32]) {
+    let n = UNIT_POS as usize;
+    let a = weighted_sum(values, weights, n, 4);
+    let b = weighted_sum(values, weights, n + 4, 4);
+    scale_into(values, a + b, 8);
+    scale_into(values, a - b, 8);
+}
+
+fn trace_slice_calls() -> Traced {
+    trace(|scope| {
+        let f32_ty = f32::__expand_as_type(scope);
+        let values = scope.global(0, None, f32_ty);
+        let weights = scope.global(1, None, f32_ty);
+        let len = scope.const_usize(64);
+        let zero = scope.const_usize(0);
+        let values =
+            cubecl_core::frontend::from_raw_parts::<f32>(scope, values, zero.into(), len.into());
+        let weights =
+            cubecl_core::frontend::from_raw_parts::<f32>(scope, weights, zero.into(), len.into());
+        let mut values = values;
+        slice_calls::expand(scope, &mut values, &weights);
+    })
+}
+
+#[test]
+fn slices_are_passed_to_a_target_that_takes_global_pointers() {
+    let mut traced = trace_slice_calls();
+    pliron::operation::verify_operation(traced.module, &traced.ctx).expect("the module verifies");
+    assert_eq!(count::<CallOp>(&traced.ctx, traced.module), 4);
+    inline_for(&mut traced, 2, true);
+    assert_eq!(
+        count::<CallOp>(&traced.ctx, traced.module),
+        4,
+        "the calls are kept"
+    );
+    assert_eq!(count::<FuncOp>(&traced.ctx, traced.module), 3);
+}
+
+#[test]
+fn slices_are_inlined_for_a_target_without_global_pointer_parameters() {
+    let mut traced = trace_slice_calls();
+    inline_for(&mut traced, 2, false);
+    assert_eq!(count::<CallOp>(&traced.ctx, traced.module), 0);
+    assert_eq!(count::<FuncOp>(&traced.ctx, traced.module), 1);
 }

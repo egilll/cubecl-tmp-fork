@@ -30,6 +30,28 @@ pub fn add_call_passes(passes: &mut Passes, policy: InlinePolicy) {
     passes.add_pass(InlinePass::new(policy));
 }
 
+/// [`add_call_passes`], preceded by the kernel entry passes on every
+/// function, for targets that keep calls: a device function's bounds checks
+/// read buffer lengths, which the inliner then turns into parameters, so
+/// they have to exist before it runs. The per-function pipeline must not add
+/// the entry passes again.
+pub fn add_entry_and_call_passes(
+    passes: &mut Passes,
+    policy: InlinePolicy,
+    mode: ExecutionMode,
+    kernel_name: String,
+) {
+    use cubecl_ir::pliron::{
+        builtin::ops::FuncOp,
+        pass::{NestedOpsPass, OpPass},
+    };
+
+    let mut entry = OpPass::<FuncOp, Passes>::default();
+    add_kernel_entry_passes(&mut entry, mode, kernel_name);
+    passes.add_pass(NestedOpsPass::new(entry));
+    add_call_passes(passes, policy);
+}
+
 /// The first passes on a kernel function: split aggregates so their fields
 /// can be checked and promoted on their own, then bound-check buffer accesses
 /// according to the launch's `mode`.

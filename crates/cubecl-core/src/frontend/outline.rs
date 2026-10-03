@@ -29,7 +29,8 @@ use cubecl_ir::{
     },
 };
 
-use crate::prelude::{CubePrimitive, NativeExpand};
+use crate::frontend::container::slice::from_raw_parts as slice_from_raw_parts;
+use crate::prelude::{CubePrimitive, HasValue, NativeExpand, SliceExpand};
 
 /// One runtime argument of an outlined call, once read in the caller.
 #[derive(Debug, Clone, Copy)]
@@ -63,7 +64,11 @@ pub trait OutlineArg {
 
     /// This argument inside the function: parameters for the slots that are
     /// parameters, taken in order from `params`, and the rest as it is.
-    fn outline_rebuild(&self, params: &mut dyn Iterator<Item = Value>) -> Self::Owned;
+    fn outline_rebuild(
+        &self,
+        scope: &Scope,
+        params: &mut dyn Iterator<Item = Value>,
+    ) -> Self::Owned;
 
     /// This argument as the function would receive it when traced inline at
     /// the call: the caller's own values.
@@ -82,7 +87,7 @@ impl<T: CubePrimitive> OutlineArg for NativeExpand<T> {
         });
     }
 
-    fn outline_rebuild(&self, params: &mut dyn Iterator<Item = Value>) -> Self {
+    fn outline_rebuild(&self, _scope: &Scope, params: &mut dyn Iterator<Item = Value>) -> Self {
         match self.expand {
             ExpandValue::Constant { .. } => self.expand.into(),
             ExpandValue::Value(_) => params
@@ -110,8 +115,8 @@ impl<T: OutlineArg<Owned = T>> OutlineArg for &T {
         (**self).outline_key(hasher);
     }
 
-    fn outline_rebuild(&self, params: &mut dyn Iterator<Item = Value>) -> T {
-        (**self).outline_rebuild(params)
+    fn outline_rebuild(&self, scope: &Scope, params: &mut dyn Iterator<Item = Value>) -> T {
+        (**self).outline_rebuild(scope, params)
     }
 
     fn outline_owned(&self) -> T {
@@ -136,12 +141,66 @@ impl<T> Outlinable for T where
 {
 }
 
+/// A slice passes the buffer it points into, its offset and its length. The
+/// buffer pointer's type names the buffer, so a function taking a slice is
+/// specialized per buffer.
+impl<E: CubePrimitive> OutlineArg for SliceExpand<E> {
+    type Owned = Self;
+
+    fn outline_slots(&self, scope: &Scope, slots: &mut Vec<OutlineSlot>) {
+        let slice: SliceExpand<E> = self.expand.read_value(scope).into();
+        slots.push(OutlineSlot::Param(slice.__extract_list(scope)));
+        slots.push(OutlineSlot::Param(
+            slice.__extract_offset(scope).value(scope),
+        ));
+        slots.push(OutlineSlot::Param(
+            slice.__extract_length(scope).value(scope),
+        ));
+    }
+
+    fn outline_rebuild(&self, scope: &Scope, params: &mut dyn Iterator<Item = Value>) -> Self {
+        let mut next = || params.next().expect("three parameters per slice");
+        let (list, offset, length) = (next(), next(), next());
+        slice_from_raw_parts(scope, list, offset.into(), length.into())
+    }
+
+    fn outline_owned(&self) -> Self {
+        self.expand.into()
+    }
+}
+
+/// A mutable slice is a slice: what it points to is written in place, which
+/// is what the caller sees either way.
+impl<E: CubePrimitive> OutlineArg for &mut SliceExpand<E> {
+    type Owned = SliceExpand<E>;
+
+    fn outline_slots(&self, scope: &Scope, slots: &mut Vec<OutlineSlot>) {
+        (**self).outline_slots(scope, slots);
+    }
+
+    fn outline_rebuild(
+        &self,
+        scope: &Scope,
+        params: &mut dyn Iterator<Item = Value>,
+    ) -> SliceExpand<E> {
+        (**self).outline_rebuild(scope, params)
+    }
+
+    fn outline_owned(&self) -> SliceExpand<E> {
+        (**self).outline_owned()
+    }
+}
+
 /// The runtime arguments of an outlined call, as a tuple.
 pub trait OutlineArgs {
     type Owned;
     fn outline_slots(&self, scope: &Scope, slots: &mut Vec<OutlineSlot>);
     fn outline_key(&self, hasher: &mut dyn Hasher);
-    fn outline_rebuild(&self, params: &mut dyn Iterator<Item = Value>) -> Self::Owned;
+    fn outline_rebuild(
+        &self,
+        scope: &Scope,
+        params: &mut dyn Iterator<Item = Value>,
+    ) -> Self::Owned;
     fn outline_owned(&self) -> Self::Owned;
 }
 
@@ -163,9 +222,9 @@ macro_rules! outline_args_tuple {
             }
 
             #[allow(unused_variables, non_snake_case, clippy::unused_unit)]
-            fn outline_rebuild(&self, params: &mut dyn Iterator<Item = Value>) -> Self::Owned {
+            fn outline_rebuild(&self, scope: &Scope, params: &mut dyn Iterator<Item = Value>) -> Self::Owned {
                 let ($($name,)*) = self;
-                ($($name.outline_rebuild(params),)*)
+                ($($name.outline_rebuild(scope, params),)*)
             }
 
             #[allow(non_snake_case, clippy::unused_unit)]
@@ -302,7 +361,8 @@ pub fn outline_call<A: OutlineArgs, R: OutlineResult>(
     let block_args: Vec<Value> = entry.deref(scope.ctx()).arguments().collect();
 
     let child = scope.func_child(OpInserter::new_at_block_end(entry));
-    let result = body(&child, args.outline_rebuild(&mut block_args.into_iter()));
+    let rebuilt = args.outline_rebuild(&child, &mut block_args.into_iter());
+    let result = body(&child, rebuilt);
     let returned = result.outline_returns(&child);
     let terminates = child.expand_state().may_return;
     let ret = match returned.as_slice() {
