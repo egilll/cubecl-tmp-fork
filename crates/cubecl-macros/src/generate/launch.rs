@@ -27,14 +27,26 @@ impl ToTokens for Launch {
         func.sig.name = format_ident!("expand");
         let func = func.to_tokens_mut();
 
+        let alias_names = self.alias_names();
+
+        // The items generated for the kernel are named after it, so they would shadow a type of
+        // the same name that its code uses, as `Shared` in `fn shared`. Its code lives a module
+        // further down, which sees the caller's scope and only the aliases from this one.
         let out = quote! {
             #vis mod #name {
                 use super::*;
 
                 #aliases
 
-                #[allow(unused, clippy::all)]
-                #func
+                mod __kernel {
+                    use super::super::*;
+                    #[allow(unused_imports)]
+                    use super::{#(#alias_names),*};
+
+                    #[allow(unused, clippy::all)]
+                    #func
+                }
+                pub use __kernel::expand;
 
                 #kernel
                 #launch
@@ -205,6 +217,20 @@ impl Launch {
 
         quote! {
             let mut __settings = #kernel_settings::new(__cube_dim.into(), #mode, #address_type);
+        }
+    }
+
+    /// The aliases [`Self::create_type_alias`] declares, with their marker types.
+    fn alias_names(&self) -> Vec<TokenStream> {
+        match self.func.args.explicit_define.is_present() {
+            true => Vec::new(),
+            false => self
+                .func
+                .analysis
+                .map
+                .iter()
+                .flat_map(|(name, arg)| [name.to_token_stream(), arg.marker_ty.to_token_stream()])
+                .collect(),
         }
     }
 
