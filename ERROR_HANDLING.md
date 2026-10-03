@@ -212,6 +212,14 @@ from aborting the process once the device is gone: an unmap in a destructor
 errors then, and a panic there aborts. `crates/cubecl-wgpu/tests/device_poisoned.rs`
 loses the device with `Device::destroy` and checks both.
 
+On Metal the device is not lost when the GPU aborts a command buffer, such
+as a kernel the watchdog kills for running too long: wgpu-hal counts a
+command buffer that completed with an error as completed
+([gfx-rs/wgpu#9545](https://github.com/gfx-rs/wgpu/issues/9545)). Until
+it loses the device there, such a launch goes unreported and its outputs
+read back whatever they held. The native `cubecl-metal` runtime checks
+each command buffer's status and does report it.
+
 **Some failures cannot be attributed.** A Metal command-buffer completion
 handler knows the staging temporaries and the event, never the outputs — so
 its fault claims no buffer and fails the whole stream's waits instead,
