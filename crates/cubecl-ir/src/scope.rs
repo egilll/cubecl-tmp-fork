@@ -158,6 +158,9 @@ pub struct GlobalState {
     pub modes: InstructionModes,
     pub target_properties: TargetProperties,
     pub device_properties: Option<Rc<DeviceProperties>>,
+    /// The device functions traced so far, by specialization, so later calls
+    /// with the same one call them instead of tracing again.
+    pub outlined: HashMap<crate::outline::OutlineKey, crate::outline::Outlined>,
 }
 
 unsafe impl Send for GlobalState {}
@@ -338,6 +341,7 @@ fn new_context(settings: KernelSettings) -> Rc<UnsafeCell<Context>> {
         device_properties: Default::default(),
         errors: Default::default(),
         warnings: Default::default(),
+        outlined: Default::default(),
     };
     settings.address_type.register(&mut state);
 
@@ -373,6 +377,7 @@ fn dummy_context() -> Rc<UnsafeCell<Context>> {
         device_properties: Default::default(),
         errors: Default::default(),
         warnings: Default::default(),
+        outlined: Default::default(),
     };
 
     ctx.set_aux_ty(state);

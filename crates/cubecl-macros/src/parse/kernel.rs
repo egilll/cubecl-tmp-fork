@@ -38,6 +38,9 @@ pub(crate) struct KernelArgs {
     pub explicit_define: Flag,
     #[darling(default)]
     pub address_type: AddressType,
+    /// Trace the function once per specialization into a device function of
+    /// the kernel, and call it, instead of tracing it again at every call.
+    pub outline: Flag,
 }
 
 pub enum ExecutionMode {

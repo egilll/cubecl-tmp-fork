@@ -31,6 +31,7 @@ pub mod interfaces;
 pub mod metadata;
 #[cfg(feature = "nvidia")]
 pub mod nvidia;
+pub mod outline;
 pub mod rewrite;
 pub mod settings;
 pub mod types;

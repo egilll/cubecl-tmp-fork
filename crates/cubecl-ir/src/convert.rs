@@ -18,8 +18,25 @@ use crate::{FuncOpExt, dialect::OperationPtrExt};
 pub fn lift_closure(ctx: &Context, func: &FuncOp) -> Vec<Value> {
     let func_op = func.get_operation();
     let entry = func.get_entry_block(ctx);
-    let mut captures = vec![];
+    let captures = closure_captures(ctx, func);
 
+    for capture in captures.iter() {
+        let id = func.push_argument(ctx, capture.get_type(ctx));
+        let arg_value = entry.deref(ctx).get_argument(id);
+        capture.replace_some_uses_with(
+            ctx,
+            |ctx, r#use| op_is_in_func(ctx, func_op, r#use.user_op()),
+            &arg_value,
+        );
+    }
+
+    captures
+}
+
+/// The values `func`'s body uses that it does not define: the captures a
+/// closure would need passed in. Empty for a function that stands alone.
+pub fn closure_captures(ctx: &Context, func: &FuncOp) -> Vec<Value> {
+    let mut captures = vec![];
     walk_op(
         ctx,
         &mut (func, &mut captures),
@@ -35,17 +52,6 @@ pub fn lift_closure(ctx: &Context, func: &FuncOp) -> Vec<Value> {
             }
         },
     );
-
-    for capture in captures.iter() {
-        let id = func.push_argument(ctx, capture.get_type(ctx));
-        let arg_value = entry.deref(ctx).get_argument(id);
-        capture.replace_some_uses_with(
-            ctx,
-            |ctx, r#use| op_is_in_func(ctx, func_op, r#use.user_op()),
-            &arg_value,
-        );
-    }
-
     captures
 }
 

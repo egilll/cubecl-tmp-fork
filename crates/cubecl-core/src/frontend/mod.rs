@@ -18,6 +18,7 @@ mod indexation;
 mod list;
 mod operation;
 mod options;
+pub mod outline;
 mod plane;
 pub mod polyfills;
 mod ranges;

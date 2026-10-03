@@ -84,6 +84,10 @@ impl KernelFn {
                 quote![#fast_math(scope, #value, |scope| {#body})]
             })
             .unwrap_or_else(|| quote![#body]);
+        let body = match self.args.outline.is_present() {
+            true => self.outline_body(body),
+            false => body,
+        };
         let imports = trait_imports();
         let mappings = self.sig.define_mappings();
         let registers = self
@@ -104,6 +108,66 @@ impl KernelFn {
         };
 
         out
+    }
+}
+
+impl KernelFn {
+    /// Wrap the expansion of a `#[cube(outline)]` function so it is traced
+    /// once per specialization, into a device function its calls call. See
+    /// `cubecl_core::frontend::outline`.
+    fn outline_body(&self, body: TokenStream) -> TokenStream {
+        if self.sig.receiver_arg.is_some() {
+            return syn::Error::new(
+                self.span,
+                "`#[cube(outline)]` is only supported on free functions for now",
+            )
+            .into_compile_error();
+        }
+        if self.args.is_launch() {
+            return syn::Error::new(
+                self.span,
+                "a kernel entry point can't be outlined; mark the functions it calls instead",
+            )
+            .into_compile_error();
+        }
+
+        let outline = frontend_type("outline");
+        let scope_ty = prelude_type("Scope");
+        let name = self.full_name.as_str();
+        let runtime: Vec<_> = self.sig.runtime_params().map(|it| &it.name).collect();
+        let comptime: Vec<_> = self.sig.comptime_params().map(|it| &it.name).collect();
+        let type_params: Vec<_> = self
+            .sig
+            .generics
+            .type_params()
+            .map(|it| &it.ident)
+            .collect();
+        let const_params: Vec<_> = self
+            .sig
+            .generics
+            .const_params()
+            .map(|it| &it.ident)
+            .collect();
+
+        quote! {
+            let __outline_comptime = {
+                let mut __hasher = #outline::outline_hasher();
+                #(#outline::outline_hash_comptime(&mut __hasher, &#comptime);)*
+                #(#outline::outline_hash_comptime(&mut __hasher, &#const_params);)*
+                ::core::hash::Hasher::finish(&__hasher)
+            };
+            #outline::outline_call(
+                scope,
+                ::core::concat!(::core::module_path!(), "::", #name),
+                &[#(::core::any::type_name::<#type_params>()),*],
+                __outline_comptime,
+                (#(#runtime,)*),
+                |scope: &#scope_ty, (#(#runtime,)*)| {
+                    #(let #comptime = ::core::clone::Clone::clone(&#comptime);)*
+                    #body
+                },
+            )
+        }
     }
 }
 

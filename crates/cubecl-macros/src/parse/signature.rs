@@ -193,6 +193,10 @@ impl KernelSignature {
         self.parameters.iter().filter(|it| !it.is_const)
     }
 
+    pub fn comptime_params(&self) -> impl Iterator<Item = &KernelParam> {
+        self.parameters.iter().filter(|it| it.is_const)
+    }
+
     pub fn define_mappings(&self) -> BTreeMap<Ident, (Ident, Option<usize>)> {
         let mut mapping = BTreeMap::new();
         for param in self.parameters.iter() {
