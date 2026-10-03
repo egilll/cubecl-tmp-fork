@@ -8,7 +8,6 @@ use cubecl_server::kernel::BufferIOAttr;
 use cubecl_core::{
     WgpuCompilationOptions,
     post_processing::{
-        checked_io::{CheckedIo, CheckedIoPass},
         minifloat::{
             Fp8Container, LowerMinifloatCast, LowerMinifloatCastPass, LowerMinifloatCompare,
             LowerMinifloatComparePass,
@@ -24,15 +23,13 @@ use cubecl_ir::{
     pliron::{
         builtin::ops::{FuncOp, ModuleOp},
         operation::verify_operation,
-        opts::{dce::DCEPass, mem2reg::Mem2RegPass},
     },
     prelude::{AnalysisManager, NestedOpsPass, Op, OpPass, PMConfig, Pass, Passes},
-    rewrite::SimplifyOpsPass,
     settings::Dim3,
 };
-use cubecl_opt::passes::{
-    annotate_buffer_visibility::AnnotateGlobalVisibilityPass, inst_combine::InstCombinePass,
-    sccp::SCCPPass, simple_cse::SimpleCSEPass, sroa::SROAPass,
+use cubecl_opt::{
+    passes::annotate_buffer_visibility::AnnotateGlobalVisibilityPass,
+    pipeline::{add_kernel_entry_passes, add_structured_cleanup_passes},
 };
 use cubecl_server::compiler::CompilationError;
 use cubecl_server::kernel;
@@ -134,11 +131,11 @@ impl WgslCompiler {
         let mut passes = OpPass::<ModuleOp, Passes>::default();
         let mut func_passes = OpPass::<FuncOp, Passes>::default();
 
-        func_passes.add_pass(SROAPass);
-        func_passes.add_pass(CheckedIoPass::new(CheckedIo::new(
+        add_kernel_entry_passes(
+            &mut func_passes,
             value.settings.execution_mode,
             value.settings.kernel_name.clone(),
-        )));
+        );
         func_passes.add_pass(UnrollPass::new(MAX_VECTOR_SIZE));
         // After the unroll so that an fp8 vector is at most one word, see `types.rs`.
         func_passes.add_pass(LowerMinifloatCastPass::new(LowerMinifloatCast::new(
@@ -153,21 +150,7 @@ impl WgslCompiler {
         func_passes.add_pass(LowerSaturatingArithmeticPass::default());
         func_passes.add_pass(LowerBuiltinsPass);
 
-        func_passes.add_pass(SCCPPass);
-        func_passes.add_pass(InstCombinePass::default());
-        func_passes.add_pass(SimpleCSEPass::without_memory());
-        func_passes.add_pass(SimplifyOpsPass::default());
-        func_passes.add_pass(DCEPass);
-        func_passes.add_pass(SROAPass);
-
-        // SCCP/DCE may unlock more mem2reg opportunities, and vice versa. So we do a sandwich.
-        func_passes.add_pass(Mem2RegPass);
-
-        func_passes.add_pass(SROAPass);
-        func_passes.add_pass(SCCPPass);
-        func_passes.add_pass(SimpleCSEPass::with_memory());
-        func_passes.add_pass(SimplifyOpsPass::default());
-        func_passes.add_pass(DCEPass);
+        add_structured_cleanup_passes(&mut func_passes);
 
         passes.add_pass(NestedOpsPass::new(func_passes));
         passes.add_pass(AnnotateGlobalVisibilityPass);

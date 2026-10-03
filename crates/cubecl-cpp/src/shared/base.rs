@@ -26,13 +26,12 @@ use cubecl_core::{
         features::{AtomicUsage, EnumSet, TypeUsage},
         interfaces::TypedExt,
         metadata::Info,
-        rewrite::{SimplifyOpsPass, visit_all_values},
+        rewrite::visit_all_values,
         settings::Dim3,
         types::scalar::{Complex32Type, Complex64Type},
     },
     post_processing::{
         bitwise::PromoteBitwisePass,
-        checked_io::{CheckedIo, CheckedIoPass},
         fp4::{LowerFp4Cast, LowerFp4CastPass},
         minifloat::{Fp8Container, LowerMinifloatCast, LowerMinifloatCastPass},
         saturating::LowerSaturatingArithmeticPass,
@@ -40,10 +39,12 @@ use cubecl_core::{
     prelude::KernelDefinition,
 };
 use cubecl_environment::backtrace::BackTrace;
-use cubecl_opt::passes::{
-    alloc_shared_memory::AllocateSharedMemoryBlockPass,
-    annotate_buffer_visibility::AnnotateGlobalVisibilityPass, inst_combine::InstCombinePass,
-    sccp::SCCPPass, simple_cse::SimpleCSEPass, sroa::SROAPass,
+use cubecl_opt::{
+    passes::{
+        alloc_shared_memory::AllocateSharedMemoryBlockPass,
+        annotate_buffer_visibility::AnnotateGlobalVisibilityPass,
+    },
+    pipeline::{add_kernel_entry_passes, add_structured_cleanup_passes},
 };
 use cubecl_runtime::compiler::{CompilationError, Compiler};
 use pliron::{
@@ -52,7 +53,6 @@ use pliron::{
     irbuild::match_rewrite::MatchRewrite,
     op::Op,
     operation::verify_operation,
-    opts::{dce::DCEPass, mem2reg::Mem2RegPass},
     pass::{AnalysisManager, NestedOpsPass, OpPass, PMConfig, Pass, Passes},
 };
 use std::fmt::Debug;
@@ -243,11 +243,11 @@ where
         let mut func_passes = OpPass::<FuncOp, Passes>::default();
 
         func_passes.add_pass(LowerInfoPass);
-        func_passes.add_pass(SROAPass);
-        func_passes.add_pass(CheckedIoPass::new(CheckedIo::new(
+        add_kernel_entry_passes(
+            &mut func_passes,
             kernel.settings.execution_mode,
             kernel.settings.kernel_name,
-        )));
+        );
         func_passes.add_pass(AllocateSharedMemoryBlockPass);
 
         // CUDA converts fp8 with cuda_fp8.h, which carries its own software path below sm_89.
@@ -287,21 +287,7 @@ where
         func_passes.add_pass(LowerBuiltinsPass::<T>::default());
         func_passes.add_pass(LowerOpsAfterUnrollCppPass::<T>::default());
 
-        func_passes.add_pass(SCCPPass);
-        func_passes.add_pass(InstCombinePass::default());
-        func_passes.add_pass(SimpleCSEPass::without_memory());
-        func_passes.add_pass(SimplifyOpsPass::default());
-        func_passes.add_pass(DCEPass);
-        func_passes.add_pass(SROAPass);
-
-        // SCCP/DCE may unlock more mem2reg opportunities, and vice versa. So we do a sandwich.
-        func_passes.add_pass(Mem2RegPass);
-
-        func_passes.add_pass(SROAPass);
-        func_passes.add_pass(SCCPPass);
-        func_passes.add_pass(SimpleCSEPass::with_memory());
-        func_passes.add_pass(SimplifyOpsPass::default());
-        func_passes.add_pass(DCEPass);
+        add_structured_cleanup_passes(&mut func_passes);
 
         func_passes.add_pass(PromoteBitwisePass);
         func_passes.add_pass(PromoteUnsupportedTypesPass::default());

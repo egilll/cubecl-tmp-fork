@@ -17,7 +17,6 @@ use cubecl_core::{
     },
     post_processing::{
         bitwise::PromoteBitwisePass,
-        checked_io::{CheckedIo, CheckedIoPass},
         minifloat::{
             Fp8Container, LowerMinifloatCast, LowerMinifloatCastPass, LowerMinifloatCompare,
             LowerMinifloatComparePass,
@@ -45,6 +44,7 @@ use cubecl_opt::passes::{
     sroa::SROAPass,
     uniformity::{DYNAMICALLY_UNIFORM_ATTR, MarkDynamicallyUniformPass, UniformAttr},
 };
+use cubecl_opt::pipeline::add_kernel_entry_passes;
 use cubecl_runtime::compiler::CompilationError;
 use pliron::{
     basic_block::BasicBlock,
@@ -208,11 +208,11 @@ impl SpirvCompiler {
         let mut passes = OpPass::<ModuleOp, Passes>::default();
 
         let mut func_passes = OpPass::<FuncOp, Passes>::default();
-        func_passes.add_pass(SROAPass);
-        func_passes.add_pass(CheckedIoPass::new(CheckedIo::new(
+        add_kernel_entry_passes(
+            &mut func_passes,
             settings.execution_mode,
             settings.kernel_name,
-        )));
+        );
         func_passes.add_pass(UnrollPass::new(comp_opts.vulkan.max_vector_size));
         func_passes.add_pass(AllocateSharedMemoryBlockPass);
         func_passes.add_pass(LowerSaturatingArithmeticPass::default());

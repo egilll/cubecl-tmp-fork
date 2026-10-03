@@ -19,6 +19,7 @@ use cubecl_ir::{AddressSpace, interfaces::TypedExt};
 
 pub mod analyses;
 pub mod passes;
+pub mod pipeline;
 pub mod scoped_map;
 
 use hi_sparse_bitset::{Apply, BitSetInterface, ops};
