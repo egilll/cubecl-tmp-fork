@@ -489,3 +489,48 @@ fn slices_are_inlined_for_a_target_without_global_pointer_parameters() {
     assert_eq!(count::<CallOp>(&traced.ctx, traced.module), 0);
     assert_eq!(count::<FuncOp>(&traced.ctx, traced.module), 1);
 }
+
+#[derive(CubeType, CubeTypeMut, Clone, Copy)]
+#[expand(derive(Clone, Copy))]
+struct Table {
+    base: f32,
+}
+
+#[cube(outline)]
+impl Table {
+    // Returns a struct, which a function can't yet: traced inline.
+    fn new(base: f32) -> Table {
+        Table { base }
+    }
+
+    // Takes `&mut self`, which an impl-wide `outline` skips.
+    fn shift(&mut self, by: f32) {
+        self.base += by;
+    }
+
+    fn lookup(&self, x: f32) -> f32 {
+        f32::exp(x * self.base) + f32::ln(x + self.base) * self.base
+    }
+
+    #[cube(inline)]
+    fn lookup_inline(&self, x: f32) -> f32 {
+        f32::exp(x * self.base) + f32::ln(x + self.base) * self.base
+    }
+}
+
+#[cube]
+fn table_calls() -> f32 {
+    let x = f32::cast_from(UNIT_POS);
+    let mut table = Table::new(x);
+    table.shift(1.0);
+    table.lookup(x) + table.lookup(x + 1.0) + table.lookup_inline(x) + table.lookup_inline(x)
+}
+
+#[test]
+fn an_impl_marked_outline_outlines_its_methods_but_inline_ones() {
+    let traced = trace(|scope| {
+        table_calls::expand(scope);
+    });
+    assert_eq!(count::<CallOp>(&traced.ctx, traced.module), 2);
+    assert_eq!(count::<FuncOp>(&traced.ctx, traced.module), 2);
+}

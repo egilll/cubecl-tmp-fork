@@ -378,6 +378,25 @@ impl CubeTypeStruct {
         }
 
         quote! {
+            // A function can't return a struct yet: a call that would is
+            // traced inline.
+            impl #generics #outline::OutlineResult for #name_expand #generic_names #where_clause {
+                const CAN_RETURN: bool = false;
+
+                fn outline_returns(
+                    &self,
+                    _scope: &#outline::__private::Scope,
+                ) -> #outline::__private::Vec<#outline::__private::Value> {
+                    ::core::unreachable!("a struct is never returned from a device function")
+                }
+
+                fn outline_from_results(
+                    _results: &mut dyn ::core::iter::Iterator<Item = #outline::__private::Value>,
+                ) -> Self {
+                    ::core::unreachable!("a struct is never returned from a device function")
+                }
+            }
+
             impl #generics #outline::OutlineArg for #name_expand #generic_names
             where #(#predicates),*
             {

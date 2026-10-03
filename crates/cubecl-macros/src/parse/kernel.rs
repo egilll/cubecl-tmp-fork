@@ -40,7 +40,16 @@ pub(crate) struct KernelArgs {
     pub address_type: AddressType,
     /// Trace the function once per specialization into a device function of
     /// the kernel, and call it, instead of tracing it again at every call.
+    /// On an `impl` block, applies to every method in it.
     pub outline: Flag,
+    /// On a method of an `impl` marked `outline`: trace it at every call, as
+    /// a plain `#[cube]` method.
+    pub inline: Flag,
+    /// Whether `outline` comes from the `impl` rather than the function: a
+    /// method whose signature can't be outlined is then traced at every call
+    /// rather than refused.
+    #[darling(skip)]
+    pub outline_from_impl: bool,
 }
 
 pub enum ExecutionMode {

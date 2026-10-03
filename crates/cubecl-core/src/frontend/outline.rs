@@ -263,6 +263,10 @@ pub fn outline_hash_field<T: Hash + ?Sized>(hasher: &mut dyn Hasher, value: &T) 
     note = "remove `outline` from the function's `#[cube]` attribute to inline it at each call"
 )]
 pub trait OutlineResult: Sized {
+    /// Whether a function can return this. A call to a function that returns
+    /// something it can't is traced inline instead.
+    const CAN_RETURN: bool = true;
+
     /// The values the function returns, read inside it.
     fn outline_returns(&self, scope: &Scope) -> Vec<Value>;
     /// The result at the call site, from the call's results.
@@ -307,6 +311,10 @@ pub fn outline_call<A: OutlineArgs, R: OutlineResult>(
     args: A,
     body: impl Fn(&Scope, A::Owned) -> R,
 ) -> R {
+    if !R::CAN_RETURN {
+        return body(scope, args.outline_owned());
+    }
+
     let mut slots = Vec::new();
     args.outline_slots(scope, &mut slots);
     let params: Vec<Value> = slots

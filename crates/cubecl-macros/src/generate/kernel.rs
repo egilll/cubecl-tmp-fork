@@ -135,6 +135,9 @@ impl KernelFn {
             .runtime_params()
             .find(|param| is_mut_ref(&param.ty) && !is_mut_slice(&param.ty))
         {
+            if self.args.outline_from_impl {
+                return body;
+            }
             return syn::Error::new(
                 param.name.span(),
                 "`#[cube(outline)]` functions can't take `&mut` arguments other than slices yet",

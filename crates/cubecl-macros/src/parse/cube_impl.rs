@@ -28,13 +28,15 @@ pub enum CubeImplItem {
     Other,
 }
 
-/// The impl's arguments, with what a method's own `#[cube(...)]` adds, which
-/// for now is only `outline`. The attribute is removed from the method.
+/// The impl's arguments, with what a method's own `#[cube(...)]` changes,
+/// which for now is `outline`, or `inline` to undo an impl-wide `outline`.
+/// The attribute is removed from the method.
 pub(crate) fn take_method_args(
     attrs: &mut Vec<syn::Attribute>,
     args: &KernelArgs,
 ) -> syn::Result<KernelArgs> {
     let mut args = args.clone();
+    args.outline_from_impl = args.outline.is_present();
     let mut error = None;
     attrs.retain(|attr| {
         if !attr.path().is_ident("cube") {
@@ -45,13 +47,23 @@ pub(crate) fn take_method_args(
             .require_list()
             .and_then(|list| crate::parse::kernel::from_tokens::<KernelArgs>(list.tokens.clone()));
         match parsed {
+            Ok(method) if method.outline.is_present() && method.inline.is_present() => {
+                error = Some(syn::Error::new_spanned(
+                    attr,
+                    "a method can't be both `outline` and `inline`",
+                ));
+            }
             Ok(method) if method.outline.is_present() => {
                 args.outline = method.outline;
+                args.outline_from_impl = false;
+            }
+            Ok(method) if method.inline.is_present() => {
+                args.outline = Default::default();
             }
             Ok(_) => {
                 error = Some(syn::Error::new_spanned(
                     attr,
-                    "only `#[cube(outline)]` can be set on a method",
+                    "only `#[cube(outline)]` or `#[cube(inline)]` can be set on a method",
                 ));
             }
             Err(err) => error = Some(err),
