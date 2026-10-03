@@ -65,9 +65,13 @@ impl ComputeStorage for MetalStorage {
 
         let id = StorageId::new();
 
-        // MTLResourceStorageModeShared allows both CPU and GPU to access the buffer.
+        // MTLResourceStorageModeShared allows both CPU and GPU to access the buffer. Metal has no
+        // empty buffer, so an empty one is backed by a byte: it still has to bind and copy.
         let buffer = (*self.device)
-            .newBufferWithLength_options(size as usize, MTLResourceOptions::StorageModeShared)
+            .newBufferWithLength_options(
+                size.max(1) as usize,
+                MTLResourceOptions::StorageModeShared,
+            )
             .ok_or_else(|| cubecl_core::server::IoError::Unknown {
                 description: format!("Failed to allocate Metal buffer of size {}", size),
                 backtrace: cubecl_environment::backtrace::BackTrace::capture(),
