@@ -14,7 +14,7 @@ use:
 # use cubecl::prelude::*;
 #
 #[derive(CubeType, CubeLaunch)]
-pub struct Pair<T: CubeLaunch> {
+pub struct Pair<T: LaunchArg> {
     pub left: T,
     pub right: T,
 }
@@ -36,23 +36,22 @@ used as local variables:
 # use cubecl::prelude::*;
 #
 # #[derive(CubeType, CubeLaunch)]
-# pub struct Pair<T: CubeLaunch> {
+# pub struct Pair<T: LaunchArg> {
 #     pub left: T,
 #     pub right: T,
 # }
 #
 #[cube(launch_unchecked)]
 pub fn kernel_struct_example(pair: Pair<Box<[f32]>>, output: &mut [f32]) {
-    output[UNIT_POS] = pair.left[UNIT_POS] + pair.right[UNIT_POS];
+    let pos = UNIT_POS as usize;
+    output[pos] = pair.left[pos] + pair.right[pos];
 }
 #
-# pub fn launch<R: Runtime>(device: &R::Device) {
-#     let client = R::client(device);
+# pub fn launch(device: &cubecl::Device) {
+#     let client = device.client();
 #
-#     let left = [f32::from_int(1)];
-#     let left = client.create(f32::as_bytes(&left));
-#     let right = [f32::from_int(1)];
-#     let right = client.create(f32::as_bytes(&right));
+#     let left = client.create_from_slice(f32::as_bytes(&[1.0]));
+#     let right = client.create_from_slice(f32::as_bytes(&[1.0]));
 #     let output = client.empty(core::mem::size_of::<f32>());
 #
 #     unsafe {
@@ -61,22 +60,22 @@ pub fn kernel_struct_example(pair: Pair<Box<[f32]>>, output: &mut [f32]) {
 #             CubeCount::Static(1, 1, 1),
 #             CubeDim::new_1d(1),
 #             PairLaunch::new(
-#                 BufferArg::from_raw_parts::<f32>(&left, 1, 1),
-#                 BufferArg::from_raw_parts::<f32>(&right, 1, 1),
+#                 BufferArg::from_raw_parts(left, 1),
+#                 BufferArg::from_raw_parts(right, 1),
 #             ),
-#             BufferArg::from_raw_parts::<f32>(&output, 1, 1),
+#             BufferArg::from_raw_parts(output.clone(), 1),
 #         )
 #     };
 #
 #     println!(
 #         "Executed kernel_struct_example with runtime {:?} => {:?}",
-#         R::name(&client),
-#         f32::from_bytes(&client.read_one(output.binding()))
+#         client.name(),
+#         f32::from_bytes(&client.read_one(output).unwrap())
 #     );
 # }
 #
 # fn main() {
-#     launch::<cubecl::wgpu::WgpuRuntime>(&Default::default());
+#     launch(&Default::default());
 # }
 ```
 
@@ -93,17 +92,16 @@ You can also mutate struct fields if the struct is passed as a mutable reference
 #
 #[cube(launch_unchecked)]
 pub fn kernel_struct_mut(output: Pair<&mut [f32]>) {
-    output.left[UNIT_POS] = 42.0;
-    output.right[UNIT_POS] = 3.14;
+    let pos = UNIT_POS as usize;
+    output.left[pos] = 42.0;
+    output.right[pos] = 3.14;
 }
 #
-# pub fn launch<R: Runtime>(device: &R::Device) {
-#     let client = R::client(device);
+# pub fn launch(device: &cubecl::Device) {
+#     let client = device.client();
 #
-#     let left = [f32::from_int(1)];
-#     let left = client.create(f32::as_bytes(&left));
-#     let right = [f32::from_int(1)];
-#     let right = client.create(f32::as_bytes(&right));
+#     let left = client.create_from_slice(f32::as_bytes(&[1.0]));
+#     let right = client.create_from_slice(f32::as_bytes(&[1.0]));
 #
 #     unsafe {
 #         kernel_struct_mut::launch_unchecked(
@@ -111,22 +109,22 @@ pub fn kernel_struct_mut(output: Pair<&mut [f32]>) {
 #             CubeCount::Static(1, 1, 1),
 #             CubeDim::new_1d(1),
 #             PairLaunch::new(
-#                 BufferArg::from_raw_parts::<f32>(&left, 1, 1),
-#                 BufferArg::from_raw_parts::<f32>(&right, 1, 1),
+#                 BufferArg::from_raw_parts(left.clone(), 1),
+#                 BufferArg::from_raw_parts(right.clone(), 1),
 #             ),
 #         )
 #     };
 #
 #     println!(
 #         "Executed kernel_struct_mut with runtime {:?} => ({:?}, {:?})",
-#         R::name(&client),
-#         f32::from_bytes(&client.read_one(left.binding())),
-#         f32::from_bytes(&client.read_one(right.binding())),
+#         client.name(),
+#         f32::from_bytes(&client.read_one(left).unwrap()),
+#         f32::from_bytes(&client.read_one(right).unwrap()),
 #     );
 # }
 #
 # fn main() {
-#     launch::<cubecl::wgpu::WgpuRuntime>(&Default::default());
+#     launch(&Default::default());
 # }
 ```
 
@@ -156,10 +154,10 @@ pub fn kernel_with_tag(output: &mut TaggedSlice) {
     }
 }
 #
-# pub fn launch<R: Runtime, F: Float + CubeElement>(device: &R::Device) {
-#     let client = R::client(device);
+# pub fn launch(device: &cubecl::Device) {
+#     let client = device.client();
 #
-#     let output = client.empty(core::mem::size_of::<F>());
+#     let output = client.empty(core::mem::size_of::<f32>());
 #
 #     unsafe {
 #         kernel_with_tag::launch_unchecked(
@@ -167,23 +165,55 @@ pub fn kernel_with_tag(output: &mut TaggedSlice) {
 #             CubeCount::Static(1, 1, 1),
 #             CubeDim::new_1d(1),
 #             TaggedSliceLaunch::new(
-#                 BufferArg::from_raw_parts::<F>(&output, 1, 1),
-#                 &"not_zero".to_string(),
+#                 BufferArg::from_raw_parts(output.clone(), 1),
+#                 "not_zero".to_string(),
 #             ),
 #         )
 #     };
 #
 #     println!(
 #         "Executed kernel_with_tag with runtime {:?} => {:?}",
-#         R::name(&client),
-#         F::from_bytes(&client.read_one(output.binding()))
+#         client.name(),
+#         f32::from_bytes(&client.read_one(output).unwrap())
 #     );
 # }
 #
 # fn main() {
-#     launch::<cubecl::wgpu::WgpuRuntime, f32>(&Default::default());
+#     launch(&Default::default());
 # }
 ```
+
+## Copies and references
+
+Structs are borrowed, reborrowed and copied as in Rust. A `&mut` reference can be passed where a `&`
+is expected, and `*x` copies a `Copy` struct into fresh variables, so writing the copy leaves the
+original alone:
+
+```rust,ignore
+# use cubecl::prelude::*;
+#
+#[derive(CubeType, Clone, Copy)]
+pub struct Memory {
+    pub stability: f32,
+    pub difficulty: f32,
+}
+
+#[cube]
+fn retention(memory: &Memory) -> f32 {
+    memory.stability / memory.difficulty
+}
+
+#[cube]
+fn review(memory: &mut Memory) -> f32 {
+    let before = *memory;
+    memory.stability *= 2.0;
+    retention(memory) - retention(&before)
+}
+#
+# fn main() {}
+```
+
+Assigning a whole struct, as in `*memory = other`, also needs `#[derive(CubeTypeMut)]`.
 
 ## Adding methods to struct
 
@@ -194,30 +224,28 @@ attribute must be on the impl block. Here's an example:
 use cubecl::prelude::*;
 
 #[derive(CubeType, CubeLaunch)]
-pub struct Pair<T: CubeLaunch> {
+pub struct Pair<T: LaunchArg> {
     pub left: T,
     pub right: T,
 }
 
 #[cube]
 impl Pair<Box<[f32]>> {
-    pub fn sum(&self, index: u32) -> f32 {
+    pub fn sum(&self, index: usize) -> f32 {
         self.left[index] + self.right[index]
     }
 }
 
 #[cube(launch_unchecked)]
 pub fn kernel_struct_example(pair: &Pair<Box<[f32]>>, output: &mut [f32]) {
-    output[UNIT_POS] = pair.sum(UNIT_POS);
+    output[UNIT_POS as usize] = pair.sum(UNIT_POS as usize);
 }
 #
-# pub fn launch<R: Runtime>(device: &R::Device) {
-#     let client = R::client(device);
+# pub fn launch(device: &cubecl::Device) {
+#     let client = device.client();
 #
-#     let left = [f32::from_int(1)];
-#     let left = client.create(f32::as_bytes(&left));
-#     let right = [f32::from_int(1)];
-#     let right = client.create(f32::as_bytes(&right));
+#     let left = client.create_from_slice(f32::as_bytes(&[1.0]));
+#     let right = client.create_from_slice(f32::as_bytes(&[1.0]));
 #     let output = client.empty(core::mem::size_of::<f32>());
 #
 #     unsafe {
@@ -226,21 +254,21 @@ pub fn kernel_struct_example(pair: &Pair<Box<[f32]>>, output: &mut [f32]) {
 #             CubeCount::Static(1, 1, 1),
 #             CubeDim::new_1d(1),
 #             PairLaunch::new(
-#                 BufferArg::from_raw_parts::<f32>(&left, 1, 1),
-#                 BufferArg::from_raw_parts::<f32>(&right, 1, 1),
+#                 BufferArg::from_raw_parts(left, 1),
+#                 BufferArg::from_raw_parts(right, 1),
 #             ),
-#             BufferArg::from_raw_parts::<f32>(&output, 1, 1),
+#             BufferArg::from_raw_parts(output.clone(), 1),
 #         )
 #     };
 #
 #     println!(
 #         "Executed kernel_struct_example with runtime {:?} => {:?}",
-#         R::name(&client),
-#         f32::from_bytes(&client.read_one(output.binding()))
+#         client.name(),
+#         f32::from_bytes(&client.read_one(output).unwrap())
 #     );
 # }
 #
 # fn main() {
-#     launch::<cubecl::wgpu::WgpuRuntime>(&Default::default());
+#     launch(&Default::default());
 # }
 ```
