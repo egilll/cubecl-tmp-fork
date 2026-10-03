@@ -778,10 +778,17 @@ impl WhileBuilder {
             cond = binary_expand(&cond_scope, cond, return_flag, BoolAndOp::new);
         }
 
-        cond_scope.register(&ConditionOp::new(scope.ctx_mut(), cond.read_value(scope)));
+        terminate_condition(&cond_scope, cond);
 
         scope.register(&while_op);
     }
+}
+
+/// End a loop's condition block with `cond`. The read goes in `cond_scope`, so a condition held
+/// in a mutable local is loaded every iteration rather than once before the loop.
+fn terminate_condition(cond_scope: &Scope, cond: ExpandValue) {
+    let cond = cond.read_value(cond_scope);
+    cond_scope.register(&ConditionOp::new(cond_scope.ctx_mut(), cond));
 }
 
 /// register a range loop if it contains no break or return, destructure to while if it does
@@ -839,7 +846,7 @@ pub(crate) fn register_range_loop<I: Int>(scope: &Scope, for_op: &RangeLoopOp, b
         cond = binary_expand(&cond_scope, cond, inv_return_flag, BoolAndOp::new);
     }
 
-    cond_scope.register(&ConditionOp::new(scope.ctx_mut(), cond.read_value(scope)));
+    terminate_condition(&cond_scope, cond);
 
     rewriter.erase_region(ctx, while_op.after_region(ctx));
     Region::move_to_op(for_op.get_region(ctx), while_op.get_operation(), ctx);

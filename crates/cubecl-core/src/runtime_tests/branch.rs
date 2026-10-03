@@ -233,6 +233,21 @@ pub fn kernel_for_loop_with_break<F: Float>(output: &mut [F]) {
     }
 }
 
+// Regression: a mutable bool loop condition must be re-read every iteration, not once before
+// the loop.
+#[cube(launch)]
+pub fn kernel_while_bool_flag<F: Float>(output: &mut [F], limit: u32) {
+    let mut count = 0u32;
+    let mut searching = limit > 0;
+    while searching {
+        count += 1;
+        if count >= limit {
+            searching = false;
+        }
+    }
+    output[0] = F::cast_from(count);
+}
+
 #[cube(launch)]
 pub fn kernel_for_loop_with_return<F: Float>(output: &mut [F]) {
     let max_iterations = comptime!(20_i32);
@@ -375,6 +390,21 @@ pub fn test_for_loop_with_break<R: Runtime, F: Float + CubeElement>(client: Clie
     assert_eq!(actual, expected.as_slice());
 }
 
+pub fn test_while_bool_flag<R: Runtime, F: Float + CubeElement>(client: Client) {
+    let handle = client.create_from_slice(as_bytes![F: -1.0]);
+
+    kernel_while_bool_flag::launch::<F>(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(1),
+        unsafe { BufferArg::from_raw_parts(handle.clone(), 1) },
+        5,
+    );
+
+    let actual = client.read_one_unchecked(handle);
+    assert_eq!(F::from_bytes(&actual), &[F::new(5.0)]);
+}
+
 pub fn test_for_loop_with_return<R: Runtime, F: Float + CubeElement>(client: Client) {
     let zeros = vec![F::new(0.0); 20];
     let handle = client.create_from_slice(F::as_bytes(&zeros));
@@ -473,6 +503,14 @@ macro_rules! testgen_branch {
         fn test_for_loop_with_break() {
             let client = TestRuntime::client(&Default::default());
             cubecl_core::runtime_tests::branch::test_for_loop_with_break::<TestRuntime, FloatType>(
+                client,
+            );
+        }
+
+        #[$crate::runtime_tests::test_log::test]
+        fn test_while_bool_flag() {
+            let client = TestRuntime::client(&Default::default());
+            cubecl_core::runtime_tests::branch::test_while_bool_flag::<TestRuntime, FloatType>(
                 client,
             );
         }
