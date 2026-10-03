@@ -126,7 +126,7 @@ impl MetalContext {
 
         log::trace!("Compiling kernel to MSL");
 
-        let definition = kernel.define();
+        let definition = cubecl_core::define_kernel(&*kernel)?;
         recording.defined(&definition);
         let mut kernel_compiled = cubecl_server::kernel::CompiledKernel::compile(
             &*kernel,
