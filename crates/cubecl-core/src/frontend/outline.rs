@@ -360,6 +360,7 @@ fn emit_call<R: OutlineResult>(
 fn short_name(function: &str) -> String {
     let name = function
         .rsplit("::")
+        .map(str::trim)
         .find(|it| *it != "__kernel" && !it.is_empty());
     let name = name.unwrap_or("outlined");
     name.chars()
