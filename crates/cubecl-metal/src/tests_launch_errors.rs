@@ -45,8 +45,12 @@ fn oversized_shared_memory_is_a_resource_limit_error() {
     let err = client
         .read_one(handle)
         .expect_err("the launch never wrote the buffer, so the read fails on it");
-    let ServerError::Unwritten { root, .. } = err else {
-        panic!("expected the read to fail on the unwritten buffer, got: {err}");
+    let ServerError::Several { mut errors, .. } = err else {
+        panic!("a read of an unwritten buffer reports its failures, got: {err}");
+    };
+    let root = match errors.remove(0) {
+        ServerError::Unwritten { root, .. } => root,
+        other => panic!("expected the read to fail on the unwritten buffer, got: {other}"),
     };
     match *root {
         ServerError::Launch(LaunchError::TooManyResources(ResourceLimitError::SharedMemory {
