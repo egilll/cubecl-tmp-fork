@@ -1278,6 +1278,8 @@ dependencies = [
  "paste",
  "serde",
  "test-log",
+ "wgpu",
+ "wgpu-hal",
 ]
 
 [[package]]

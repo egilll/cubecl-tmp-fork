@@ -4,9 +4,14 @@ use objc2::runtime::ProtocolObject;
 use objc2_metal::{MTLBuffer, MTLDevice, MTLResourceOptions};
 use std::collections::HashMap;
 
-/// Wrapper for `MTLBuffer` that is Send + Sync.
+/// An `MTLBuffer`, and the region of it a storage handle names (the whole
+/// buffer as stored; the handle's own region once resolved). Send + Sync.
 #[derive(Debug, Clone)]
-pub struct MetalBufferHandle(Retained<ProtocolObject<dyn MTLBuffer>>);
+pub struct MetalBufferHandle {
+    buffer: Retained<ProtocolObject<dyn MTLBuffer>>,
+    offset: u64,
+    size: u64,
+}
 
 // SAFETY: GPU memory access is synchronized via command buffer ordering.
 unsafe impl Send for MetalBufferHandle {}
@@ -14,11 +19,26 @@ unsafe impl Sync for MetalBufferHandle {}
 
 impl MetalBufferHandle {
     pub fn new(buffer: Retained<ProtocolObject<dyn MTLBuffer>>) -> Self {
-        Self(buffer)
+        let size = MTLBuffer::length(&*buffer) as u64;
+        Self {
+            buffer,
+            offset: 0,
+            size,
+        }
     }
 
     pub fn inner(&self) -> &Retained<ProtocolObject<dyn MTLBuffer>> {
-        &self.0
+        &self.buffer
+    }
+
+    /// Where the region starts in the buffer, in bytes.
+    pub fn offset(&self) -> u64 {
+        self.offset
+    }
+
+    /// The region's length in bytes.
+    pub fn size(&self) -> u64 {
+        self.size
     }
 }
 
@@ -52,11 +72,16 @@ impl ComputeStorage for MetalStorage {
         &mut self,
         handle: &StorageHandle,
     ) -> Result<Self::Resource, cubecl_core::server::IoError> {
-        self.buffers.get(&handle.id).cloned().ok_or_else(|| {
+        let buffer = self.buffers.get(&handle.id).ok_or_else(|| {
             cubecl_core::server::IoError::StorageHandleNotFound {
                 reason: format!("{} in the Metal buffer storage", handle.id).into(),
                 backtrace: cubecl_environment::backtrace::BackTrace::capture(),
             }
+        })?;
+        Ok(MetalBufferHandle {
+            buffer: buffer.buffer.clone(),
+            offset: handle.offset(),
+            size: handle.size(),
         })
     }
 

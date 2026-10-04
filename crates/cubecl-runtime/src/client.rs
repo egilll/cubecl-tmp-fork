@@ -524,6 +524,34 @@ impl Client {
         self.read_one_tensor_async(descriptor)
     }
 
+    /// Hand `handle`'s buffer to another consumer of the device, such as a
+    /// renderer: resolves once the work writing it completed, with a
+    /// [`Lease`](crate::lease::Lease) on its backing resource. Until the lease
+    /// is dropped the allocation stays where it is, and launching a kernel
+    /// that writes it panics, as using another client's handle does.
+    ///
+    /// # Errors
+    ///
+    /// The failure the buffer carries, or the server type mismatch
+    /// [`get_resource`](Self::get_resource) reports.
+    pub fn export<S: ServerStorage>(
+        &self,
+        handle: &Handle,
+    ) -> impl Future<
+        Output = Result<crate::lease::Lease<<S::Storage as ComputeStorage>::Resource>, ServerError>,
+    > + Send {
+        let completed = self.sync_buffers([handle]);
+        let client = self.clone();
+        let handle = handle.clone();
+        async move {
+            completed.await?;
+            let resource = client.get_resource::<S>(handle.clone())?;
+            let leases = client.utilities.leases.clone();
+            let id = leases.add(&handle.binding());
+            Ok(crate::lease::Lease::new(resource, leases, id))
+        }
+    }
+
     /// Given a resource handle, returns the storage resource.
     pub fn get_resource<S: ServerStorage>(
         &self,
@@ -1185,6 +1213,15 @@ impl Client {
                 KernelResource::Buffer(binding) => binding,
                 KernelResource::TensorMap(map) => &map.binding,
             });
+        }
+        for written in bindings.buffers_written(None) {
+            if self.utilities.leases.covers(written) {
+                panic!(
+                    "`{}` writes a buffer under a live lease; drop the lease (once its consumer \
+                     is done with it) before writing the buffer again",
+                    kernel.name()
+                );
+            }
         }
 
         crate::launched::note(|| kernel.id());

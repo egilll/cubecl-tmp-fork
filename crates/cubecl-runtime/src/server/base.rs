@@ -147,6 +147,9 @@ pub struct ServerUtilities {
     /// The graph captures under way on the device, read-only: the streams update them through
     /// the [`DeviceCaptures`] [`init`](Self::init) returns alongside.
     pub captures: CaptureStatus,
+    /// The buffers under a live [`Lease`](crate::lease::Lease), which no
+    /// launch may write.
+    pub leases: Arc<crate::lease::Leases>,
 }
 
 /// Defines how the memory layout is determined.
@@ -218,6 +221,7 @@ impl ServerUtilities {
             check_mode: CubeClRuntimeConfig::get().compilation.check_mode,
             initialized_comms: RwLock::new(HashSet::default()),
             captures: captures.status(),
+            leases: Default::default(),
         };
 
         (utilities, captures)

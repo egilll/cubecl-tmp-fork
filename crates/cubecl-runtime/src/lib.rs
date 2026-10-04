@@ -33,6 +33,9 @@ pub mod id;
 /// Kernel related traits.
 pub mod kernel;
 
+/// Completed buffers handed to another consumer of the device.
+pub mod lease;
+
 /// Throughput related utilities.
 pub mod throughput;
 

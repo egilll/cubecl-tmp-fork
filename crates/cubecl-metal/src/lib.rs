@@ -7,6 +7,8 @@ pub mod compute;
 pub mod device;
 pub mod memory;
 pub mod runtime;
+#[cfg(feature = "wgpu")]
+pub mod wgpu_interop;
 
 pub use device::{MetalDevice, register_device};
 pub use runtime::MetalRuntime;
@@ -23,6 +25,8 @@ mod tests_faults;
 mod tests_hazards;
 #[cfg(test)]
 mod tests_launch_errors;
+#[cfg(test)]
+mod tests_lease;
 #[cfg(test)]
 mod tests_multistream;
 #[cfg(test)]

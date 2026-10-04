@@ -48,6 +48,7 @@ pub use cubecl_runtime::compiler::{CompilationError, Compiler};
 pub use cubecl_runtime::kernel::{
     CubeKernel, PrecompiledSource, define_kernel, define_kernel_timed,
 };
+pub use cubecl_runtime::lease;
 pub use cubecl_runtime::memory_management::MemoryUsage;
 pub use cubecl_runtime::memory_management::{
     AuxiliaryMemoryReport, MemoryPoolKind, MemoryPoolReport, MemoryPoolsReport, MemoryReport,
