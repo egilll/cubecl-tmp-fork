@@ -39,6 +39,7 @@ pub async fn try_request_device(
     adapter
         .request_device(&wgpu::DeviceDescriptor {
             label: None,
+            default_queue: wgpu::QueueDescriptor { label: None },
             required_features: adapter
                 .features()
                 .difference(Features::MAPPABLE_PRIMARY_BUFFERS),

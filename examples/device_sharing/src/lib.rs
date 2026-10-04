@@ -16,6 +16,7 @@ mod device_sharing_wgpu {
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("Raw"),
+                default_queue: wgpu::QueueDescriptor { label: None },
                 required_features: adapter
                     .features()
                     .difference(Features::MAPPABLE_PRIMARY_BUFFERS),

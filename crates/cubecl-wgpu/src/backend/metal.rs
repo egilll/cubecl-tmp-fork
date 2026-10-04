@@ -81,6 +81,7 @@ fn request_device(
 
     let descriptor = DeviceDescriptor {
         label: None,
+        default_queue: wgpu::QueueDescriptor { label: None },
         required_features: features,
         required_limits: limits,
         memory_hints,
