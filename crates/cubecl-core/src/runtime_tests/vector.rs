@@ -352,11 +352,53 @@ impl_vector_comparison!(greater_than, [0, 0, 1, 0]);
 impl_vector_comparison!(less_equal, [1, 1, 0, 1]);
 impl_vector_comparison!(greater_equal, [1, 0, 1, 1]);
 
+#[cube(launch)]
+pub fn kernel_vector_cross<F: Float>(input: &[F], output: &mut [F]) {
+    if UNIT_POS == 0 {
+        let mut a = Vector::<F, Const<3>>::new(F::new(0.0f32));
+        let mut b = Vector::<F, Const<3>>::new(F::new(0.0f32));
+        #[unroll]
+        for i in 0..3 {
+            a.insert(i, input[i]);
+            b.insert(i, input[i + 3]);
+        }
+        let c = a.cross(&b);
+        #[unroll]
+        for i in 0..3 {
+            output[i] = c.extract(i);
+        }
+    }
+}
+
+pub fn test_vector_cross<R: Runtime, F: Float + CubeElement>(client: Client) {
+    let input = Buffer::create(
+        &client,
+        &[1.0, 2.0, 3.0, -4.0, 0.5, 2.0].map(|x: f32| F::new(x)),
+    );
+    let output = Buffer::<F>::empty(&client, 3);
+    kernel_vector_cross::launch::<F>(
+        &client,
+        CubeCount::new_single(),
+        CubeDim::new_single(),
+        (&input).into(),
+        (&output).into(),
+    );
+    // (2·2 − 3·0.5, 3·(−4) − 1·2, 1·0.5 − 2·(−4))
+    let expected = [2.5f32, -14.0, 8.5].map(|x| F::new(x));
+    assert_eq!(output.read(&client).unwrap(), expected.to_vec());
+}
+
 #[allow(missing_docs)]
 #[macro_export]
 macro_rules! testgen_vector {
     () => {
         use super::*;
+
+        #[$crate::runtime_tests::test_log::test]
+        fn test_vector_cross() {
+            let client = TestRuntime::client(&Default::default());
+            cubecl_core::runtime_tests::vector::test_vector_cross::<TestRuntime, FloatType>(client);
+        }
 
         #[$crate::runtime_tests::test_log::test]
         fn test_vector_index() {
