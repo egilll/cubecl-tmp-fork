@@ -13,6 +13,8 @@ mod trigonometry;
 pub use trigonometry::*;
 
 /// Quantization functionality required in views
+/// Forward-mode dual numbers, and formulas generic over a real type.
+pub mod dual;
 /// Accurate arithmetic without `f64`: compensated sums and double-f32.
 pub mod numeric;
 pub mod quant;
