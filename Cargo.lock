@@ -969,6 +969,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cubecl-algorithms"
+version = "0.11.0-pre.4"
+dependencies = [
+ "cubecl-core",
+ "cubecl-runtime",
+ "test-log",
+]
+
+[[package]]
 name = "cubecl-common"
 version = "0.11.0-pre.4"
 dependencies = [
@@ -1260,6 +1269,7 @@ version = "0.11.0-pre.4"
 dependencies = [
  "block2",
  "bytemuck",
+ "cubecl-algorithms",
  "cubecl-common",
  "cubecl-core",
  "cubecl-cpp",

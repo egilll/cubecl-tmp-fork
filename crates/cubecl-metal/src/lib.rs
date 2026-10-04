@@ -58,4 +58,5 @@ mod tests {
     cubecl_core::testgen_complex_compare!(cf32);
     cubecl_core::testgen_complex_math!(cf32);
     cubecl_std::testgen_numeric!();
+    cubecl_algorithms::testgen!();
 }

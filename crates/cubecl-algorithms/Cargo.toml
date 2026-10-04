@@ -1,0 +1,25 @@
+[package]
+categories = ["science", "algorithms"]
+description = "Device-wide primitives for CubeCL: scan, compaction, radix sort, segmented reduce, FFT."
+edition.workspace = true
+keywords = []
+license.workspace = true
+name = "cubecl-algorithms"
+publish = false
+readme.workspace = true
+version.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = []
+export_tests = ["test-log/trace"]
+
+[dependencies]
+test-log = { workspace = true, optional = true }
+cubecl-core = { path = "../cubecl-core", version = "=0.11.0-pre.4", default-features = false }
+cubecl-runtime = { path = "../cubecl-runtime", version = "=0.11.0-pre.4", default-features = false }
+
+[dev-dependencies]
+test-log = { workspace = true, features = ["trace"] }
