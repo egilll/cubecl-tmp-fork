@@ -1,6 +1,6 @@
 use crate::{
     compute::context::MetalContext,
-    compute::stream::MetalStreamBackend,
+    compute::stream::{Access, MetalStreamBackend},
     memory::{MetalBufferHandle, MetalStorage},
 };
 use cubecl_common::{
@@ -37,7 +37,7 @@ use cubecl_server::{
 };
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
-use objc2_metal::{MTLCommandBuffer, MTLDevice};
+use objc2_metal::{MTLBuffer, MTLCommandBuffer, MTLDevice};
 use std::sync::Arc;
 
 enum DispatchInfo {
@@ -88,11 +88,12 @@ unsafe impl Send for MetalServer {}
 
 /// Resolves a binding's GPU resource from its origin stream ([`Binding::stream`]),
 /// not the stream issuing work. Each stream owns its own `memory_management`, so a
-/// buffer only lives in its origin's manager.
+/// buffer only lives in its origin's manager. Returns the buffer, and the
+/// offset and size in bytes of the binding inside it.
 fn resolve_origin_resource(
     resolved: &mut ResolvedStreams<'_, MetalStreamBackend>,
     binding: &BufferBinding,
-) -> Result<(MetalBufferHandle, u64), IoError> {
+) -> Result<(MetalBufferHandle, u64, u64), IoError> {
     let stream = resolved.get(&binding.stream);
 
     let mut storage_handle = stream
@@ -108,7 +109,13 @@ fn resolve_origin_resource(
     let offset = storage_handle.offset();
     let resource = stream.memory_management.storage().get(&storage_handle)?;
 
-    Ok((resource, offset))
+    Ok((resource, offset, storage_handle.size()))
+}
+
+/// The identity of the `MTLBuffer` behind a resource, for hazard tracking.
+fn buffer_address(resource: &MetalBufferHandle) -> usize {
+    let buffer: &ProtocolObject<dyn MTLBuffer> = resource.inner().as_ref();
+    buffer as *const ProtocolObject<dyn MTLBuffer> as *const () as usize
 }
 
 /// Reads a pitched row-major buffer into packed bytes. `can_read_tensor` keeps the pitch at
@@ -263,8 +270,9 @@ impl Server for MetalServer {
         let results: Result<Vec<_>, ServerError> = descriptors
             .iter()
             .map(|descriptor| {
-                let (resource, offset) = resolve_origin_resource(&mut resolved, &descriptor.handle)
-                    .map_err(ServerError::from)?;
+                let (resource, offset, _) =
+                    resolve_origin_resource(&mut resolved, &descriptor.handle)
+                        .map_err(ServerError::from)?;
 
                 let buffer = resource.inner();
                 let protocol_obj: &ProtocolObject<dyn MTLBuffer> = buffer.as_ref();
@@ -320,8 +328,9 @@ impl Server for MetalServer {
                     .streams
                     .resolve(stream_id, [&descriptor.handle].into_iter())
                     .expect("creating a Metal stream never fails");
-                let (resource, offset) = resolve_origin_resource(&mut resolved, &descriptor.handle)
-                    .map_err(ServerError::Io)?;
+                let (resource, offset, _) =
+                    resolve_origin_resource(&mut resolved, &descriptor.handle)
+                        .map_err(ServerError::Io)?;
 
                 let buffer = resource.inner();
                 let protocol_obj: &ProtocolObject<dyn MTLBuffer> = buffer.as_ref();
@@ -348,7 +357,9 @@ impl Server for MetalServer {
         stream_id: StreamId,
         launch_mode: LaunchMode,
     ) {
-        use objc2_metal::{MTLBuffer, MTLComputeCommandEncoder, MTLDevice, MTLResourceOptions};
+        use objc2_metal::{
+            MTLBarrierScope, MTLBuffer, MTLComputeCommandEncoder, MTLDevice, MTLResourceOptions,
+        };
 
         // Compilation comes first — memoized, so a launch after the first
         // pays a map lookup — because the write scope stages what the
@@ -440,27 +451,50 @@ impl Server for MetalServer {
             .expect("creating a Metal stream never fails");
 
             let mut resources = Vec::with_capacity(bindings.resources.len());
+            let mut reads = Vec::with_capacity(bindings.resources.len() + 1);
+            let mut writes = Vec::with_capacity(bindings.resources.len());
             let mut total_buffer_bytes: usize = 0;
-            for binding in bindings.resources.iter() {
+            for (index, binding) in bindings.resources.iter().enumerate() {
                 let binding = match binding {
                     KernelResource::Buffer(binding) => binding,
                     KernelResource::TensorMap(_) => {
                         panic!("Tensor maps not supported on Metal")
                     }
                 };
-                let (resource, offset) = resolve_origin_resource(&mut resolved, binding)
+                let (resource, offset, size) = resolve_origin_resource(&mut resolved, binding)
                     .map_err(ServerError::Io)?;
 
                 total_buffer_bytes += binding.size_in_used() as usize;
+
+                // Only the compiled kernel's answer is trusted to leave a
+                // buffer out: a caller's declaration that is wrong would be a
+                // race here, not just an over-named taint.
+                let access = Access {
+                    buffer: buffer_address(&resource),
+                    range: offset..offset + size,
+                };
+                let attr = io.as_deref().and_then(|io| io.get(index));
+                if attr.is_none_or(|attr| attr.is_readable()) {
+                    reads.push(access.clone());
+                }
+                if attr.is_none_or(|attr| attr.is_writable()) {
+                    writes.push(access);
+                }
 
                 resources.push((resource, offset));
             }
 
             // The indirect count buffer is read GPU-side, so it too comes from its origin stream.
             let indirect_buffer_info = match &dispatch_info {
-                DispatchInfo::Dynamic(binding) => Some(
-                    resolve_origin_resource(&mut resolved, binding).map_err(ServerError::Io)?,
-                ),
+                DispatchInfo::Dynamic(binding) => {
+                    let (resource, offset, size) = resolve_origin_resource(&mut resolved, binding)
+                        .map_err(ServerError::Io)?;
+                    reads.push(Access {
+                        buffer: buffer_address(&resource),
+                        range: offset..offset + size,
+                    });
+                    Some((resource, offset))
+                }
                 _ => None,
             };
 
@@ -471,6 +505,9 @@ impl Server for MetalServer {
             let active = stream.get_or_create_encoder();
             let encoder = &active.encoder;
 
+            if active.hazards.record(&reads, &writes) {
+                (*encoder).memoryBarrierWithScope(MTLBarrierScope::Buffers);
+            }
             (*encoder).setComputePipelineState(&compiled.pipeline);
 
             for (index, (resource, offset)) in resources.iter().enumerate() {

@@ -15,7 +15,7 @@ use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_metal::{
     MTLBuffer, MTLCommandBuffer, MTLCommandBufferStatus, MTLCommandQueue, MTLComputeCommandEncoder,
-    MTLDevice, MTLSharedEvent,
+    MTLDevice, MTLDispatchType, MTLSharedEvent,
 };
 use std::ptr::NonNull;
 use std::sync::Arc;
@@ -26,6 +26,61 @@ pub struct ActiveEncoder {
     pub encoder: Retained<ProtocolObject<dyn MTLComputeCommandEncoder>>,
     /// Temporary buffers that must stay alive until this encoder's work completes.
     pub temporaries: Vec<Retained<ProtocolObject<dyn MTLBuffer>>>,
+    /// What the dispatches since the last barrier touch.
+    pub hazards: Hazards,
+}
+
+/// A byte range of one `MTLBuffer`, keyed by the buffer's address.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Access {
+    pub buffer: usize,
+    pub range: core::ops::Range<u64>,
+}
+
+impl Access {
+    fn overlaps(&self, other: &Access) -> bool {
+        self.buffer == other.buffer
+            && self.range.start < other.range.end
+            && other.range.start < self.range.end
+    }
+}
+
+/// The ranges the dispatches encoded since the last barrier read and write.
+///
+/// The encoder is concurrent: Metal lets its dispatches overlap and tracks no
+/// hazard between them, so a dispatch that reads what an earlier one writes,
+/// or writes what an earlier one reads or writes, needs a barrier first.
+/// Ranges are physical (buffer and bytes), not tensors: two tensors carved
+/// from one page don't conflict, and memory a freed tensor hands to a new one
+/// still does.
+#[derive(Debug, Default)]
+pub struct Hazards {
+    reads: Vec<Access>,
+    writes: Vec<Access>,
+}
+
+impl Hazards {
+    /// Records a dispatch's accesses. Returns whether it must wait for the
+    /// dispatches before it, in which case those are forgotten: the barrier
+    /// orders everything after it behind them.
+    pub fn record(&mut self, reads: &[Access], writes: &[Access]) -> bool {
+        let conflicts = reads
+            .iter()
+            .any(|read| self.writes.iter().any(|w| w.overlaps(read)))
+            || writes.iter().any(|write| {
+                self.writes
+                    .iter()
+                    .chain(&self.reads)
+                    .any(|other| other.overlaps(write))
+            });
+        if conflicts {
+            self.reads.clear();
+            self.writes.clear();
+        }
+        self.reads.extend_from_slice(reads);
+        self.writes.extend_from_slice(writes);
+        conflicts
+    }
 }
 
 /// Installs a completion handler that drops `temporaries` and, on a failed
@@ -160,14 +215,17 @@ impl MetalStream {
                 .commandBuffer()
                 .expect("Failed to create command buffer");
 
+            // Concurrent: dispatches overlap unless a barrier orders them,
+            // which the launch inserts where [`Hazards`] finds a conflict.
             let encoder = (*command_buffer)
-                .computeCommandEncoder()
+                .computeCommandEncoderWithDispatchType(MTLDispatchType::Concurrent)
                 .expect("Failed to create compute command encoder");
 
             self.active_encoder = Some(ActiveEncoder {
                 command_buffer,
                 encoder,
                 temporaries: Vec::new(),
+                hazards: Hazards::default(),
             });
         }
 
@@ -478,5 +536,53 @@ impl EventStreamBackend for MetalStreamBackend {
 
     fn wait_event_sync(event: Self::Event) -> Result<(), ServerError> {
         event.wait_sync()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Access, Hazards};
+
+    fn at(buffer: usize, start: u64, end: u64) -> Access {
+        Access {
+            buffer,
+            range: start..end,
+        }
+    }
+
+    #[test]
+    fn disjoint_dispatches_need_no_barrier() {
+        let mut hazards = Hazards::default();
+        assert!(!hazards.record(&[at(1, 0, 64)], &[at(1, 64, 128)]));
+        // Reading what another dispatch reads, and writing next to what it writes.
+        assert!(!hazards.record(&[at(1, 0, 64)], &[at(1, 128, 256)]));
+        // The same bytes of another buffer.
+        assert!(!hazards.record(&[], &[at(2, 64, 128)]));
+    }
+
+    #[test]
+    fn every_overlap_kind_needs_a_barrier() {
+        // Read after write.
+        let mut hazards = Hazards::default();
+        hazards.record(&[], &[at(1, 0, 64)]);
+        assert!(hazards.record(&[at(1, 32, 96)], &[]));
+        // Write after read.
+        let mut hazards = Hazards::default();
+        hazards.record(&[at(1, 0, 64)], &[]);
+        assert!(hazards.record(&[], &[at(1, 63, 64)]));
+        // Write after write.
+        let mut hazards = Hazards::default();
+        hazards.record(&[], &[at(1, 0, 64)]);
+        assert!(hazards.record(&[], &[at(1, 0, 64)]));
+    }
+
+    #[test]
+    fn a_barrier_forgets_what_came_before_it() {
+        let mut hazards = Hazards::default();
+        hazards.record(&[], &[at(1, 0, 64)]);
+        assert!(hazards.record(&[at(1, 0, 64)], &[at(2, 0, 64)]));
+        // Behind the barrier now: only the second dispatch's accesses count.
+        assert!(!hazards.record(&[at(1, 0, 64)], &[at(3, 0, 64)]));
+        assert!(hazards.record(&[at(2, 0, 8)], &[]));
     }
 }
