@@ -3,6 +3,7 @@
 pub use test_log;
 
 pub mod scan;
+pub mod sort;
 
 #[macro_export]
 macro_rules! testgen {
@@ -11,6 +12,7 @@ macro_rules! testgen {
             use super::*;
 
             cubecl_algorithms::testgen_scan!();
+            cubecl_algorithms::testgen_sort!();
         }
     };
 }

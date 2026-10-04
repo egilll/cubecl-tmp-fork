@@ -7,6 +7,7 @@
 //! guarantee (Apple, WebGPU) can't promise.
 
 pub mod scan;
+pub mod sort;
 
 #[cfg(feature = "export_tests")]
 pub mod tests;
