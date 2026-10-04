@@ -1,6 +1,7 @@
 use core::{marker::PhantomData, ops::Range};
 
 use alloc::vec::Vec;
+use cubecl_common::bytes::Bytes;
 use cubecl_runtime::{
     client::Client,
     server::{Handle, ServerError},
@@ -93,6 +94,30 @@ impl<T: CubeElement> Buffer<T> {
             len: range.end - range.start,
             _element: PhantomData,
         }
+    }
+
+    /// Overwrites the first `data.len()` elements with `data`, in place and
+    /// in order with the client's other work; [`Buffer::slice`] first to
+    /// write elsewhere.
+    ///
+    /// # Panics
+    ///
+    /// When `data` is longer than the buffer.
+    pub fn write(&self, client: &Client, data: &[T]) {
+        assert!(
+            data.len() <= self.len,
+            "{} elements written to a buffer of {}",
+            data.len(),
+            self.len
+        );
+        if data.is_empty() {
+            return;
+        }
+        let target = self.slice(0..data.len());
+        client.write(
+            &target.handle,
+            Bytes::from_bytes_vec(T::as_bytes(data).to_vec()),
+        );
     }
 
     /// Read the elements back.

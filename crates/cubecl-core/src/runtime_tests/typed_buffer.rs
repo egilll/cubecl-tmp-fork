@@ -60,6 +60,15 @@ pub fn test_typed_buffer_launch<R: Runtime>(client: Client) {
     assert_eq!(window.read(&client).unwrap(), all[16..48].to_vec());
 }
 
+/// A write through a slice replaces exactly that slice's leading elements.
+pub fn test_typed_buffer_write<R: Runtime>(client: Client) {
+    let buffer = Buffer::create(&client, &[0u32; 8]);
+    buffer.slice(3..6).write(&client, &[7, 8, 9]);
+    buffer.slice(6..8).write(&client, &[1]);
+    buffer.write(&client, &[]);
+    assert_eq!(buffer.read(&client).unwrap(), [0, 0, 0, 7, 8, 9, 1, 0]);
+}
+
 #[allow(missing_docs)]
 #[macro_export]
 macro_rules! testgen_typed_buffer {
@@ -70,6 +79,14 @@ macro_rules! testgen_typed_buffer {
         fn test_typed_buffer_launch() {
             let client = TestRuntime::client(&Default::default());
             cubecl_core::runtime_tests::typed_buffer::test_typed_buffer_launch::<TestRuntime>(
+                client,
+            );
+        }
+
+        #[$crate::runtime_tests::test_log::test]
+        fn test_typed_buffer_write() {
+            let client = TestRuntime::client(&Default::default());
+            cubecl_core::runtime_tests::typed_buffer::test_typed_buffer_write::<TestRuntime>(
                 client,
             );
         }
