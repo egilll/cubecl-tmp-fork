@@ -13,6 +13,8 @@ mod trigonometry;
 pub use trigonometry::*;
 
 /// Quantization functionality required in views
+/// Accurate arithmetic without `f64`: compensated sums and double-f32.
+pub mod numeric;
 pub mod quant;
 pub mod tensor;
 

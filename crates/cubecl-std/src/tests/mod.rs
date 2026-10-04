@@ -4,6 +4,7 @@ pub use test_log;
 pub mod erased;
 pub mod event;
 pub mod fp4;
+pub mod numeric;
 pub mod reinterpret_slice;
 pub mod round;
 pub mod tensor;

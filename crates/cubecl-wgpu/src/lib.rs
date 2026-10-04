@@ -235,4 +235,5 @@ mod tests_msl {
         use super::*;
         cubecl_core::testgen_ieee_rounding!();
     }
+    cubecl_std::testgen_numeric!();
 }
