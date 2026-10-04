@@ -272,3 +272,34 @@ pub fn kernel_struct_example(pair: &Pair<Box<[f32]>>, output: &mut [f32]) {
 #     launch(&Default::default());
 # }
 ```
+
+## Operators
+
+A `CubeType` struct gets operators the way a Rust type does: implement the `core::ops` trait
+inside `#[cube]`, and `a + b` in a kernel traces into your `add`. `Output` and a type argument such
+as `Mul<f32>` are the usual Rust types.
+
+```rust
+#[derive(CubeType, CubeTypeMut, Clone, Copy)]
+#[expand(derive(Clone, Copy))]
+struct Pair {
+    re: f32,
+    im: f32,
+}
+
+#[cube]
+impl core::ops::Add for Pair {
+    type Output = Pair;
+    fn add(self, rhs: Pair) -> Pair {
+        Pair { re: self.re + rhs.re, im: self.im + rhs.im }
+    }
+}
+
+#[cube]
+fn twice(a: Pair) -> Pair {
+    a + a
+}
+```
+
+`Add`, `Sub`, `Mul`, `Div`, `Rem`, the bit operators, `Neg`, `Not` and the `*Assign` forms are
+supported. The original impl stays a plain Rust impl, so the same formula also runs on the host.

@@ -1,6 +1,6 @@
 use crate::{
     parse::cube_trait::{CubeTrait, CubeTraitImpl, CubeTraitImplItem, CubeTraitItem},
-    paths::prelude_type,
+    paths::{frontend_path, prelude_type},
 };
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -184,8 +184,27 @@ impl CubeTraitImpl {
         struct_ident.ident = format_ident!("{}Expand", struct_ident.ident);
 
         let mut trait_name = self.trait_name.clone();
+        let operator = operator_trait(&trait_name);
         let trait_ident = trait_name.segments.last_mut().unwrap();
         trait_ident.ident = format_ident!("{}Expand", trait_ident.ident);
+        // A `core::ops` operator expands through the frontend's operator
+        // trait of the same name, so `a + b` traces into the user's `add`. Its
+        // type arguments and `Output` are the expand types, and the unary
+        // operators' expand traits have no `Output`.
+        let others = match operator {
+            Some(op) => {
+                let mut path = frontend_path();
+                let mut last = trait_ident.clone();
+                last.arguments = expand_type_args(&last.arguments);
+                path.segments.push(last);
+                trait_name = path;
+                others
+                    .into_iter()
+                    .filter_map(|tokens| expand_operator_item(tokens, op))
+                    .collect()
+            }
+            None => others,
+        };
 
         let (generics, _, impl_where) = self.generics.split_for_impl();
 
@@ -199,6 +218,73 @@ impl CubeTraitImpl {
             }
         }
     }
+}
+
+/// The `core::ops` operator `path` names, if any, whichever way it's spelled.
+fn operator_trait(path: &syn::Path) -> Option<&'static str> {
+    const OPERATORS: &[&str] = &[
+        "Add",
+        "Sub",
+        "Mul",
+        "Div",
+        "Rem",
+        "BitAnd",
+        "BitOr",
+        "BitXor",
+        "Shl",
+        "Shr",
+        "Neg",
+        "Not",
+        "AddAssign",
+        "SubAssign",
+        "MulAssign",
+        "DivAssign",
+        "RemAssign",
+    ];
+    let last = path.segments.last()?.ident.to_string();
+    let prefix_is_ops = path.segments.len() == 1
+        || path
+            .segments
+            .iter()
+            .rev()
+            .nth(1)
+            .is_some_and(|seg| seg.ident == "ops");
+    OPERATORS
+        .iter()
+        .find(|op| **op == last)
+        .copied()
+        .filter(|_| prefix_is_ops)
+}
+
+/// `<A, B>` with every type `T` replaced by `<T as CubeType>::ExpandType`.
+fn expand_type_args(args: &syn::PathArguments) -> syn::PathArguments {
+    let cube_type = prelude_type("CubeType");
+    let mut args = args.clone();
+    if let syn::PathArguments::AngleBracketed(angle) = &mut args {
+        for arg in angle.args.iter_mut() {
+            if let GenericArgument::Type(ty) = arg {
+                *ty = parse_quote!(<#ty as #cube_type>::ExpandType);
+            }
+        }
+    }
+    args
+}
+
+/// An operator impl's item in the expand impl: `type Output = T` becomes the
+/// expand type, and unary operators drop it.
+fn expand_operator_item(tokens: TokenStream, operator: &str) -> Option<TokenStream> {
+    let Ok(item) = syn::parse2::<syn::ImplItemType>(tokens.clone()) else {
+        return Some(tokens);
+    };
+    if item.ident != "Output" {
+        return Some(tokens);
+    }
+    if matches!(operator, "Neg" | "Not") {
+        return None;
+    }
+    let cube_type = prelude_type("CubeType");
+    let ty = &item.ty;
+    Some(quote![type Output = <#ty as #cube_type>::ExpandType;])
 }
 
 fn path_of_type(ty: &Type) -> Result<TypePath, syn::Error> {

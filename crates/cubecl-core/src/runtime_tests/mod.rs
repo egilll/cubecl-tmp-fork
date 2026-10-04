@@ -48,6 +48,7 @@ pub mod traits;
 pub mod typed_buffer;
 pub mod unary;
 pub mod unroll;
+pub mod user_ops;
 pub mod vector;
 
 #[allow(missing_docs)]
@@ -153,6 +154,7 @@ macro_rules! testgen_untyped {
     () => {
         cubecl_core::testgen_launch_untyped!();
         cubecl_core::testgen_typed_buffer!();
+        cubecl_core::testgen_user_ops!();
         cubecl_core::testgen_cmma!();
         cubecl_core::testgen_cmma2!();
         cubecl_core::testgen_numeric!();
