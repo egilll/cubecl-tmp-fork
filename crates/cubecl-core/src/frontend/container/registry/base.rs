@@ -193,6 +193,7 @@ impl<K: PartialOrd + Ord, V: IntoMut + Clone> IntoMut for Registry<K, V> {
 }
 
 impl<K: PartialOrd + Ord, V> CubeDebug for Registry<K, V> {}
+impl<K: PartialOrd + Ord, V> crate::frontend::call::CallArg for Registry<K, V> {}
 
 impl<K, V> AsRefExpand for Registry<K, V> {
     fn __expand_ref_method(&self, _: &Scope) -> &Self {

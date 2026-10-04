@@ -12,6 +12,7 @@ impl CubeType for e4m3 {
 }
 
 impl CubeDebug for e4m3 {}
+impl crate::frontend::call::CallArg for e4m3 {}
 impl Scalar for e4m3 {
     fn elem_type_native() -> ElemType {
         FloatKind::E4M3.into()
@@ -53,6 +54,7 @@ impl CubeType for e5m2 {
 }
 
 impl CubeDebug for e5m2 {}
+impl crate::frontend::call::CallArg for e5m2 {}
 impl Scalar for e5m2 {
     fn elem_type_native() -> ElemType {
         FloatKind::E5M2.into()
@@ -94,6 +96,7 @@ impl CubeType for ue8m0 {
 }
 
 impl CubeDebug for ue8m0 {}
+impl crate::frontend::call::CallArg for ue8m0 {}
 impl Scalar for ue8m0 {
     fn elem_type_native() -> ElemType {
         FloatKind::UE8M0.into()

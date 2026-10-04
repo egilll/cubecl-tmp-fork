@@ -1,8 +1,8 @@
 //! Bookkeeping for device functions traced once and called many times.
 //!
-//! A `#[cube(outline)]` function is traced into a private function of the
-//! kernel module the first time it is called with a given specialization, and
-//! called again for every later call with the same one. The specialization is
+//! A `#[cube]` function is traced into a private function of the kernel
+//! module the first time it is called with a given specialization, and called
+//! again for every later call with the same one. The specialization is
 //! everything that can change the traced body: the function, its generic
 //! types, its comptime arguments, the type of each runtime argument (or the
 //! value of a constant one), the instruction modes in effect and the kernel's
@@ -15,9 +15,9 @@ use pliron::{identifier::Identifier, r#type::TypeHandle};
 
 use crate::{ElemType, InstructionModes, value::ConstantValue};
 
-/// One runtime argument of an outlined call, as far as specialization goes.
+/// One runtime argument of a device function call, as far as specialization goes.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum OutlineArgKey {
+pub enum CallArgKey {
     /// A value only known when the kernel runs: the function takes it as a
     /// parameter of this type.
     Value(TypeHandle),
@@ -43,10 +43,10 @@ impl From<ConstantValue> for ConstantBits {
     }
 }
 
-/// Everything an outlined body depends on. Two calls with equal keys trace
-/// the same body.
+/// Everything a device function's body depends on. Two calls with equal keys
+/// trace the same body.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct OutlineKey {
+pub struct CallKey {
     /// The function: its module path and name.
     pub function: &'static str,
     /// The names of its generic types, in declaration order.
@@ -54,7 +54,7 @@ pub struct OutlineKey {
     /// A hash of its comptime arguments and const generics.
     pub comptime: u64,
     /// Its runtime arguments.
-    pub args: Vec<OutlineArgKey>,
+    pub args: Vec<CallArgKey>,
     /// Fast-math and other modes in effect at the call.
     pub modes: InstructionModes,
     /// A hash of what the arguments carry besides their runtime values, such
@@ -64,28 +64,30 @@ pub struct OutlineKey {
     pub registrations: u64,
 }
 
-/// A function the cache holds.
+/// What the cache holds for a key.
 #[derive(Debug, Clone)]
-pub enum Outlined {
+pub enum DeviceFn {
     /// Traced into this function, which every call with the same key calls.
     Function { symbol: Identifier, ty: TypeHandle },
     /// Traced inline at every call, for the reason given: the body could not
     /// stand on its own.
-    Inline(OutlineFallback),
+    Inline(InlineReason),
 }
 
 /// Why a body could not become a function of its own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OutlineFallback {
+pub enum InlineReason {
     /// It used values of its caller that are not its arguments.
     Captures,
     /// It terminates the kernel, which only the kernel's own body can do.
     Terminates,
+    /// It returns a value a function can't return yet, such as a struct.
+    Returns,
 }
 
-/// The hasher for the parts of an [`OutlineKey`] that are hashes: stable
+/// The hasher for the parts of a [`CallKey`] that are hashes: stable
 /// within a process, which is as long as a key lives.
-pub fn outline_hasher() -> impl Hasher {
+pub fn call_hasher() -> impl Hasher {
     foldhash::fast::FixedState::with_seed(0x6375_6265_636c).build_hasher()
 }
 

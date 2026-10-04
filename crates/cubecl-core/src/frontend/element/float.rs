@@ -123,6 +123,7 @@ macro_rules! impl_float {
         }
 
         impl CubeDebug for $primitive {}
+        impl crate::frontend::call::CallArg for $primitive {}
         impl Scalar for $primitive {
             fn elem_type_native() -> ElemType {
                 FloatKind::$kind.into()

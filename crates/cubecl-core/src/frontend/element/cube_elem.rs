@@ -121,7 +121,9 @@ pub trait Scalar:
 }
 
 impl CubeDebug for TypeHandle {}
+impl crate::frontend::call::CallArg for TypeHandle {}
 impl CubeDebug for ElemType {}
+impl crate::frontend::call::CallArg for ElemType {}
 
 #[cube]
 pub fn elem_type_of<E: CubePrimitive>() -> comptime_type!(ElemType) {

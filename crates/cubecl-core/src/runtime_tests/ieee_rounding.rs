@@ -1,6 +1,6 @@
 use crate::prelude::*;
-use alloc::vec::Vec;
 use crate::{self as cubecl};
+use alloc::vec::Vec;
 use cubecl_runtime::runtime::Runtime;
 
 // Pin that a kernel without `fast_math` divides and takes square roots correctly rounded, as the

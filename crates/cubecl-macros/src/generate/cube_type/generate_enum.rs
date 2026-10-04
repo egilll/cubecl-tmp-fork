@@ -143,6 +143,7 @@ impl CubeTypeEnum {
         let clone = prelude_type("ExpandTypeClone");
         let into_mut = prelude_type("IntoMut");
         let debug = prelude_type("CubeDebug");
+        let call = frontend_type("call");
         let as_ref = prelude_type("AsRefExpand");
         let as_mut = prelude_type("AsMutExpand");
 
@@ -194,6 +195,8 @@ impl CubeTypeEnum {
 
             impl #generics #debug for #name #generic_names #where_clause {}
             impl #generics #debug for #name_expand #generic_names #where_clause {}
+            impl #generics #call::CallArg for #name #generic_names #where_clause {}
+            impl #generics #call::CallArg for #name_expand #generic_names #where_clause {}
 
             impl #generics #as_ref for #name_expand #generic_names #where_clause {
                 fn __expand_ref_method(&self, _: &#scope) -> &Self {

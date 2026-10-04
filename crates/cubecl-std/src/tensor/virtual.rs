@@ -373,6 +373,10 @@ mod __cube_type {
     }
 
     impl<E: Numeric, N: Size, IO> CubeDebug for VirtualTensorExpand<E, N, IO> {}
+    impl<E: Numeric, N: Size, IO> cubecl_core::frontend::call::CallArg
+        for VirtualTensorExpand<E, N, IO>
+    {
+    }
 
     impl<E: Numeric, N: Size, IO: Clone> AsRefExpand for VirtualTensorExpand<E, N, IO> {
         fn __expand_ref_method(&self, _: &Scope) -> &Self {

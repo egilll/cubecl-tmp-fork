@@ -12,6 +12,7 @@ impl CubeType for e2m3 {
 }
 
 impl CubeDebug for e2m3 {}
+impl crate::frontend::call::CallArg for e2m3 {}
 impl Scalar for e2m3 {
     fn elem_type_native() -> ElemType {
         FloatKind::E2M3.into()
@@ -50,6 +51,7 @@ impl CubeType for e3m2 {
 }
 
 impl CubeDebug for e3m2 {}
+impl crate::frontend::call::CallArg for e3m2 {}
 impl Scalar for e3m2 {
     fn elem_type_native() -> ElemType {
         FloatKind::E3M2.into()

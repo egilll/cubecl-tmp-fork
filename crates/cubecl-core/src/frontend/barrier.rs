@@ -34,6 +34,7 @@ impl CubeType for Barrier {
 }
 
 impl CubeDebug for Barrier {}
+impl crate::frontend::call::CallArg for Barrier {}
 
 impl CubePrimitive for Barrier {
     type Scalar = u32; // Dummy, maybe we need another trait for non-standard primitives

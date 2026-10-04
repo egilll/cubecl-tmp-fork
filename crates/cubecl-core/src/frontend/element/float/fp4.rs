@@ -12,6 +12,7 @@ impl CubeType for e2m1 {
 }
 
 impl CubeDebug for e2m1 {}
+impl crate::frontend::call::CallArg for e2m1 {}
 impl Scalar for e2m1 {
     fn elem_type_native() -> ElemType {
         FloatKind::E2M1.into()
@@ -53,6 +54,7 @@ impl CubeType for e2m1x2 {
 }
 
 impl CubeDebug for e2m1x2 {}
+impl crate::frontend::call::CallArg for e2m1x2 {}
 // Considered a scalar because it's really just a `u8` in a trenchcoat, and should be possible to
 // store in a `Vector`.
 impl Scalar for e2m1x2 {

@@ -68,6 +68,10 @@ macro_rules! impl_cube_type {
         }
 
         impl<'a, E: CubePrimitive, C: Coordinates> CubeDebug for $expand<'a, E, C> {}
+        impl<'a, E: CubePrimitive, C: Coordinates> cubecl_core::frontend::call::CallArg
+            for $expand<'a, E, C>
+        {
+        }
 
         impl<'a, E: CubePrimitive, C: Coordinates> AsRefExpand for $expand<'a, E, C> {
             fn __expand_ref_method(&self, _: &Scope) -> &Self {

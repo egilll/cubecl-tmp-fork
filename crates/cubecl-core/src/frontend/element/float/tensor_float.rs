@@ -12,6 +12,7 @@ impl CubeType for tf32 {
 }
 
 impl CubeDebug for tf32 {}
+impl crate::frontend::call::CallArg for tf32 {}
 impl Scalar for tf32 {
     fn elem_type_native() -> ElemType {
         FloatKind::TF32.into()

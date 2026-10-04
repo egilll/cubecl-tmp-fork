@@ -182,6 +182,7 @@ impl<Inner: CubePrimitive> CubeType for Atomic<Inner> {
 }
 
 impl<Inner: CubePrimitive> CubeDebug for Atomic<Inner> {}
+impl<Inner: CubePrimitive> crate::frontend::call::CallArg for Atomic<Inner> {}
 impl<Inner: CubePrimitive> CubePrimitive for Atomic<Inner> {
     type Scalar = Inner::Scalar;
     type Size = Const<1>;

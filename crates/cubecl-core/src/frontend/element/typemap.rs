@@ -309,6 +309,7 @@ impl<Marker: 'static> CubeType for DynamicScalar<Marker> {
 }
 
 impl<Marker: 'static> CubeDebug for DynamicScalar<Marker> {}
+impl<Marker: 'static> crate::frontend::call::CallArg for DynamicScalar<Marker> {}
 impl<Marker: 'static> Scalar for DynamicScalar<Marker> {
     fn elem_type(scope: &Scope) -> ElemType {
         scope.resolve_type::<Self>().expect("Should be registered")

@@ -50,6 +50,7 @@ impl IntoMut for InputScalarExpand {
 }
 
 impl CubeDebug for InputScalarExpand {}
+impl crate::frontend::call::CallArg for InputScalarExpand {}
 
 impl AsRefExpand for InputScalarExpand {
     fn __expand_ref_method(&self, _: &Scope) -> &Self {

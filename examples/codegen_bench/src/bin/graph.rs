@@ -23,7 +23,9 @@ fn median(mut v: Vec<Duration>) -> Duration {
 
 fn main() {
     let client = cubecl::Device::metal(Default::default()).unwrap().client();
-    let mut args = std::env::args().skip(1).map(|a| a.parse::<usize>().unwrap());
+    let mut args = std::env::args()
+        .skip(1)
+        .map(|a| a.parse::<usize>().unwrap());
     let n = args.next().unwrap_or(4096);
     let k = args.next().unwrap_or(64);
     let iters = args.next().unwrap_or(64) as u32;

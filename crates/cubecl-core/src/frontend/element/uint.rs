@@ -20,6 +20,7 @@ macro_rules! declare_uint {
             }
         }
         impl CubeDebug for $primitive {}
+        impl crate::frontend::call::CallArg for $primitive {}
         impl CubePrimitive for $primitive {
             type Scalar = Self;
             type Size = Const<1>;
@@ -91,6 +92,7 @@ impl CubeType for usize {
 }
 
 impl CubeDebug for usize {}
+impl crate::frontend::call::CallArg for usize {}
 impl Scalar for usize {
     fn elem_type(_scope: &Scope) -> ElemType {
         ElemType::Index
@@ -160,6 +162,7 @@ impl CubeType for isize {
 }
 
 impl CubeDebug for isize {}
+impl crate::frontend::call::CallArg for isize {}
 impl Scalar for isize {
     fn elem_type(scope: &Scope) -> ElemType {
         scope

@@ -54,6 +54,7 @@ impl CubeType for TensorLayout {
 }
 
 impl CubeDebug for TensorLayout {}
+impl crate::frontend::call::CallArg for TensorLayout {}
 impl CubePrimitive for TensorLayout {
     type Scalar = u32;
     type Size = Const<1>;
@@ -75,6 +76,7 @@ impl CubeType for TensorReinterpret {
 }
 
 impl CubeDebug for TensorReinterpret {}
+impl crate::frontend::call::CallArg for TensorReinterpret {}
 impl CubePrimitive for TensorReinterpret {
     type Scalar = u32;
     type Size = Const<1>;

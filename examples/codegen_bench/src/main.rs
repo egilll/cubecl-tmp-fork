@@ -3,14 +3,14 @@
 use cubecl::prelude::*;
 use std::time::Instant;
 
-#[cfg_attr(feature = "outline", cube(outline))]
-#[cfg_attr(not(feature = "outline"), cube)]
+#[cfg_attr(feature = "outline", cube)]
+#[cfg_attr(not(feature = "outline"), cube(inline))]
 fn retrievability(elapsed: f32, stability: f32) -> f32 {
     f32::powf(1.0 + elapsed / (9.0 * stability), -1.0)
 }
 
-#[cfg_attr(feature = "outline", cube(outline))]
-#[cfg_attr(not(feature = "outline"), cube)]
+#[cfg_attr(feature = "outline", cube)]
+#[cfg_attr(not(feature = "outline"), cube(inline))]
 fn next_stability(stability: f32, difficulty: f32, r: f32, good: bool) -> f32 {
     let mut s = stability;
     if good {
@@ -28,8 +28,8 @@ fn next_stability(stability: f32, difficulty: f32, r: f32, good: bool) -> f32 {
     s
 }
 
-#[cfg_attr(feature = "outline", cube(outline))]
-#[cfg_attr(not(feature = "outline"), cube)]
+#[cfg_attr(feature = "outline", cube)]
+#[cfg_attr(not(feature = "outline"), cube(inline))]
 fn next_difficulty(difficulty: f32, r: f32, good: bool) -> f32 {
     let mut d = difficulty;
     if good {
@@ -40,8 +40,8 @@ fn next_difficulty(difficulty: f32, r: f32, good: bool) -> f32 {
     f32::clamp(d, 1.0, 10.0)
 }
 
-#[cfg_attr(feature = "outline", cube(outline))]
-#[cfg_attr(not(feature = "outline"), cube)]
+#[cfg_attr(feature = "outline", cube)]
+#[cfg_attr(not(feature = "outline"), cube(inline))]
 fn uniform(state: u32) -> f32 {
     let bits = state * 747796405u32 + 2891336453u32;
     f32::cast_from(bits >> 8u32) * (1.0 / 16777216.0)

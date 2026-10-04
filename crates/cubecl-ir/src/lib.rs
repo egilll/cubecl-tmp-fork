@@ -26,12 +26,12 @@ pub mod apfloat;
 pub mod arena;
 pub mod attributes;
 pub mod convert;
+pub mod device_fn;
 pub mod dialect;
 pub mod interfaces;
 pub mod metadata;
 #[cfg(feature = "nvidia")]
 pub mod nvidia;
-pub mod outline;
 pub mod rewrite;
 pub mod settings;
 pub mod types;

@@ -11,6 +11,7 @@ impl CubeType for flex32 {
 }
 
 impl CubeDebug for flex32 {}
+impl crate::frontend::call::CallArg for flex32 {}
 impl Scalar for flex32 {
     fn elem_type_native() -> ElemType {
         FloatKind::Flex32.into()

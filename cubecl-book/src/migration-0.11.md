@@ -41,3 +41,10 @@ one with `device.client()`, and `R::client(&device)` still does.
 A `CubeType` struct is borrowed, reborrowed and copied as in Rust: see
 [Copies and references](./language-support/struct.md#copies-and-references). Assigning a whole struct
 needs `#[derive(CubeTypeMut)]`.
+
+## Functions
+
+A `#[cube]` function is now a device function, traced once and called, wherever its signature
+allows; `#[cube(inline)]` restores tracing it at every call. See
+[Functions](./language-support/functions.md). A type that implements `CubeType` by hand needs its
+expand type to implement `CallArg`, usually as the empty `impl CallArg for MyTypeExpand {}`.

@@ -26,6 +26,7 @@ impl CubeType for bool {
 }
 
 impl CubeDebug for bool {}
+impl crate::frontend::call::CallArg for bool {}
 impl Scalar for bool {
     fn elem_type_native() -> ElemType {
         ElemType::Bool

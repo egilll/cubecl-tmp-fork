@@ -13,7 +13,10 @@ fn axpy(x: &[f32], y: &mut [f32], a: f32) {
 }
 
 fn main() {
-    let secs: u64 = std::env::args().nth(1).map(|s| s.parse().unwrap()).unwrap_or(3);
+    let secs: u64 = std::env::args()
+        .nth(1)
+        .map(|s| s.parse().unwrap())
+        .unwrap_or(3);
     let client = cubecl::Device::metal(Default::default()).unwrap().client();
     let n = 1024;
     let x = client.create_from_slice(f32::as_bytes(&vec![1.0f32; n]));

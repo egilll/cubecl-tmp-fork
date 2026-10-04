@@ -8,6 +8,7 @@ pub mod synchronization;
 pub mod comptime;
 
 mod base;
+pub mod call;
 pub mod comptime_error;
 mod comptime_option;
 mod const_expand;
@@ -18,7 +19,6 @@ mod indexation;
 mod list;
 mod operation;
 mod options;
-pub mod outline;
 mod plane;
 pub mod polyfills;
 mod ranges;

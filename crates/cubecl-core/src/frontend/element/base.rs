@@ -35,6 +35,7 @@ pub trait CubeType {
         + ExpandTypeClone
         + IntoMut
         + CubeDebug
+        + crate::frontend::call::CallArg
         + AsRefExpand
         + AsMutExpand;
 }
@@ -406,6 +407,9 @@ impl<T: CubeDebug + ?Sized> CubeDebug for *const T {
     }
 }
 
+impl<T: ?Sized> crate::frontend::call::CallArg for *const T {}
+impl<T: ?Sized> crate::frontend::call::CallArg for *mut T {}
+
 impl<T: CubeDebug + ?Sized> CubeDebug for *mut T {
     fn set_debug_name(&self, scope: &Scope, name: &'static str) {
         T::set_debug_name(unsafe { &**self }, scope, name);
@@ -413,6 +417,7 @@ impl<T: CubeDebug + ?Sized> CubeDebug for *mut T {
 }
 
 impl CubeDebug for i128 {}
+impl crate::frontend::call::CallArg for i128 {}
 
 /// A type that can be used as a kernel comptime argument.
 /// Note that a type doesn't need to implement `CubeComptime` to be used as
@@ -776,6 +781,7 @@ macro_rules! tuple_init {
 macro_rules! tuple_debug {
     ($($P:ident),*) => {
         impl<$($P: CubeDebug),*> CubeDebug for ($($P,)*) {}
+        impl<$($P),*> crate::frontend::call::CallArg for ($($P,)*) {}
     }
 }
 macro_rules! tuple_runtime {
@@ -927,6 +933,7 @@ impl<T: IntoMut> IntoMut for Vec<T> {
     }
 }
 impl<T: CubeDebug> CubeDebug for Vec<T> {}
+impl<T> crate::frontend::call::CallArg for Vec<T> {}
 
 impl<T: AsRefExpand> AsRefExpand for Vec<T> {
     fn __expand_ref_method(&self, _: &Scope) -> &Self {

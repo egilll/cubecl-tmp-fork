@@ -103,6 +103,10 @@ impl<C: Coordinates, S: Coordinates> IntoMut for VirtualLayoutExpand<C, S> {
 }
 
 impl<C: Coordinates, S: Coordinates> CubeDebug for VirtualLayoutExpand<C, S> {}
+impl<C: Coordinates, S: Coordinates> cubecl_core::frontend::call::CallArg
+    for VirtualLayoutExpand<C, S>
+{
+}
 
 impl<C: Coordinates, S: Coordinates> AsRefExpand for VirtualLayoutExpand<C, S> {
     fn __expand_ref_method(&self, _: &Scope) -> &Self {

@@ -1,5 +1,7 @@
-//! `#[cube(outline)]` traces a function once per specialization into a
-//! function of the kernel module, and its calls call it.
+//! A `#[cube]` function is traced once per specialization into a device
+//! function of the kernel module, and its calls call it. Helpers that aren't
+//! under test are `#[cube(inline)]`, so the counts below only see the
+//! functions under test.
 
 use cubecl_core as cubecl;
 use cubecl_core::prelude::*;
@@ -18,17 +20,17 @@ use pliron::{
     pass::{AnalysisManager, Pass},
 };
 
-#[cube(outline)]
+#[cube(inline(never))]
 fn heavy(x: f32, y: f32) -> f32 {
     f32::exp(x) * y + f32::powf(x, y) - f32::ln(y + 2.0)
 }
 
-#[cube]
+#[cube(inline)]
 fn heavy_inlined(x: f32, y: f32) -> f32 {
     f32::exp(x) * y + f32::powf(x, y) - f32::ln(y + 2.0)
 }
 
-#[cube]
+#[cube(inline)]
 fn four_outlined_calls() -> f32 {
     let x = f32::cast_from(UNIT_POS);
     let mut acc = x;
@@ -39,7 +41,7 @@ fn four_outlined_calls() -> f32 {
     acc
 }
 
-#[cube]
+#[cube(inline)]
 fn sixteen_inlined_calls() -> f32 {
     let x = f32::cast_from(UNIT_POS);
     let mut acc = x;
@@ -50,7 +52,7 @@ fn sixteen_inlined_calls() -> f32 {
     acc
 }
 
-#[cube]
+#[cube(inline)]
 fn sixteen_outlined_calls() -> f32 {
     let x = f32::cast_from(UNIT_POS);
     let mut acc = x;
@@ -61,18 +63,18 @@ fn sixteen_outlined_calls() -> f32 {
     acc
 }
 
-#[cube]
+#[cube(inline)]
 fn a_constant_argument_specializes() -> f32 {
     let x = f32::cast_from(UNIT_POS);
     heavy(x, x) + heavy(x, 2.0) + heavy(x, 2.0) + heavy(x, 3.0)
 }
 
-#[cube(outline)]
+#[cube(inline(never))]
 fn scaled<F: Float>(x: F, #[comptime] factor: u32) -> F {
     x * F::cast_from(factor)
 }
 
-#[cube]
+#[cube(inline)]
 fn generics_and_comptime_specialize() -> f32 {
     let x = f32::cast_from(UNIT_POS);
     let a = scaled::<f32>(x, 2u32);
@@ -82,14 +84,14 @@ fn generics_and_comptime_specialize() -> f32 {
     a + b + c + d
 }
 
-#[cube(outline)]
+#[cube(inline(never))]
 fn stops_the_kernel(x: f32) {
     if x > 1.0 {
         terminate!();
     }
 }
 
-#[cube]
+#[cube(inline)]
 fn terminating_callee() {
     let x = f32::cast_from(UNIT_POS);
     stops_the_kernel(x);
@@ -214,18 +216,18 @@ fn a_body_that_terminates_the_kernel_is_traced_inline() {
     assert_eq!(count::<FuncOp>(&traced.ctx, traced.module), 1);
 }
 
-#[cube(outline)]
+#[cube(inline(never))]
 fn reads_a_builtin(x: f32) -> f32 {
     x + f32::cast_from(UNIT_POS) * 2.0 + f32::exp(x) * f32::ln(x + 1.0)
 }
 
-#[cube]
+#[cube(inline)]
 fn calls_a_builtin_reader() -> f32 {
     let x = f32::cast_from(UNIT_POS);
     reads_a_builtin(x) + reads_a_builtin(x + 1.0)
 }
 
-#[cube]
+#[cube(inline)]
 fn one_call() -> f32 {
     let x = f32::cast_from(UNIT_POS);
     heavy(x, x)
@@ -343,7 +345,7 @@ struct Curve {
     power: u32,
 }
 
-#[cube]
+#[cube(inline)]
 impl Curve {
     fn new(scale: f32, shift: f32, #[comptime] power: u32) -> Curve {
         Curve {
@@ -353,7 +355,7 @@ impl Curve {
         }
     }
 
-    #[cube(outline)]
+    #[cube(inline(never))]
     fn eval(&self, x: f32) -> f32 {
         let mut y = x * self.scale + self.shift;
         #[unroll]
@@ -364,12 +366,12 @@ impl Curve {
     }
 }
 
-#[cube(outline)]
+#[cube(inline(never))]
 fn through_reference(curve: &Curve, x: f32) -> f32 {
     curve.eval(x) * 2.0 + curve.shift
 }
 
-#[cube]
+#[cube(inline)]
 fn method_calls() -> f32 {
     let x = f32::cast_from(UNIT_POS);
     let a = Curve::new(x, x * 2.0, 3u32);
@@ -397,20 +399,20 @@ trait Decay: CubeType {
     fn decay(&self, x: f32) -> f32;
 }
 
-#[cube]
+#[cube(inline)]
 impl Decay for Curve {
-    #[cube(outline)]
+    #[cube(inline(never))]
     fn decay(&self, x: f32) -> f32 {
         f32::powf(1.0 + x / (9.0 * self.scale), -1.0) * self.shift + f32::exp(-x * self.scale)
     }
 }
 
-#[cube]
+#[cube(inline)]
 fn decays<D: Decay>(law: &D, x: f32) -> f32 {
     law.decay(x) + law.decay(x * 2.0) + law.decay(x * 3.0)
 }
 
-#[cube]
+#[cube(inline)]
 fn trait_method_calls() -> f32 {
     let x = f32::cast_from(UNIT_POS);
     let curve = Curve::new(x, x * 2.0, 3u32);
@@ -427,7 +429,7 @@ fn trait_impl_methods_are_outlined() {
     assert_eq!(count::<FuncOp>(&traced.ctx, traced.module), 2);
 }
 
-#[cube(outline)]
+#[cube(inline(never))]
 fn weighted_sum(values: &[f32], weights: &[f32], start: usize, count: usize) -> f32 {
     let mut acc = 0.0f32;
     for i in start..start + count {
@@ -436,14 +438,14 @@ fn weighted_sum(values: &[f32], weights: &[f32], start: usize, count: usize) -> 
     acc
 }
 
-#[cube(outline)]
+#[cube(inline(never))]
 fn scale_into(values: &mut [f32], factor: f32, count: usize) {
     for i in 0..count {
         values[i] = values[i] * factor + f32::ln(factor + 1.0);
     }
 }
 
-#[cube]
+#[cube(inline)]
 fn slice_calls(values: &mut [f32], weights: &[f32]) {
     let n = UNIT_POS as usize;
     let a = weighted_sum(values, weights, n, 4);
@@ -496,14 +498,14 @@ struct Table {
     base: f32,
 }
 
-#[cube(outline)]
+#[cube]
 impl Table {
     // Returns a struct, which a function can't yet: traced inline.
     fn new(base: f32) -> Table {
         Table { base }
     }
 
-    // Takes `&mut self`, which an impl-wide `outline` skips.
+    // Takes `&mut self`, which a device function can't yet: traced inline.
     fn shift(&mut self, by: f32) {
         self.base += by;
     }
@@ -518,7 +520,7 @@ impl Table {
     }
 }
 
-#[cube]
+#[cube(inline)]
 fn table_calls() -> f32 {
     let x = f32::cast_from(UNIT_POS);
     let mut table = Table::new(x);
@@ -527,10 +529,77 @@ fn table_calls() -> f32 {
 }
 
 #[test]
-fn an_impl_marked_outline_outlines_its_methods_but_inline_ones() {
+fn an_impl_calls_its_methods_but_inline_ones() {
     let traced = trace(|scope| {
         table_calls::expand(scope);
     });
     assert_eq!(count::<CallOp>(&traced.ctx, traced.module), 2);
     assert_eq!(count::<FuncOp>(&traced.ctx, traced.module), 2);
+}
+
+#[cube]
+fn by_default(x: f32, y: f32) -> f32 {
+    f32::exp(x) * y + f32::powf(x, y) - f32::ln(y + 2.0)
+}
+
+#[cube]
+fn power_steps(x: f32, #[comptime] steps: u32) -> f32 {
+    let mut y = x;
+    #[unroll]
+    for _ in 0..steps {
+        y = y * x + f32::exp(y * 0.01);
+    }
+    y
+}
+
+#[cube(inline)]
+fn default_calls() -> f32 {
+    let x = f32::cast_from(UNIT_POS);
+    by_default(x, 1.0)
+        + by_default(x, x)
+        + power_steps(x, 2u32)
+        + power_steps(x + 1.0, 2u32)
+        + power_steps(x, 3u32)
+}
+
+#[test]
+fn a_plain_function_is_a_device_function_per_comptime_value() {
+    let traced = trace(|scope| {
+        default_calls::expand(scope);
+    });
+    pliron::operation::verify_operation(traced.module, &traced.ctx).expect("the module verifies");
+    // `by_default` with a constant `y` and with a runtime one (a constant is
+    // part of the specialization), `power_steps` for 2 and for 3, and the
+    // kernel.
+    assert_eq!(count::<FuncOp>(&traced.ctx, traced.module), 5);
+    assert_eq!(count::<CallOp>(&traced.ctx, traced.module), 5);
+}
+
+/// A comptime value whose type isn't known to be `Hash` can't be part of a
+/// specialization.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Steps(u32);
+
+#[cube]
+fn generic_steps<S: Clone + core::fmt::Debug + Send + Sync + 'static>(
+    x: f32,
+    #[comptime] steps: S,
+) -> f32 {
+    let _ = steps;
+    f32::exp(x) * x + f32::ln(x + 2.0)
+}
+
+#[cube(inline)]
+fn unhashable_calls(#[comptime] steps: Steps) -> f32 {
+    let x = f32::cast_from(UNIT_POS);
+    generic_steps::<Steps>(x, steps) + generic_steps::<Steps>(x + 1.0, steps)
+}
+
+#[test]
+fn a_comptime_value_that_cant_be_hashed_traces_inline() {
+    let traced = trace(|scope| {
+        unhashable_calls::expand(scope, Steps(2));
+    });
+    assert_eq!(count::<CallOp>(&traced.ctx, traced.module), 0);
+    assert_eq!(count::<FuncOp>(&traced.ctx, traced.module), 1);
 }

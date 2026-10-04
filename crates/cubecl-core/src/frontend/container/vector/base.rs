@@ -309,6 +309,7 @@ impl<P: Scalar, N: Size> CubeType for Vector<P, N> {
 }
 
 impl<P: Scalar, N: Size> CubeDebug for Vector<P, N> {}
+impl<P: Scalar, N: Size> crate::frontend::call::CallArg for Vector<P, N> {}
 
 impl<P: Scalar, N: Size> NativeAssign for Vector<P, N> {
     fn elem_init_mut(scope: &Scope, elem: ExpandValue) -> ExpandValue {

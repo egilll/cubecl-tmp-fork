@@ -91,7 +91,11 @@ fn main() {
             enc.setBuffer_offset_atIndex(Some(&a), 0, 0);
             enc.setBuffer_offset_atIndex(Some(&o), 0, 1);
         }
-        let size = |w| MTLSize { width: w, height: 1, depth: 1 };
+        let size = |w| MTLSize {
+            width: w,
+            height: 1,
+            depth: 1,
+        };
         enc.dispatchThreads_threadsPerThreadgroup(size(n), size(256));
         enc.endEncoding();
         cb.commit();
@@ -117,7 +121,10 @@ fn main() {
         wrong[1] += (at(sqrt) != x.abs().sqrt()) as usize;
         wrong[2] += (at(exp) != (x * 0.05).exp()) as usize;
     }
-    println!("native vs CPU, inexact of {n}: div {} sqrt {} exp {}", wrong[0], wrong[1], wrong[2]);
+    println!(
+        "native vs CPU, inexact of {n}: div {} sqrt {} exp {}",
+        wrong[0], wrong[1], wrong[2]
+    );
     let mut prefixes = vec![("none".to_string(), String::new())];
     for path in std::env::args().skip(1) {
         prefixes.push((path.clone(), std::fs::read_to_string(&path).unwrap()));
@@ -135,14 +142,19 @@ fn main() {
                 .enumerate()
                 .filter_map(|(j, (fname, _))| {
                     let d = (0..n)
-                        .filter(|i| {
-                            out[i * FUNCS.len() + j] != reference[i * FUNCS.len() + j]
-                        })
+                        .filter(|i| out[i * FUNCS.len() + j] != reference[i * FUNCS.len() + j])
                         .count();
                     (d > 0).then(|| format!("{fname}:{d}"))
                 })
                 .collect();
-            println!("{name} / {route}: {}", if diffs.is_empty() { "same".into() } else { diffs.join(" ") });
+            println!(
+                "{name} / {route}: {}",
+                if diffs.is_empty() {
+                    "same".into()
+                } else {
+                    diffs.join(" ")
+                }
+            );
         }
     }
 }

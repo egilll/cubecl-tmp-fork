@@ -26,14 +26,14 @@ impl CubeTypeStruct {
             let clone_impl = self.clone_expand();
             let cube_type_impl = self.cube_type_impl();
             let expand_type_impl = self.expand_type_impl();
-            let outline_impl = self.outline_impl();
+            let call_arg_impl = self.call_arg_impl();
 
             quote! {
                 #expand_ty
                 #clone_impl
                 #cube_type_impl
                 #expand_type_impl
-                #outline_impl
+                #call_arg_impl
             }
         }
     }
@@ -330,109 +330,58 @@ impl CubeTypeStruct {
         }
     }
 
-    /// `OutlineArg` for the expand type, so the struct can be an argument of
-    /// a `#[cube(outline)]` function: its runtime fields become parameters,
-    /// its comptime fields part of the specialization. The bounds are
-    /// higher-ranked so a struct with a field that can't be outlined still
-    /// compiles, and only fails where it is passed to an outlined function.
-    fn outline_impl(&self) -> proc_macro2::TokenStream {
-        let outline = frontend_type("outline");
-        let cube_type = prelude_type("CubeType");
+    /// `CallArg` for the expand type, so the struct can be an argument of a
+    /// device function: its runtime fields become parameters, its comptime
+    /// fields part of the specialization. A field that can't be passed, or a
+    /// comptime field whose type isn't known to be `Hash`, makes a call taking
+    /// the struct trace inline. A device function can't return a struct yet.
+    fn call_arg_impl(&self) -> proc_macro2::TokenStream {
+        let call = frontend_type("call");
         let name_expand = &self.name_expand;
         let (generics, generic_names, where_clause) = self.generics.split_for_impl();
 
-        let runtime: Vec<_> = self
+        let runtime_names: Vec<_> = self
             .fields
             .iter()
             .filter(|it| !it.comptime.is_present())
+            .map(|it| it.ident.as_ref().unwrap())
             .collect();
-        let comptime: Vec<_> = self
+        let comptime_names: Vec<_> = self
             .fields
             .iter()
             .filter(|it| it.comptime.is_present())
-            .collect();
-        let runtime_names: Vec<_> = runtime
-            .iter()
             .map(|it| it.ident.as_ref().unwrap())
             .collect();
-        let comptime_names: Vec<_> = comptime
-            .iter()
-            .map(|it| it.ident.as_ref().unwrap())
-            .collect();
-
-        let mut predicates: Vec<TokenStream> = where_clause
-            .map(|clause| clause.predicates.iter().map(|it| quote![#it]).collect())
-            .unwrap_or_default();
-        for field in &runtime {
-            let ty = &field.ty;
-            predicates.push(quote! {
-                for<'__o> <#ty as #cube_type>::ExpandType:
-                    #outline::OutlineArg<Owned = <#ty as #cube_type>::ExpandType>
-            });
-        }
-        for field in &comptime {
-            let ty = &field.ty;
-            predicates.push(quote! {
-                for<'__o> #ty: ::core::hash::Hash + ::core::clone::Clone
-            });
-        }
 
         quote! {
-            // A function can't return a struct yet: a call that would is
-            // traced inline.
-            impl #generics #outline::OutlineResult for #name_expand #generic_names #where_clause {
-                const CAN_RETURN: bool = false;
-
-                fn outline_returns(
+            impl #generics #call::CallArg for #name_expand #generic_names #where_clause {
+                fn call_slots(
                     &self,
-                    _scope: &#outline::__private::Scope,
-                ) -> #outline::__private::Vec<#outline::__private::Value> {
-                    ::core::unreachable!("a struct is never returned from a device function")
+                    scope: &#call::__private::Scope,
+                    slots: &mut #call::__private::Vec<#call::CallSlot>,
+                ) -> bool {
+                    true #(&& #call::CallArg::call_slots(&self.#runtime_names, scope, slots))*
                 }
 
-                fn outline_from_results(
-                    _results: &mut dyn ::core::iter::Iterator<Item = #outline::__private::Value>,
-                ) -> Self {
-                    ::core::unreachable!("a struct is never returned from a device function")
+                fn call_key(&self, hasher: &mut dyn ::core::hash::Hasher) -> bool {
+                    #[allow(unused_imports)]
+                    use #call::{HashComptime as _, NoHashComptime as _};
+                    true
+                        #(&& #call::CallArg::call_key(&self.#runtime_names, hasher))*
+                        #(&& (&#call::HashProbe(&self.#comptime_names)).hash_comptime(hasher))*
                 }
-            }
 
-            impl #generics #outline::OutlineArg for #name_expand #generic_names
-            where #(#predicates),*
-            {
-                type Owned = Self;
-
-                fn outline_slots(
+                fn call_rebuild(
                     &self,
-                    scope: &#outline::__private::Scope,
-                    slots: &mut #outline::__private::Vec<#outline::OutlineSlot>,
-                ) {
-                    #(#outline::OutlineArg::outline_slots(&self.#runtime_names, scope, slots);)*
-                }
-
-                fn outline_key(&self, hasher: &mut dyn ::core::hash::Hasher) {
-                    #(#outline::OutlineArg::outline_key(&self.#runtime_names, hasher);)*
-                    #(#outline::outline_hash_field(hasher, &self.#comptime_names);)*
-                }
-
-                fn outline_rebuild(
-                    &self,
-                    scope: &#outline::__private::Scope,
-                    params: &mut dyn ::core::iter::Iterator<Item = #outline::__private::Value>,
+                    scope: &#call::__private::Scope,
+                    params: &mut dyn ::core::iter::Iterator<Item = #call::__private::Value>,
                 ) -> Self {
                     Self {
-                        #(#runtime_names: #outline::OutlineArg::outline_rebuild(
+                        #(#runtime_names: #call::CallArg::call_rebuild(
                             &self.#runtime_names,
                             scope,
                             params,
                         ),)*
-                        #(#comptime_names: ::core::clone::Clone::clone(&self.#comptime_names),)*
-                    }
-                }
-
-                fn outline_owned(&self) -> Self {
-                    Self {
-                        #(#runtime_names: #outline::OutlineArg::outline_owned(&self.#runtime_names),)*
                         #(#comptime_names: ::core::clone::Clone::clone(&self.#comptime_names),)*
                     }
                 }

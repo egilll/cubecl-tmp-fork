@@ -48,6 +48,7 @@ impl<T: CubeType> cubecl::prelude::IntoMut for RuntimeCellExpand<T> {
     }
 }
 impl<T: CubeType> cubecl::prelude::CubeDebug for RuntimeCellExpand<T> {}
+impl<T: CubeType> crate::frontend::call::CallArg for RuntimeCellExpand<T> {}
 
 #[cube]
 impl<T: CubePrimitive> RuntimeCell<T> {

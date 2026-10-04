@@ -37,6 +37,7 @@ impl<T: CubeType> IntoMut for Sequence<T> {
     }
 }
 impl<T: CubeType> CubeDebug for Sequence<T> {}
+impl<T: CubeType> crate::frontend::call::CallArg for Sequence<T> {}
 
 // Every argument is passed through `Into`, which Rust's reborrow does not reach.
 impl<'a, T: CubeType> From<&'a mut SequenceExpand<T>> for &'a SequenceExpand<T> {
@@ -225,6 +226,7 @@ impl<T: CubeType> IntoMut for SequenceExpand<T> {
     }
 }
 impl<T: CubeType> CubeDebug for SequenceExpand<T> {}
+impl<T: CubeType> crate::frontend::call::CallArg for SequenceExpand<T> {}
 
 impl<T: CubeType<ExpandType: Clone>> Clone for SequenceExpand<T> {
     fn clone(&self) -> Self {

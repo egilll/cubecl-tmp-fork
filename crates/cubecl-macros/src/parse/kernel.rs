@@ -38,18 +38,40 @@ pub(crate) struct KernelArgs {
     pub explicit_define: Flag,
     #[darling(default)]
     pub address_type: AddressType,
-    /// Trace the function once per specialization into a device function of
-    /// the kernel, and call it, instead of tracing it again at every call.
-    /// On an `impl` block, applies to every method in it.
-    pub outline: Flag,
-    /// On a method of an `impl` marked `outline`: trace it at every call, as
-    /// a plain `#[cube]` method.
-    pub inline: Flag,
-    /// Whether `outline` comes from the `impl` rather than the function: a
-    /// method whose signature can't be outlined is then traced at every call
-    /// rather than refused.
-    #[darling(skip)]
-    pub outline_from_impl: bool,
+    /// Whether calls of the function are device function calls. By default
+    /// they are, wherever the signature allows it: the function is traced
+    /// once per specialization into a device function of the kernel and
+    /// called. `inline` (or `inline(always)`) traces it again at every call
+    /// instead; `inline(never)` insists on a call and refuses a signature that
+    /// can't have one. On an `impl` block, applies to every method in it.
+    pub inline: Option<InlineHint>,
+}
+
+/// The `inline` argument of `#[cube]`, as Rust's `#[inline]`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum InlineHint {
+    /// `inline` or `inline(always)`: trace the body at every call.
+    Always,
+    /// `inline(never)`: always a device function call.
+    Never,
+}
+
+impl FromMeta for InlineHint {
+    fn from_word() -> darling::Result<Self> {
+        Ok(Self::Always)
+    }
+
+    fn from_list(items: &[NestedMeta]) -> darling::Result<Self> {
+        match items {
+            [NestedMeta::Meta(syn::Meta::Path(path))] if path.is_ident("always") => {
+                Ok(Self::Always)
+            }
+            [NestedMeta::Meta(syn::Meta::Path(path))] if path.is_ident("never") => Ok(Self::Never),
+            _ => Err(darling::Error::custom(
+                "expected `inline`, `inline(always)` or `inline(never)`",
+            )),
+        }
+    }
 }
 
 pub enum ExecutionMode {

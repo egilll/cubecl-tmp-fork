@@ -563,6 +563,7 @@ mod __cube_type {
     }
 
     impl<E: Numeric, IO> CubeDebug for ErasedTensorExpand<E, IO> {}
+    impl<E: Numeric, IO> cubecl_core::frontend::call::CallArg for ErasedTensorExpand<E, IO> {}
 
     impl<E: Numeric, IO> AsRefExpand for ErasedTensorExpand<E, IO> {
         fn __expand_ref_method(&self, _: &Scope) -> &Self {

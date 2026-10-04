@@ -200,6 +200,8 @@ impl<C: CubeType, S: MatrixScope> IntoMut for MatrixExpand<C, S> {
     }
 }
 
+impl<C: CubeType, S: MatrixScope> crate::frontend::call::CallArg for MatrixExpand<C, S> {}
+
 impl<C: CubeType, S: MatrixScope> CubeDebug for MatrixExpand<C, S> {
     fn set_debug_name(&self, scope: &Scope, name: &'static str) {
         let op = self.elem.defining_op().unwrap();
@@ -222,6 +224,10 @@ impl<A: CubeType, B: CubeType, CD: CubeType> IntoMut for MmaDefinitionExpand<A, 
 }
 
 impl<A: CubeType, B: CubeType, CD: CubeType> CubeDebug for MmaDefinitionExpand<A, B, CD> {}
+impl<A: CubeType, B: CubeType, CD: CubeType> crate::frontend::call::CallArg
+    for MmaDefinitionExpand<A, B, CD>
+{
+}
 
 #[cube]
 impl<C: CubePrimitive, S: MatrixScope> Matrix<C, S> {
@@ -1238,6 +1244,7 @@ impl IntoMut for MatrixLayout {
 }
 
 impl CubeDebug for MatrixLayout {}
+impl crate::frontend::call::CallArg for MatrixLayout {}
 
 impl AsRefExpand for MatrixLayout {
     fn __expand_ref_method(&self, _: &Scope) -> &Self {

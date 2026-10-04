@@ -23,7 +23,7 @@ pub struct CompilationConfig {
     pub inline: InlineMode,
 }
 
-/// What happens to calls of `#[cube(outline)]` functions.
+/// What happens to device function calls.
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum InlineMode {
     /// Targets that can emit calls keep the calls worth keeping, and their

@@ -160,7 +160,12 @@ pub struct GlobalState {
     pub device_properties: Option<Rc<DeviceProperties>>,
     /// The device functions traced so far, by specialization, so later calls
     /// with the same one call them instead of tracing again.
-    pub outlined: HashMap<crate::outline::OutlineKey, crate::outline::Outlined>,
+    pub device_fns: HashMap<crate::device_fn::CallKey, crate::device_fn::DeviceFn>,
+    /// Whether a call can still become a device function. True while the
+    /// kernel is traced; the inliner turns it off, so a `#[cube]` helper a
+    /// later lowering calls is traced inline into code that is already past
+    /// the inliner.
+    pub traces_device_fns: bool,
 }
 
 unsafe impl Send for GlobalState {}
@@ -195,6 +200,7 @@ fn ty_key<T: 'static>(ctx: &Context) -> Option<AuxDataIndex> {
 pub trait ContextExt {
     fn aux_ty<T: Send + 'static>(&self) -> &T;
     fn aux_ty_mut<T: Send + 'static>(&mut self) -> &mut T;
+    fn try_aux_ty_mut<T: Send + 'static>(&mut self) -> Option<&mut T>;
     fn set_aux_ty<T: Send + 'static>(&mut self, value: T);
     fn set_address_type(&mut self, addr: AddressType);
     fn address_type(&self) -> AddressType;
@@ -215,6 +221,11 @@ impl ContextExt for Context {
             .ok_or_else(|| format!("Key for {} should exist", type_name::<T>()))
             .unwrap();
         self.aux_data[key].downcast_mut().unwrap()
+    }
+
+    fn try_aux_ty_mut<T: Send + 'static>(&mut self) -> Option<&mut T> {
+        let key = ty_key::<T>(self)?;
+        self.aux_data[key].downcast_mut()
     }
 
     fn set_aux_ty<T: Send + 'static>(&mut self, value: T) {
@@ -341,7 +352,8 @@ fn new_context(settings: KernelSettings) -> Rc<UnsafeCell<Context>> {
         device_properties: Default::default(),
         errors: Default::default(),
         warnings: Default::default(),
-        outlined: Default::default(),
+        device_fns: Default::default(),
+        traces_device_fns: true,
     };
     settings.address_type.register(&mut state);
 
@@ -377,7 +389,8 @@ fn dummy_context() -> Rc<UnsafeCell<Context>> {
         device_properties: Default::default(),
         errors: Default::default(),
         warnings: Default::default(),
-        outlined: Default::default(),
+        device_fns: Default::default(),
+        traces_device_fns: false,
     };
 
     ctx.set_aux_ty(state);

@@ -82,6 +82,7 @@ impl<T: CubeType> IntoMut for ComptimeCellExpand<T> {
 }
 
 impl<T: CubeType> CubeDebug for ComptimeCellExpand<T> {}
+impl<T: CubeType> crate::frontend::call::CallArg for ComptimeCellExpand<T> {}
 
 impl<T: CubeType> Clone for ComptimeCellExpand<T> {
     fn clone(&self) -> Self {

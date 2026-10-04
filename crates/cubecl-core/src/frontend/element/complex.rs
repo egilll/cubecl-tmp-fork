@@ -195,6 +195,7 @@ macro_rules! impl_complex {
         }
 
         impl CubeDebug for $primitive {}
+        impl crate::frontend::call::CallArg for $primitive {}
 
         impl Scalar for $primitive {
             fn elem_type_native() -> ElemType {

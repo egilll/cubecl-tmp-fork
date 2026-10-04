@@ -9,8 +9,8 @@ use syn::{Ident, Type, TypeParamBound, parse_quote};
 use crate::{
     parse::{
         kernel::{
-            DefinedGeneric, ExecutionMode, KernelBody, KernelFn, Launch, anon_lifetime_to_static,
-            map_type_normalized, strip_ref,
+            DefinedGeneric, ExecutionMode, InlineHint, KernelBody, KernelFn, Launch,
+            anon_lifetime_to_static, expand_kernel_ty, map_type_normalized, strip_ref,
         },
         signature::KernelReturns,
     },
@@ -84,12 +84,11 @@ impl KernelFn {
                 quote![#fast_math(scope, #value, |scope| {#body})]
             })
             .unwrap_or_else(|| quote![#body]);
-        // Only the item holding the function's own body is outlined: a
-        // method's other items forward to it.
-        let outlined = self.args.outline.is_present() && matches!(self.body, KernelBody::Block(_));
-        let body = match outlined {
-            true => self.outline_body(body),
-            false => body,
+        // Only the item holding the function's own body becomes a device
+        // function: a method's other items forward to it.
+        let body = match self.body {
+            KernelBody::Block(_) => self.device_call_body(body),
+            KernelBody::Verbatim(_) => body,
         };
         let imports = trait_imports();
         let mappings = self.sig.define_mappings();
@@ -115,75 +114,131 @@ impl KernelFn {
 }
 
 impl KernelFn {
-    /// Wrap the expansion of a `#[cube(outline)]` function so it is traced
-    /// once per specialization, into a device function its calls call. See
-    /// `cubecl_core::frontend::outline`.
-    fn outline_body(&self, body: TokenStream) -> TokenStream {
+    /// Wrap the expansion of a function so its calls are device function
+    /// calls: traced once per specialization into a device function of the
+    /// kernel, and called. See `cubecl_core::frontend::call`.
+    ///
+    /// The body becomes one closure taking the runtime arguments. The call
+    /// tries a device function first, and calls the closure inline when that
+    /// can't be: a signature the call can't express is decided here, an
+    /// argument or result that can't be passed while tracing.
+    fn device_call_body(&self, body: TokenStream) -> TokenStream {
+        let never = match self.args.inline {
+            Some(InlineHint::Always) => return body,
+            Some(InlineHint::Never) => true,
+            None => false,
+        };
+        let refuse = |span: proc_macro2::Span, reason: &str| match never {
+            true => syn::Error::new(span, format!("`#[cube(inline(never))]`: {reason}"))
+                .into_compile_error(),
+            false => body.clone(),
+        };
         if self.args.is_launch() {
-            return syn::Error::new(
-                self.span,
-                "a kernel entry point can't be outlined; mark the functions it calls instead",
-            )
-            .into_compile_error();
+            return refuse(self.span, "a kernel entry point is never called");
         }
+        if self.context.is_intrinsic {
+            return refuse(self.span, "an intrinsic is expanded at its call");
+        }
+
+        let returns = match &self.sig.returns {
+            KernelReturns::ExpandType(ty) => match expand_kernel_ty(ty.clone(), false) {
+                Ok(ty) => ty,
+                Err(err) => return err.into_compile_error(),
+            },
+            KernelReturns::Plain(ty) if is_self(ty) => ty.clone(),
+            KernelReturns::Plain(ty) => {
+                return refuse(
+                    syn::spanned::Spanned::span(ty),
+                    "a device function can't return a comptime value",
+                );
+            }
+        };
+        if contains_impl_trait(&returns) {
+            return refuse(self.span, "a device function can't return `impl Trait`");
+        }
+        if contains_borrow(&returns) {
+            return refuse(
+                self.span,
+                "a device function can't return a borrow of its arguments",
+            );
+        }
+
         // A mutable slice writes its buffer in place, so it passes as a slice;
         // any other `&mut` would need its referent copied back.
         let is_mut_ref = |ty: &Type| matches!(ty, Type::Reference(r) if r.mutability.is_some());
         let is_mut_slice = |ty: &Type| matches!(ty, Type::Reference(r) if r.mutability.is_some() && matches!(*r.elem, Type::Slice(_)));
-        if let Some(param) = self
-            .sig
-            .runtime_params()
-            .find(|param| is_mut_ref(&param.ty) && !is_mut_slice(&param.ty))
-        {
-            if self.args.outline_from_impl {
-                return body;
+        for param in self.sig.runtime_params() {
+            if is_mut_ref(&param.ty) && !is_mut_slice(&param.ty) {
+                return refuse(
+                    param.name.span(),
+                    "a device function can't take `&mut` arguments other than slices yet",
+                );
             }
-            return syn::Error::new(
-                param.name.span(),
-                "`#[cube(outline)]` functions can't take `&mut` arguments other than slices yet",
-            )
-            .into_compile_error();
+            if contains_impl_trait(&param.normalized_ty) {
+                return refuse(
+                    param.name.span(),
+                    "a device function can't take `impl Trait` arguments",
+                );
+            }
         }
 
-        let outline = frontend_type("outline");
+        let call = frontend_type("call");
         let scope_ty = prelude_type("Scope");
         let name = self.full_name.as_str();
-        let self_ident = format_ident!("__outline_self");
+        let self_ident = format_ident!("__call_self");
         let has_self = self.sig.runtime_params().any(|param| param.name == "self");
         let in_impl = has_self || self.full_name.contains("::");
 
-        let runtime: Vec<_> = self.sig.runtime_params().map(|it| &it.name).collect();
-        let bindings: Vec<_> = self
-            .sig
-            .runtime_params()
+        let runtime: Vec<_> = self.sig.runtime_params().collect();
+        // The names inside the body closure: `self` can't name a closure
+        // parameter.
+        let bindings: Vec<_> = runtime
+            .iter()
             .map(|param| match param.name == "self" {
                 true => self_ident.clone(),
                 false => param.name.clone(),
             })
             .collect();
-        let patterns: Vec<_> = self
-            .sig
-            .runtime_params()
+        let closure_params: Vec<_> = runtime
+            .iter()
             .zip(bindings.iter())
-            .map(|(param, binding)| match is_mut_ref(&param.ty) {
-                true => quote![mut #binding],
-                false => quote![#binding],
+            .map(|(param, binding)| {
+                // A receiver keeps its own type: `Self` is already the type
+                // the method's `self` has.
+                let ty = match param.name == "self" {
+                    true => &param.ty,
+                    false => &param.normalized_ty,
+                };
+                let mut_ = &param.mutability;
+                quote![#mut_ #binding: #ty]
             })
             .collect();
-        // A reference argument arrives as the value it refers to, which the
-        // body borrows again.
-        let reborrows: Vec<_> = self
-            .sig
-            .runtime_params()
-            .zip(bindings.iter())
-            .filter_map(|(param, binding)| match &param.ty {
-                Type::Reference(r) if r.mutability.is_some() => {
-                    Some(quote![let #binding = &mut #binding;])
+        let names: Vec<_> = runtime.iter().map(|param| &param.name).collect();
+        // Each argument as the value a call passes: a reference passes what
+        // it refers to.
+        let referents: Vec<_> = runtime
+            .iter()
+            .map(|param| {
+                let name = &param.name;
+                match &param.ty {
+                    Type::Reference(_) => quote![&*#name],
+                    _ => quote![&#name],
                 }
-                Type::Reference(_) => Some(quote![let #binding = &#binding;]),
-                _ => None,
             })
             .collect();
+        let rebuilt: Vec<_> = (0..runtime.len())
+            .map(|i| format_ident!("__call_arg_{i}"))
+            .collect();
+        let passed: Vec<_> = runtime
+            .iter()
+            .zip(rebuilt.iter())
+            .map(|(param, rebuilt)| match &param.ty {
+                Type::Reference(r) if r.mutability.is_some() => quote![&mut #rebuilt],
+                Type::Reference(_) => quote![&#rebuilt],
+                _ => quote![#rebuilt],
+            })
+            .collect();
+
         let comptime: Vec<_> = self.sig.comptime_params().map(|it| &it.name).collect();
         let mut type_names: Vec<TokenStream> = self
             .sig
@@ -209,26 +264,83 @@ impl KernelFn {
         };
 
         quote! {
-            let __outline_comptime = {
-                let mut __hasher = #outline::outline_hasher();
-                #(#outline::outline_hash_comptime(&mut __hasher, &#comptime);)*
-                #(#outline::outline_hash_comptime(&mut __hasher, &#const_params);)*
-                ::core::hash::Hasher::finish(&__hasher)
+            #[allow(clippy::redundant_closure_call, unused_mut)]
+            let __call_body = |scope: &#scope_ty, #(#closure_params),*| -> #returns {
+                #(let #comptime = ::core::clone::Clone::clone(&#comptime);)*
+                #body
             };
-            #outline::outline_call(
+            let __call_comptime = {
+                #[allow(unused_imports)]
+                use #call::{HashComptime as _, NoHashComptime as _};
+                let mut __hasher = #call::call_hasher();
+                let __hashed = true
+                    #(&& (&#call::HashProbe(&#comptime)).hash_comptime(&mut __hasher))*;
+                #(#call::hash_const(&mut __hasher, &#const_params);)*
+                __hashed.then(|| ::core::hash::Hasher::finish(&__hasher))
+            };
+            let __call_args = __call_comptime.and_then(|_| {
+                let mut __slots = #call::__private::Vec::new();
+                let mut __hasher = #call::call_hasher();
+                let __passable = true
+                    #(&& #call::CallArg::call_slots(#referents, scope, &mut __slots)
+                        && #call::CallArg::call_key(#referents, &mut __hasher))*;
+                __passable.then(|| #call::CallArgs {
+                    slots: __slots,
+                    key: ::core::hash::Hasher::finish(&__hasher),
+                })
+            });
+            let __call_result = #call::device_call(
                 scope,
                 ::core::concat!(::core::module_path!(), "::", #name),
                 &[#(#type_names),*],
-                __outline_comptime,
-                (#(#runtime,)*),
-                |scope: &#scope_ty, (#(#patterns,)*)| {
-                    #(#reborrows)*
-                    #(let #comptime = ::core::clone::Clone::clone(&#comptime);)*
-                    #body
+                __call_comptime.unwrap_or_default(),
+                __call_args,
+                |scope: &#scope_ty,
+                 __params: &mut dyn ::core::iter::Iterator<Item = #call::__private::Value>| {
+                    #(#[allow(unused_mut)] let mut #rebuilt = #call::CallArg::call_rebuild(#referents, scope, __params);)*
+                    __call_body(scope, #(#passed),*)
                 },
-            )
+            );
+            match __call_result {
+                ::core::option::Option::Some(__result) => __result,
+                ::core::option::Option::None => __call_body(scope, #(#names),*),
+            }
         }
     }
+}
+
+fn is_self(ty: &Type) -> bool {
+    matches!(ty, Type::Path(path) if path.path.is_ident("Self"))
+}
+
+/// Whether `ty` mentions a reference or a lifetime: a result borrowing an
+/// argument, which a closure's return type can't tie to its parameters.
+fn contains_borrow(ty: &Type) -> bool {
+    struct Find(bool);
+    impl syn::visit_mut::VisitMut for Find {
+        fn visit_type_reference_mut(&mut self, _: &mut syn::TypeReference) {
+            self.0 = true;
+        }
+        fn visit_lifetime_mut(&mut self, _: &mut syn::Lifetime) {
+            self.0 = true;
+        }
+    }
+    let mut find = Find(false);
+    syn::visit_mut::VisitMut::visit_type_mut(&mut find, &mut ty.clone());
+    find.0
+}
+
+/// Whether `ty` mentions `impl Trait`, which a closure parameter can't name.
+fn contains_impl_trait(ty: &Type) -> bool {
+    struct Find(bool);
+    impl syn::visit_mut::VisitMut for Find {
+        fn visit_type_impl_trait_mut(&mut self, _: &mut syn::TypeImplTrait) {
+            self.0 = true;
+        }
+    }
+    let mut find = Find(false);
+    syn::visit_mut::VisitMut::visit_type_mut(&mut find, &mut ty.clone());
+    find.0
 }
 
 /// `tokens` with the `self` keyword replaced by `with`, except as the start

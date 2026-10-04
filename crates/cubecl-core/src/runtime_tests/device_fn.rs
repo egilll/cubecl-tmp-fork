@@ -1,20 +1,19 @@
-use crate::frontend::outline::Outlinable;
 use crate::prelude::*;
 use crate::{self as cubecl};
 use alloc::vec::Vec;
 use cubecl_runtime::runtime::Runtime;
 
-// `#[cube(outline)]` functions, called from several sites, with runtime and
+// `#[cube(inline(never))]` functions, called from several sites, with runtime and
 // constant arguments, from each other, and with loops and branches inside.
 // Whether a target keeps the calls or inlines them, the results must match
 // plain Rust.
 
-#[cube(outline)]
+#[cube(inline(never))]
 fn poly(x: f32, a: f32, b: f32) -> f32 {
     (x * a + b) * x - a
 }
 
-#[cube(outline)]
+#[cube(inline(never))]
 fn pick(flag: bool, x: f32, y: f32) -> f32 {
     if flag {
         poly(x, y, 1.0)
@@ -23,7 +22,7 @@ fn pick(flag: bool, x: f32, y: f32) -> f32 {
     }
 }
 
-#[cube(outline)]
+#[cube(inline(never))]
 fn collatz_steps(start: u32, limit: u32) -> u32 {
     let mut n = start;
     let mut steps = 0u32;
@@ -39,7 +38,7 @@ fn collatz_steps(start: u32, limit: u32) -> u32 {
 }
 
 /// Large enough to be kept as a call, and reads a builtin.
-#[cube(outline)]
+#[cube(inline(never))]
 fn blend(x: f32, y: f32, t: f32) -> f32 {
     let unit = f32::cast_from(UNIT_POS) * 0.25;
     let a = x * (1.0 - t) + y * t;
@@ -50,7 +49,7 @@ fn blend(x: f32, y: f32, t: f32) -> f32 {
 }
 
 #[cube(launch)]
-pub fn kernel_outlined_calls(input: &[f32], output: &mut [f32], steps: &mut [u32]) {
+pub fn kernel_device_fn_calls(input: &[f32], output: &mut [f32], steps: &mut [u32]) {
     let i = ABSOLUTE_POS;
     if i < input.len() {
         let x = input[i];
@@ -87,7 +86,7 @@ impl Curve {
         }
     }
 
-    #[cube(outline)]
+    #[cube(inline(never))]
     fn eval(&self, x: f32) -> f32 {
         let mut y = x * self.scale + self.shift;
         #[unroll]
@@ -105,7 +104,7 @@ trait Response: CubeType {
 
 #[cube]
 impl Response for Curve {
-    #[cube(outline)]
+    #[cube(inline(never))]
     fn respond(&self, x: f32) -> f32 {
         let a = self.eval(x);
         let b = self.eval(x * 0.5);
@@ -113,13 +112,15 @@ impl Response for Curve {
     }
 }
 
-#[cube(outline)]
-fn sum_responses<R: Response + Outlinable>(response: &R, x: f32) -> f32 {
+// A generic argument needs no bound to be passed: whether it can is
+// decided while tracing.
+#[cube]
+fn sum_responses<R: Response>(response: &R, x: f32) -> f32 {
     response.respond(x) + response.respond(x + 1.0) + response.respond(x * 2.0)
 }
 
 #[cube(launch)]
-pub fn kernel_outlined_methods(input: &[f32], output: &mut [f32]) {
+pub fn kernel_device_fn_methods(input: &[f32], output: &mut [f32]) {
     let i = ABSOLUTE_POS;
     if i < input.len() {
         let x = input[i];
@@ -161,13 +162,13 @@ impl CurveRef {
     }
 }
 
-pub fn test_outlined_methods<R: Runtime>(client: Client) {
+pub fn test_device_fn_methods<R: Runtime>(client: Client) {
     let n = 64usize;
     let input: Vec<f32> = (0..n).map(|i| (i as f32) * 0.02 - 0.5).collect();
     let input_handle = client.create_from_slice(f32::as_bytes(&input));
     let output_handle = client.empty(n * core::mem::size_of::<f32>());
 
-    kernel_outlined_methods::launch(
+    kernel_device_fn_methods::launch(
         &client,
         CubeCount::Static(1, 1, 1),
         CubeDim::new_1d(n as u32),
@@ -194,7 +195,7 @@ pub fn test_outlined_methods<R: Runtime>(client: Client) {
     }
 }
 
-#[cube(outline)]
+#[cube(inline(never))]
 fn weighted_sum(values: &[f32], weights: &[f32], start: usize, count: usize) -> f32 {
     let mut acc = 0.0f32;
     for i in start..start + count {
@@ -203,13 +204,13 @@ fn weighted_sum(values: &[f32], weights: &[f32], start: usize, count: usize) -> 
     acc
 }
 
-#[cube(outline)]
+#[cube(inline(never))]
 fn scale_into(values: &mut [f32], at: usize, factor: f32, shift: f32) {
     values[at] = values[at] * factor + shift * 0.5 - factor * 0.25 + shift * factor;
 }
 
 #[cube(launch)]
-pub fn kernel_outlined_slices(values: &[f32], weights: &[f32], output: &mut [f32]) {
+pub fn kernel_device_fn_slices(values: &[f32], weights: &[f32], output: &mut [f32]) {
     let i = ABSOLUTE_POS;
     if i < output.len() {
         let a = weighted_sum(values, weights, i, 4);
@@ -220,7 +221,7 @@ pub fn kernel_outlined_slices(values: &[f32], weights: &[f32], output: &mut [f32
     }
 }
 
-pub fn test_outlined_slices<R: Runtime>(client: Client) {
+pub fn test_device_fn_slices<R: Runtime>(client: Client) {
     let n = 32usize;
     let values: Vec<f32> = (0..n + 8).map(|i| (i as f32) * 0.03 - 0.4).collect();
     let weights: Vec<f32> = (0..5).map(|i| 1.0 + i as f32 * 0.5).collect();
@@ -228,7 +229,7 @@ pub fn test_outlined_slices<R: Runtime>(client: Client) {
     let weights_handle = client.create_from_slice(f32::as_bytes(&weights));
     let output_handle = client.empty(n * core::mem::size_of::<f32>());
 
-    kernel_outlined_slices::launch(
+    kernel_device_fn_slices::launch(
         &client,
         CubeCount::Static(1, 1, 1),
         CubeDim::new_1d(n as u32),
@@ -291,14 +292,14 @@ fn collatz_ref(start: u32, limit: u32) -> u32 {
     steps
 }
 
-pub fn test_outlined_calls<R: Runtime>(client: Client) {
+pub fn test_device_fn_calls<R: Runtime>(client: Client) {
     let n = 96usize;
     let input: Vec<f32> = (0..n).map(|i| (i as f32) * 0.01 - 0.3).collect();
     let input_handle = client.create_from_slice(f32::as_bytes(&input));
     let output_handle = client.empty(n * core::mem::size_of::<f32>());
     let steps_handle = client.empty(n * core::mem::size_of::<u32>());
 
-    kernel_outlined_calls::launch(
+    kernel_device_fn_calls::launch(
         &client,
         CubeCount::Static(1, 1, 1),
         CubeDim::new_1d(n as u32),
@@ -337,26 +338,26 @@ pub fn test_outlined_calls<R: Runtime>(client: Client) {
 
 #[allow(missing_docs)]
 #[macro_export]
-macro_rules! testgen_outline {
+macro_rules! testgen_device_fn {
     () => {
         use super::*;
 
         #[$crate::runtime_tests::test_log::test]
-        fn test_outlined_calls() {
+        fn test_device_fn_calls() {
             let client = TestRuntime::client(&Default::default());
-            cubecl_core::runtime_tests::outline::test_outlined_calls::<TestRuntime>(client);
+            cubecl_core::runtime_tests::device_fn::test_device_fn_calls::<TestRuntime>(client);
         }
 
         #[$crate::runtime_tests::test_log::test]
-        fn test_outlined_methods() {
+        fn test_device_fn_methods() {
             let client = TestRuntime::client(&Default::default());
-            cubecl_core::runtime_tests::outline::test_outlined_methods::<TestRuntime>(client);
+            cubecl_core::runtime_tests::device_fn::test_device_fn_methods::<TestRuntime>(client);
         }
 
         #[$crate::runtime_tests::test_log::test]
-        fn test_outlined_slices() {
+        fn test_device_fn_slices() {
             let client = TestRuntime::client(&Default::default());
-            cubecl_core::runtime_tests::outline::test_outlined_slices::<TestRuntime>(client);
+            cubecl_core::runtime_tests::device_fn::test_device_fn_slices::<TestRuntime>(client);
         }
     };
 }

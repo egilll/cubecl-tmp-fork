@@ -15,6 +15,7 @@
   - [Autotune](./core-features/autotune.md)
   - [Hardware Features](./core-features/features.md)
 - [Language Support](./language-support/summary.md)
+  - [Functions](./language-support/functions.md)
   - [Trait](./language-support/trait.md)
   - [Enum](./language-support/enum.md)
   - [Struct](./language-support/struct.md)

@@ -59,6 +59,7 @@ macro_rules! impl_int {
         }
 
         impl CubeDebug for $type {}
+        impl crate::frontend::call::CallArg for $type {}
         impl Scalar for $type {
             fn elem_type_native() -> ElemType {
                 IntKind::$kind.into()

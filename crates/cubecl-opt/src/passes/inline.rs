@@ -224,6 +224,12 @@ impl Pass for InlinePass {
     ) -> Result<PassResult> {
         let mut res = PassResult::default();
 
+        // Past this point a `#[cube]` helper a lowering calls is traced
+        // inline: nothing would inline or lower a device function made now.
+        if let Some(state) = ctx.try_aux_ty_mut::<cubecl_ir::GlobalState>() {
+            state.traces_device_fns = false;
+        }
+
         if matches!(self.policy, InlinePolicy::Target { .. }) && hoist_kernel_state_reads(ctx, op) {
             res.ir_changed |= IRStatus::Changed;
         }
