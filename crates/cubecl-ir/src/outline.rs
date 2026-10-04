@@ -91,17 +91,10 @@ pub fn outline_hasher() -> impl Hasher {
 
 /// A hash of a map's entries regardless of iteration order.
 pub fn hash_unordered<K: Hash, V: Hash>(entries: impl Iterator<Item = (K, V)>) -> u64 {
-    let mut hashes: Vec<u64> = entries
-        .map(|entry| {
-            let mut hasher = foldhash::fast::FixedState::with_seed(0).build_hasher();
-            entry.hash(&mut hasher);
-            hasher.finish()
-        })
-        .collect();
+    let state = foldhash::fast::FixedState::with_seed(0);
+    let mut hashes: Vec<u64> = entries.map(|entry| state.hash_one(entry)).collect();
     hashes.sort_unstable();
-    let mut hasher = foldhash::fast::FixedState::with_seed(0).build_hasher();
-    hashes.hash(&mut hasher);
-    hasher.finish()
+    state.hash_one(hashes)
 }
 
 use core::hash::BuildHasher;
