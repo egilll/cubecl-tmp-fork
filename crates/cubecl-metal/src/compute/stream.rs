@@ -19,6 +19,8 @@ use objc2_metal::{
     MTLComputeCommandEncoder, MTLDevice, MTLDispatchType, MTLSharedEvent,
 };
 use std::ptr::NonNull;
+
+use crate::compute::accounting::{Accounting, BatchCost};
 use std::sync::Arc;
 
 /// Active encoder state for batching multiple kernel dispatches.
@@ -35,6 +37,8 @@ pub struct ActiveEncoder {
     /// Report a fault when it completes, for tests of recovery: a real GPU
     /// fault can't be caused on demand. Only tests set it.
     pub inject_fault: bool,
+    /// The dispatches it carries, for GPU-time accounting.
+    pub cost: BatchCost,
 }
 
 /// A byte range of one `MTLBuffer`, keyed by the buffer's address.
@@ -296,6 +300,14 @@ pub struct MetalStream {
     /// The event value each recently flushed batch signals, by sequence
     /// number, so a host access can wait for just the batch it needs.
     pub batch_events: std::collections::VecDeque<(u64, u64)>,
+    /// Learned kernel costs and what is in flight, shared with the
+    /// completion handlers.
+    pub accounting: Arc<Accounting>,
+    /// Estimated GPU microseconds of the open batch.
+    pub batch_estimate: f64,
+    /// Commit the open batch once its estimate reaches this; see
+    /// `StreamingConfig::max_batch_gpu_micros`.
+    pub max_batch_gpu_micros: Option<u64>,
 }
 
 impl std::fmt::Debug for MetalStream {
@@ -348,6 +360,7 @@ impl MetalStream {
                 hazards: Hazards::default(),
                 seq: self.batch_seq,
                 inject_fault: false,
+                cost: BatchCost::default(),
             });
         }
 
@@ -361,6 +374,7 @@ impl MetalStream {
 
         if let Some(active) = self.active_encoder.take() {
             (*active.encoder).endEncoding();
+            self.account_batch(&active);
             install_completion_handler(
                 &active.command_buffer,
                 active.temporaries,
@@ -401,6 +415,39 @@ impl MetalStream {
         }
         self.unconfirmed_writes
             .extend(bindings.into_iter().map(|binding| (seq, binding)));
+    }
+
+    /// Count the batch `active` is about to commit as in flight, and learn
+    /// from it once it completes.
+    pub fn account_batch(&mut self, active: &ActiveEncoder) {
+        let mut cost = active.cost.clone();
+        cost.estimate_micros = self.batch_estimate.round() as u64;
+        self.batch_estimate = 0.0;
+        self.accounting.committed(cost.estimate_micros);
+        let accounting = self.accounting.clone();
+        let block = block2::RcBlock::new(
+            move |cmd_buf: NonNull<ProtocolObject<dyn MTLCommandBuffer>>| {
+                let cmd_buf = unsafe { cmd_buf.as_ref() };
+                let gpu = (cmd_buf.GPUEndTime() - cmd_buf.GPUStartTime()) * 1e6;
+                let measured = (cmd_buf.status() == MTLCommandBufferStatus::Completed && gpu > 0.0)
+                    .then_some(gpu);
+                accounting.completed(&cost, measured);
+            },
+        );
+        // SAFETY: as in `install_completion_handler`: the block only touches
+        // the accounting's atomics and mutexes.
+        unsafe {
+            active
+                .command_buffer
+                .addCompletedHandler(block2::RcBlock::as_ptr(&block) as *mut _);
+        }
+    }
+
+    /// Whether the open batch's estimated GPU time reached the configured
+    /// bound, so it should be committed now.
+    pub fn batch_over_budget(&self) -> bool {
+        self.max_batch_gpu_micros
+            .is_some_and(|max| self.batch_estimate >= max as f64)
     }
 
     /// Copy each `(buffer, offset, size)` region into a fresh shared staging
@@ -621,6 +668,7 @@ impl MetalEvent {
 
         if let Some(active) = stream.active_encoder.take() {
             (*active.encoder).endEncoding();
+            stream.account_batch(&active);
             install_completion_handler(
                 &active.command_buffer,
                 active.temporaries,
@@ -784,6 +832,14 @@ impl EventStreamBackend for MetalStreamBackend {
             batch_seq: 0,
             unconfirmed_writes: Vec::new(),
             batch_events: std::collections::VecDeque::new(),
+            accounting: Arc::new(Accounting::default()),
+            batch_estimate: 0.0,
+            max_batch_gpu_micros: {
+                use cubecl_server::config::RuntimeConfig;
+                cubecl_server::config::CubeClRuntimeConfig::get()
+                    .streaming
+                    .max_batch_gpu_micros
+            },
         })
     }
 
@@ -797,6 +853,7 @@ impl EventStreamBackend for MetalStreamBackend {
 
         let command_buffer = if let Some(active) = stream.active_encoder.take() {
             (*active.encoder).endEncoding();
+            stream.account_batch(&active);
 
             // Metal never signals a faulted command buffer's event; its
             // completion handler does, after recording the fault. An injected

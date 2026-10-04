@@ -27,6 +27,15 @@ pub struct StreamingConfig {
     /// wins over this setting.
     #[serde(default)]
     pub policy: StreamPolicy,
+    /// Commit a stream's open batch once the GPU time its launches are
+    /// estimated to take reaches this many microseconds, so no command buffer
+    /// keeps the GPU much longer than this. Estimates are learned from
+    /// completed work. `None` (the default) keeps the count-based batching.
+    ///
+    /// No batching can bound a single dispatch: work that runs for more than
+    /// a few milliseconds has to be split into several launches.
+    #[serde(default)]
+    pub max_batch_gpu_micros: Option<u64>,
 }
 
 impl Default for StreamingConfig {
@@ -36,6 +45,7 @@ impl Default for StreamingConfig {
             max_streams: default_max_streams(),
             priority: StreamPriority::default(),
             policy: StreamPolicy::default(),
+            max_batch_gpu_micros: None,
         }
     }
 }

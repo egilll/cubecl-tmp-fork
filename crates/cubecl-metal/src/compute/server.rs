@@ -442,6 +442,20 @@ impl Server for MetalServer {
         // failure in it leaves nothing stale, and tainting its buffers would
         // fail unrelated reads of memory the run deliberately left alone.
         let kernel_id = kernel.id();
+        // What this dispatch's GPU time is estimated and learned by.
+        let cubes = match &count {
+            CubeCount::Static(x, y, z) => (*x as u64) * (*y as u64) * (*z as u64),
+            CubeCount::Dynamic(_) => 1,
+        };
+        let cost_key = {
+            use core::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            kernel_id.hash(&mut hasher);
+            (
+                hasher.finish(),
+                crate::compute::accounting::size_class(cubes),
+            )
+        };
         #[cfg(test)]
         let kernel_name = kernel.name().to_string();
         let compiled = (|| {
@@ -671,6 +685,11 @@ impl Server for MetalServer {
             stream.batch_ops += 1;
             stream.batch_bytes += total_buffer_bytes;
             stream.note_writes(lost_on_fault);
+            let estimate = stream.accounting.estimate(cost_key, cubes);
+            stream.batch_estimate += estimate;
+            if let Some(active) = stream.active_encoder.as_mut() {
+                active.cost.dispatches.push((cost_key, cubes));
+            }
             #[cfg(test)]
             if kernel_name.contains("inject_execution_fault")
                 && let Some(active) = stream.active_encoder.as_mut()
@@ -679,7 +698,8 @@ impl Server for MetalServer {
             }
 
             let needs_flush = stream.batch_ops > stream.max_ops_per_batch
-                || (stream.batch_bytes >> 20) > stream.max_mb_per_batch;
+                || (stream.batch_bytes >> 20) > stream.max_mb_per_batch
+                || stream.batch_over_budget();
 
             if needs_flush {
                 MetalStreamBackend::flush(stream, failures);
@@ -729,6 +749,31 @@ impl Server for MetalServer {
         }
         let fence = MetalStreamBackend::flush(stream, failures);
         Box::pin(fence.completion())
+    }
+
+    fn in_flight(&mut self, stream_id: StreamId) -> cubecl_core::server::InFlight {
+        let mut resolved = self
+            .streams
+            .resolve(stream_id, std::iter::empty())
+            .expect("creating a Metal stream never fails");
+        let (stream, _) = resolved.current_and_failures();
+        let (gpu_micros, batches) = stream.accounting.in_flight();
+        cubecl_core::server::InFlight {
+            gpu_micros,
+            batches,
+        }
+    }
+
+    fn in_flight_below(&mut self, stream_id: StreamId, gpu_micros: u64) -> DynFut<()> {
+        let mut resolved = self
+            .streams
+            .resolve(stream_id, std::iter::empty())
+            .expect("creating a Metal stream never fails");
+        let (stream, _) = resolved.current_and_failures();
+        Box::pin(crate::compute::accounting::Below {
+            accounting: stream.accounting.clone(),
+            threshold: gpu_micros,
+        })
     }
 
     fn reset_stream(&mut self, stream_id: StreamId) -> Result<(), ServerError> {

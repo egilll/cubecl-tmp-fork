@@ -343,6 +343,16 @@ impl core::fmt::Debug for ResourceLimitError {
     }
 }
 
+/// Work a stream has submitted that hasn't completed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct InFlight {
+    /// Estimated GPU time of that work, in microseconds, from what similar
+    /// launches took before.
+    pub gpu_micros: u64,
+    /// Command buffers (batches) committed and not yet complete.
+    pub batches: u64,
+}
+
 /// What went wrong when submitted work failed on the device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(serializable, derive(serde::Serialize, serde::Deserialize))]
@@ -857,6 +867,21 @@ pub trait Server:
     /// Refused while a stream records a graph: releasing memory waits on the
     /// device, and a wait on a stream that records aborts its capture.
     fn memory_cleanup(&mut self, stream_id: StreamId) -> Result<(), ServerError>;
+
+    /// What `stream_id` has submitted that hasn't completed, as far as the
+    /// backend tracks it. Never waits. Backends that don't track it answer
+    /// nothing in flight.
+    fn in_flight(&mut self, stream_id: StreamId) -> InFlight {
+        let _ = stream_id;
+        InFlight::default()
+    }
+
+    /// Resolves once [`in_flight`](Self::in_flight) for `stream_id` is below
+    /// `gpu_micros` of estimated GPU time, without blocking a thread.
+    fn in_flight_below(&mut self, stream_id: StreamId, gpu_micros: u64) -> DynFut<()> {
+        let _ = (stream_id, gpu_micros);
+        Box::pin(async {})
+    }
 
     /// Recover `stream_id` after an [execution fault](ServerError::ExecutionFault):
     /// wait for what it submitted, fail every buffer whose write the fault

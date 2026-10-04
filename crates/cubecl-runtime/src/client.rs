@@ -240,6 +240,26 @@ impl Client {
         }
     }
 
+    /// What this client's stream has submitted that hasn't completed: its
+    /// estimated GPU time and batch count. Never waits, so a caller can pace
+    /// itself, submitting more only while little is in flight. Backends that
+    /// don't track it report nothing in flight.
+    pub fn in_flight(&self) -> crate::server::InFlight {
+        let stream_id = self.stream_id();
+        self.device
+            .submit_blocking(move |server| server.in_flight(stream_id))
+            .unwrap_or_resume()
+    }
+
+    /// Resolves once less than `gpu_micros` of estimated GPU time is in
+    /// flight on this client's stream, without blocking a thread.
+    pub fn in_flight_below(&self, gpu_micros: u64) -> DynFut<()> {
+        let stream_id = self.stream_id();
+        self.device
+            .submit_blocking(move |server| server.in_flight_below(stream_id, gpu_micros))
+            .unwrap_or_resume()
+    }
+
     /// This client, bound to lane `lane`: a stream of its own that no
     /// thread's work is folded onto, whichever thread launches. Work for one
     /// purpose (an interactive lane beside a background one, say) stays

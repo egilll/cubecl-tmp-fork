@@ -78,3 +78,26 @@ fn a_read_of_completed_work_needs_no_wait() {
     assert!(done.read(&client).unwrap().iter().all(|&x| x == 3));
     assert!(busy.read(&client).unwrap().iter().all(|&x| x == 5));
 }
+
+#[test]
+fn in_flight_work_is_counted_until_it_completes() {
+    let client = R::client(&Default::default()).lane(20);
+    let buffer = Buffer::<u32>::empty(&client, 1 << 16);
+    for value in 0..8 {
+        fill::launch(
+            &client,
+            CubeCount::Static(256, 1, 1),
+            CubeDim::new_1d(256),
+            (&buffer).into(),
+            value,
+            20_000,
+        );
+    }
+    // The batches may already have run by the time a count is read, so only
+    // the drain below is certain; completion handlers run after the sync's
+    // event, so wait for the count rather than read it right away.
+    cubecl_core::future::block_on(client.sync()).unwrap();
+    cubecl_core::future::block_on(client.in_flight_below(1));
+    assert_eq!(client.in_flight(), Default::default());
+    assert!(buffer.read(&client).unwrap().iter().all(|&x| x == 7));
+}
