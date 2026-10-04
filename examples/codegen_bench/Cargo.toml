@@ -1,0 +1,19 @@
+[package]
+name = "codegen_bench"
+publish = false
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[features]
+default = ["msl"]
+msl = ["cubecl/metal"]
+wgsl = []
+outline = []
+native = ["cubecl/metal-native"]
+
+[dependencies]
+cubecl = { path = "../../crates/cubecl", version = "=0.11.0-pre.4", features = ["wgpu"] }
+objc2 = "0.6"
+objc2-metal = { version = "0.3", features = ["block2", "MTLLibrary", "objc2-core-foundation"] }
+objc2-foundation = "0.3"
