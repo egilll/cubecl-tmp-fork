@@ -45,6 +45,7 @@ pub mod tensormap;
 pub mod to_client;
 pub mod topology;
 pub mod traits;
+pub mod typed_buffer;
 pub mod unary;
 pub mod unroll;
 pub mod vector;
@@ -151,6 +152,7 @@ macro_rules! testgen_uint {
 macro_rules! testgen_untyped {
     () => {
         cubecl_core::testgen_launch_untyped!();
+        cubecl_core::testgen_typed_buffer!();
         cubecl_core::testgen_cmma!();
         cubecl_core::testgen_cmma2!();
         cubecl_core::testgen_numeric!();
