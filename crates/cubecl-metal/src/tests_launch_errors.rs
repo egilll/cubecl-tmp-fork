@@ -111,3 +111,28 @@ fn max_bindings_is_the_limit() {
     let err = launch_gather_first(&client, max).expect_err("the kernel is over the limit");
     assert!(err.is_refusal(), "expected a refusal, got: {err}");
 }
+
+#[cube(launch, create_dummy_kernel)]
+fn limited_kernel(output: &mut [f32]) {
+    if ABSOLUTE_POS < output.len() {
+        output[ABSOLUTE_POS] = f32::cast_from(ABSOLUTE_POS);
+    }
+}
+
+#[test]
+fn a_kernels_pipeline_reports_its_own_limits() {
+    let client = R::client(&Default::default());
+    let kernel = limited_kernel::create_dummy_kernel(
+        client.properties_shared(),
+        client.target_properties_shared(),
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(64),
+        (&Buffer::<f32>::empty(&client, 64)).into(),
+    );
+    let limits = client.pipeline_limits(Box::new(kernel)).unwrap();
+    let hardware = &client.properties().hardware;
+    assert!(limits.max_units_per_cube >= 64);
+    assert!(limits.max_units_per_cube <= hardware.max_units_per_cube);
+    // Apple GPUs run 32-wide SIMD groups.
+    assert_eq!(limits.plane_size, 32);
+}

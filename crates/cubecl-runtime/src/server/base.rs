@@ -347,6 +347,16 @@ impl core::fmt::Debug for ResourceLimitError {
     }
 }
 
+/// What a launch of one kernel may use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PipelineLimits {
+    /// The most units one cube can have.
+    pub max_units_per_cube: u32,
+    /// The units that run in lockstep (a warp, a SIMD group): a cube size
+    /// that is a multiple of it wastes none.
+    pub plane_size: u32,
+}
+
 /// Work a stream has submitted that hasn't completed.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct InFlight {
@@ -878,6 +888,28 @@ pub trait Server:
     fn in_flight(&mut self, stream_id: StreamId) -> InFlight {
         let _ = stream_id;
         InFlight::default()
+    }
+
+    /// What a launch of `kernel` may use, from its compiled pipeline where
+    /// the backend can tell: a pipeline's register use can cap its units per
+    /// cube below the device's. The default answers from the device
+    /// properties.
+    ///
+    /// # Errors
+    ///
+    /// When the kernel can't be compiled.
+    fn pipeline_limits(
+        &mut self,
+        kernel: Box<dyn crate::kernel::CubeKernel>,
+        stream_id: StreamId,
+    ) -> Result<PipelineLimits, LaunchError> {
+        let _ = (kernel, stream_id);
+        let utilities = Server::utilities(self);
+        let hardware = &utilities.properties.hardware;
+        Ok(PipelineLimits {
+            max_units_per_cube: hardware.max_units_per_cube,
+            plane_size: hardware.plane_size_max,
+        })
     }
 
     /// Attribute `stream_id`'s launches from now on to `label` (`None`: to

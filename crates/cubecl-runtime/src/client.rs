@@ -251,6 +251,24 @@ impl Client {
             .unwrap_or_resume()
     }
 
+    /// What a launch of `kernel` may use: the units per cube its compiled
+    /// pipeline allows (register use can lower it below the device's) and
+    /// the plane size, so a caller can pick a `CubeDim` without guessing.
+    /// Compiles the kernel if it isn't yet, as its first launch would.
+    ///
+    /// # Errors
+    ///
+    /// When the kernel can't be compiled.
+    pub fn pipeline_limits(
+        &self,
+        kernel: Box<dyn crate::kernel::CubeKernel>,
+    ) -> Result<crate::server::PipelineLimits, crate::server::LaunchError> {
+        let stream_id = self.stream_id();
+        self.device
+            .submit_blocking(move |server| server.pipeline_limits(kernel, stream_id))
+            .unwrap_or_resume()
+    }
+
     /// Attribute this client's launches from now on to `label`, or to none,
     /// so [`gpu_time_by_label`](Self::gpu_time_by_label) can say what each
     /// kind of work cost on the GPU. Labels should be coarse (one per kind of

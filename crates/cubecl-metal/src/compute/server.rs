@@ -753,6 +753,26 @@ impl Server for MetalServer {
         Box::pin(fence.completion())
     }
 
+    fn pipeline_limits(
+        &mut self,
+        kernel: Box<dyn CubeKernel>,
+        _stream_id: StreamId,
+    ) -> Result<cubecl_core::server::PipelineLimits, cubecl_core::server::LaunchError> {
+        use objc2_metal::MTLComputePipelineState;
+
+        let kernel_id = kernel.id();
+        let compiled = self.context.compile_kernel(
+            &kernel_id,
+            kernel,
+            self.utilities.properties.hardware.max_shared_memory_size,
+            self.utilities.logger.clone(),
+        )?;
+        Ok(cubecl_core::server::PipelineLimits {
+            max_units_per_cube: compiled.pipeline.maxTotalThreadsPerThreadgroup() as u32,
+            plane_size: compiled.pipeline.threadExecutionWidth() as u32,
+        })
+    }
+
     fn stream_ids(&self) -> Vec<StreamId> {
         self.streams.stream_ids().collect()
     }
