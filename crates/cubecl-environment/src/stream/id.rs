@@ -44,6 +44,26 @@ pub(crate) fn set_override(value: Option<u64>) -> Option<u64> {
 }
 
 impl StreamId {
+    /// The first of the ids reserved for [lanes](Self::lane).
+    pub const LANE_BASE: u64 = u64::MAX - 255;
+
+    /// The id of lane `lane`: a stream of its own that no thread's stream is
+    /// ever folded onto, for work a caller wants kept apart, such as
+    /// interactive work beside a long background computation.
+    pub const fn lane(lane: u8) -> StreamId {
+        StreamId {
+            value: Self::LANE_BASE + lane as u64,
+        }
+    }
+
+    /// The lane this id names, if it names one.
+    pub const fn lane_index(&self) -> Option<u8> {
+        match self.value >= Self::LANE_BASE {
+            true => Some((self.value - Self::LANE_BASE) as u8),
+            false => None,
+        }
+    }
+
     /// Executes `f` on this stream, restoring the previous stream afterward.
     ///
     /// The previous state is saved before the call and restored on return —

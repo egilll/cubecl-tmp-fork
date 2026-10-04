@@ -111,3 +111,32 @@ fn command_buffer_errors_are_classified() {
     assert_eq!(kind(8, "Out of memory"), ExecutionFaultKind::OutOfMemory);
     assert_eq!(kind(1, "Internal error"), ExecutionFaultKind::Unknown);
 }
+
+#[test]
+fn a_fault_on_one_lane_leaves_another_lane_working() {
+    let client = R::client(&Default::default());
+    let background = client.lane(1);
+    let interactive = client.lane(2);
+    let input = Buffer::create(&interactive, &[1u32, 2, 3, 4]);
+    let lost = Buffer::<u32>::empty(&background, 4);
+    let kept = Buffer::<u32>::empty(&interactive, 4);
+
+    inject_execution_fault::launch(
+        &background,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(4),
+        (&input).into(),
+        (&lost).into(),
+    );
+    add_one::launch(
+        &interactive,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(4),
+        (&input).into(),
+        (&kept).into(),
+    );
+
+    assert!(lost.read(&background).is_err());
+    assert_eq!(kept.read(&interactive).unwrap(), vec![2, 3, 4, 5]);
+    background.reset_stream().unwrap();
+}

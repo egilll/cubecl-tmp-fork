@@ -179,9 +179,7 @@ impl<B: EventStreamBackend> GcThread<B> {
     }
 }
 
-fn stream_index(stream_id: &StreamId, max_streams: usize) -> usize {
-    stream_id.value as usize % max_streams
-}
+use super::base::stream_index;
 
 impl<'a, B: EventStreamBackend> ResolvedStreams<'a, B> {
     /// Get the stream associated to the given [`stream_id`](StreamId).

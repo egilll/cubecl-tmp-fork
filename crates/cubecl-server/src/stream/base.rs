@@ -77,6 +77,10 @@ pub struct StreamPool<F: StreamFactory> {
 impl<F: StreamFactory> StreamPool<F> {
     /// Creates a new stream pool with the given backend factory and capacity constraints.
     pub fn new(backend: F, max_streams: u8, num_special: u8) -> Self {
+        assert!(
+            num_special as usize <= MAX_SPECIAL_STREAMS,
+            "at most {MAX_SPECIAL_STREAMS} special streams"
+        );
         // Initialize a vector with capacity for regular and special streams.
         let mut streams = Vec::with_capacity(max_streams as usize);
         // Pre-populate the vector with None to reserve space for all streams.
@@ -108,10 +112,18 @@ impl<F: StreamFactory> StreamPool<F> {
     /// indexing is `value % max_streams`), so it's safe to feed these
     /// ids back into per-stream APIs.
     pub fn stream_ids(&self) -> impl Iterator<Item = StreamId> + '_ {
-        self.streams[..self.max_streams]
+        let lanes_start = self.max_streams + MAX_SPECIAL_STREAMS;
+        let regular = self.streams[..self.max_streams]
             .iter()
             .enumerate()
-            .filter_map(|(i, s)| s.as_ref().map(|_| StreamId { value: i as u64 }))
+            .filter_map(|(i, s)| s.as_ref().map(|_| StreamId { value: i as u64 }));
+        let lanes = self
+            .streams
+            .iter()
+            .enumerate()
+            .skip(lanes_start)
+            .filter_map(move |(i, s)| s.as_ref().map(|_| StreamId::lane((i - lanes_start) as u8)));
+        regular.chain(lanes)
     }
 
     /// Retrieves a mutable reference to a stream for a given stream ID.
@@ -178,6 +190,10 @@ impl<F: StreamFactory> StreamPool<F> {
         &mut self,
         index: usize,
     ) -> Result<&mut F::Stream, ServerError> {
+        // A lane's slot is created the first time it is used.
+        if index >= self.streams.len() {
+            self.streams.resize_with(index + 1, || None);
+        }
         unsafe {
             // Access the stream entry without bounds checking for performance.
             let entry = self.streams.get_unchecked_mut(index);
@@ -242,8 +258,15 @@ impl<F: StreamFactory> StreamPool<F> {
 
 /// Maps a stream ID to an index within the pool's capacity using modulo arithmetic.
 pub fn stream_index(stream_id: &StreamId, max_streams: usize) -> usize {
-    stream_id.value as usize % max_streams
+    match stream_id.lane_index() {
+        // Past the regular and special slots, one slot per lane.
+        Some(lane) => max_streams + MAX_SPECIAL_STREAMS + lane as usize,
+        None => stream_id.value as usize % max_streams,
+    }
 }
+
+/// The special streams a pool can hold; lanes are placed after them.
+pub const MAX_SPECIAL_STREAMS: usize = 8;
 
 /// Point the bytes every binding in `written` names at `failure`.
 ///

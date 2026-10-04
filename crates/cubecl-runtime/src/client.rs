@@ -240,6 +240,20 @@ impl Client {
         }
     }
 
+    /// This client, bound to lane `lane`: a stream of its own that no
+    /// thread's work is folded onto, whichever thread launches. Work for one
+    /// purpose (an interactive lane beside a background one, say) stays
+    /// together and ordered, and apart from the rest; buffers move between
+    /// lanes with the usual cross-stream ordering.
+    ///
+    /// On native Metal a lane is its own command queue. Backends with one
+    /// queue still keep its work and accounting apart.
+    pub fn lane(&self, lane: u8) -> Self {
+        let mut client = self.clone();
+        client.stream_id = Some(StreamId::lane(lane));
+        client
+    }
+
     fn stream_id(&self) -> StreamId {
         match self.stream_id {
             Some(val) => val,

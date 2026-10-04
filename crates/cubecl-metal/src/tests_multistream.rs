@@ -143,3 +143,41 @@ fn cross_thread_dynamic_cube_count() {
         assert_eq!(actual, data.as_slice(), "mismatch on iteration {iter}");
     }
 }
+
+/// What one lane writes, another reads in order, whichever thread launches.
+#[test]
+fn lanes_order_work_between_them() {
+    let client = client();
+    let producer = client.lane(10);
+    let consumer = client.lane(11);
+    let n = 1024usize;
+    for iter in 0..20u32 {
+        let data: Vec<u32> = (0..n as u32).map(|i| i ^ iter).collect();
+        let input = producer.create_from_slice(u32::as_bytes(&data));
+        let middle = producer.empty(n * size_of::<u32>());
+        let output = consumer.empty(n * size_of::<u32>());
+        unsafe {
+            add_one_kernel::launch_unchecked(
+                &producer,
+                CubeCount::Static(n.div_ceil(64) as u32, 1, 1),
+                CubeDim::new_1d(64),
+                BufferArg::from_raw_parts(input, n),
+                BufferArg::from_raw_parts(middle.clone(), n),
+            );
+            add_one_kernel::launch_unchecked(
+                &consumer,
+                CubeCount::Static(n.div_ceil(64) as u32, 1, 1),
+                CubeDim::new_1d(64),
+                BufferArg::from_raw_parts(middle, n),
+                BufferArg::from_raw_parts(output.clone(), n),
+            );
+        }
+        let actual = consumer.read_one_unchecked(output);
+        let expected: Vec<u32> = data.iter().map(|x| x + 2).collect();
+        assert_eq!(
+            u32::from_bytes(&actual),
+            expected.as_slice(),
+            "iteration {iter}"
+        );
+    }
+}
