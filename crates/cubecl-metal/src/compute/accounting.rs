@@ -31,6 +31,8 @@ pub struct Accounting {
     in_flight_micros: AtomicU64,
     in_flight_batches: AtomicU64,
     waiters: Mutex<Vec<(u64, Waker)>>,
+    /// Measured GPU microseconds of completed batches, by label.
+    by_label: Mutex<HashMap<&'static str, u64>>,
 }
 
 /// What a committed command buffer carries, for its completion handler.
@@ -40,6 +42,8 @@ pub struct BatchCost {
     pub dispatches: Vec<(CostKey, u64)>,
     /// The estimate added to the in-flight total when it was committed.
     pub estimate_micros: u64,
+    /// The label its launches were made under.
+    pub label: Option<&'static str>,
 }
 
 /// The size class of a dispatch of `cubes` cubes: its power of two, so a
@@ -67,6 +71,9 @@ impl Accounting {
     /// A committed batch completed, having taken `gpu_micros` on the GPU
     /// (`None` when Metal gave no timestamps).
     pub fn completed(&self, batch: &BatchCost, gpu_micros: Option<f64>) {
+        if let (Some(gpu_micros), Some(label)) = (gpu_micros, batch.label) {
+            *self.by_label.lock().entry(label).or_default() += gpu_micros.round() as u64;
+        }
         if let Some(gpu_micros) = gpu_micros {
             let cubes: u64 = batch.dispatches.iter().map(|(_, cubes)| cubes).sum();
             if cubes > 0 && gpu_micros > 0.0 {
@@ -94,6 +101,15 @@ impl Accounting {
             }
             !below
         });
+    }
+
+    /// Measured GPU microseconds by label so far.
+    pub fn by_label(&self) -> Vec<(&'static str, u64)> {
+        self.by_label
+            .lock()
+            .iter()
+            .map(|(label, micros)| (*label, *micros))
+            .collect()
     }
 
     /// Microseconds and batches in flight.
@@ -152,6 +168,7 @@ mod tests {
         let batch = BatchCost {
             dispatches: vec![(key, 64), (key, 64)],
             estimate_micros: 2000,
+            label: None,
         };
         accounting.committed(batch.estimate_micros);
         assert_eq!(accounting.in_flight(), (2000, 1));
@@ -166,6 +183,7 @@ mod tests {
             &BatchCost {
                 dispatches: vec![(key, 64)],
                 estimate_micros: 128,
+                label: None,
             },
             Some(64.0 * 6.0),
         );
@@ -178,6 +196,7 @@ mod tests {
         let batch = BatchCost {
             dispatches: vec![],
             estimate_micros: 500,
+            label: None,
         };
         accounting.committed(500);
         let mut below = core::pin::pin!(Below {

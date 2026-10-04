@@ -251,6 +251,27 @@ impl Client {
             .unwrap_or_resume()
     }
 
+    /// Attribute this client's launches from now on to `label`, or to none,
+    /// so [`gpu_time_by_label`](Self::gpu_time_by_label) can say what each
+    /// kind of work cost on the GPU. Labels should be coarse (one per kind of
+    /// work, not per kernel): a backend that can only time whole batches
+    /// commits the open batch when the label changes.
+    pub fn set_label(&self, label: Option<&'static str>) {
+        let stream_id = self.stream_id();
+        self.device
+            .submit_blocking(move |server| server.set_label(stream_id, label))
+            .unwrap_or_resume()
+    }
+
+    /// Measured GPU time of completed work, in microseconds, by label (see
+    /// [`set_label`](Self::set_label)). Never waits. Backends that don't time
+    /// work by label report nothing.
+    pub fn gpu_time_by_label(&self) -> Vec<(&'static str, u64)> {
+        self.device
+            .submit_blocking(move |server| server.gpu_time_by_label())
+            .unwrap_or_resume()
+    }
+
     /// Resolves once less than `gpu_micros` of estimated GPU time is in
     /// flight on this client's stream, without blocking a thread.
     pub fn in_flight_below(&self, gpu_micros: u64) -> DynFut<()> {

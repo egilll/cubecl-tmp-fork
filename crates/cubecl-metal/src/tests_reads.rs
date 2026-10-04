@@ -101,3 +101,58 @@ fn in_flight_work_is_counted_until_it_completes() {
     assert_eq!(client.in_flight(), Default::default());
     assert!(buffer.read(&client).unwrap().iter().all(|&x| x == 7));
 }
+
+#[test]
+fn gpu_time_is_attributed_to_labels() {
+    let client = R::client(&Default::default()).lane(21);
+    let buffer = Buffer::<u32>::empty(&client, 1 << 16);
+    let run = |label: &'static str, spins: u32| {
+        client.set_label(Some(label));
+        for value in 0..4 {
+            fill::launch(
+                &client,
+                CubeCount::Static(256, 1, 1),
+                CubeDim::new_1d(256),
+                (&buffer).into(),
+                value,
+                spins,
+            );
+        }
+        client.set_label(None);
+        cubecl_core::future::block_on(client.sync()).unwrap();
+    };
+    run("test_light", 100);
+    run("test_heavy", 20_000);
+    cubecl_core::future::block_on(client.in_flight_below(1));
+
+    let totals = client.gpu_time_by_label();
+    let of = |name| {
+        totals
+            .iter()
+            .find(|(label, _)| *label == name)
+            .map(|(_, micros)| *micros)
+            .unwrap_or(0)
+    };
+    assert!(of("test_light") > 0, "{totals:?}");
+    assert!(of("test_heavy") > 4 * of("test_light"), "{totals:?}");
+}
+
+#[test]
+fn barriers_between_dependent_dispatches_are_counted() {
+    let client = R::client(&Default::default()).lane(22);
+    let buffer = Buffer::<u32>::empty(&client, 256);
+    let before = client.activity();
+    for value in 0..5 {
+        fill::launch(
+            &client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(256),
+            (&buffer).into(),
+            value,
+            1,
+        );
+    }
+    cubecl_core::future::block_on(client.sync()).unwrap();
+    // Each launch writes what the one before wrote.
+    assert!((client.activity() - before).barriers >= 4);
+}

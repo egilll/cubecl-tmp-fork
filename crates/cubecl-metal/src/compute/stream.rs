@@ -308,6 +308,8 @@ pub struct MetalStream {
     /// Commit the open batch once its estimate reaches this; see
     /// `StreamingConfig::max_batch_gpu_micros`.
     pub max_batch_gpu_micros: Option<u64>,
+    /// The label launches are attributed to; a batch carries one label.
+    pub label: Option<&'static str>,
 }
 
 impl std::fmt::Debug for MetalStream {
@@ -422,6 +424,7 @@ impl MetalStream {
     pub fn account_batch(&mut self, active: &ActiveEncoder) {
         let mut cost = active.cost.clone();
         cost.estimate_micros = self.batch_estimate.round() as u64;
+        cost.label = self.label;
         self.batch_estimate = 0.0;
         self.accounting.committed(cost.estimate_micros);
         let accounting = self.accounting.clone();
@@ -834,6 +837,7 @@ impl EventStreamBackend for MetalStreamBackend {
             batch_events: std::collections::VecDeque::new(),
             accounting: Arc::new(Accounting::default()),
             batch_estimate: 0.0,
+            label: None,
             max_batch_gpu_micros: {
                 use cubecl_server::config::RuntimeConfig;
                 cubecl_server::config::CubeClRuntimeConfig::get()

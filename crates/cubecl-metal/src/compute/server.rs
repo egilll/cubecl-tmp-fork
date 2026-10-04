@@ -517,6 +517,7 @@ impl Server for MetalServer {
                 CubeCount::Dynamic(binding) => DispatchInfo::Dynamic(binding),
             };
 
+            let activity_logger = server.utilities.logger.clone();
             // Resolve every binding (including the dynamic count) so the current stream
             // waits on each binding's origin stream before dispatching.
             let mut resolved = server.streams.resolve(
@@ -594,6 +595,7 @@ impl Server for MetalServer {
 
             if active.hazards.record(&reads, &writes) {
                 (*encoder).memoryBarrierWithScope(MTLBarrierScope::Buffers);
+                activity_logger.activity().barrier();
             }
             (*encoder).setComputePipelineState(&compiled.pipeline);
 
@@ -749,6 +751,43 @@ impl Server for MetalServer {
         }
         let fence = MetalStreamBackend::flush(stream, failures);
         Box::pin(fence.completion())
+    }
+
+    fn stream_ids(&self) -> Vec<StreamId> {
+        self.streams.stream_ids().collect()
+    }
+
+    fn set_label(&mut self, stream_id: StreamId, label: Option<&'static str>) {
+        let mut resolved = self
+            .streams
+            .resolve(stream_id, std::iter::empty())
+            .expect("creating a Metal stream never fails");
+        let (stream, failures) = resolved.current_and_failures();
+        if stream.label == label {
+            return;
+        }
+        // Metal times command buffers, so a batch carries one label.
+        if stream.batch_ops > 0 {
+            MetalStreamBackend::flush(stream, failures);
+        }
+        stream.label = label;
+    }
+
+    fn gpu_time_by_label(&mut self) -> Vec<(&'static str, u64)> {
+        let mut totals: std::collections::HashMap<&'static str, u64> = Default::default();
+        for stream_id in self.stream_ids() {
+            let mut resolved = self
+                .streams
+                .resolve(stream_id, std::iter::empty())
+                .expect("creating a Metal stream never fails");
+            let (stream, _) = resolved.current_and_failures();
+            for (label, micros) in stream.accounting.by_label() {
+                *totals.entry(label).or_default() += micros;
+            }
+        }
+        let mut totals: Vec<_> = totals.into_iter().collect();
+        totals.sort();
+        totals
     }
 
     fn in_flight(&mut self, stream_id: StreamId) -> cubecl_core::server::InFlight {

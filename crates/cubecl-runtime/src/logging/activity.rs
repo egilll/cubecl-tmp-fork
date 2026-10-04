@@ -25,6 +25,7 @@ pub struct ActivityCounters {
     read_bytes: AtomicU64,
     compilations: AtomicU64,
     compile_micros: AtomicU64,
+    barriers: AtomicU64,
 }
 
 /// A reading of [`ActivityCounters`].
@@ -43,6 +44,11 @@ pub struct Activity {
     /// Time spent defining and compiling those kernels in `CubeCL`, before
     /// the driver's own compiler, in microseconds.
     pub compile_micros: u64,
+    /// Barriers inserted between dispatches of one batch because a later
+    /// one touches what an earlier one writes (backends that run a batch's
+    /// dispatches concurrently). A batch with as many barriers as dispatches
+    /// ran serially.
+    pub barriers: u64,
 }
 
 impl ActivityCounters {
@@ -68,6 +74,11 @@ impl ActivityCounters {
         self.compile_micros.fetch_add(micros, Ordering::Relaxed);
     }
 
+    /// A barrier between two dispatches of one batch.
+    pub fn barrier(&self) {
+        self.barriers.fetch_add(1, Ordering::Relaxed);
+    }
+
     /// The counts so far.
     pub fn reading(&self) -> Activity {
         Activity {
@@ -77,6 +88,7 @@ impl ActivityCounters {
             read_bytes: self.read_bytes.load(Ordering::Relaxed),
             compilations: self.compilations.load(Ordering::Relaxed),
             compile_micros: self.compile_micros.load(Ordering::Relaxed),
+            barriers: self.barriers.load(Ordering::Relaxed),
         }
     }
 }
@@ -92,6 +104,7 @@ impl core::ops::Sub for Activity {
             read_bytes: self.read_bytes.saturating_sub(rhs.read_bytes),
             compilations: self.compilations.saturating_sub(rhs.compilations),
             compile_micros: self.compile_micros.saturating_sub(rhs.compile_micros),
+            barriers: self.barriers.saturating_sub(rhs.barriers),
         }
     }
 }
@@ -100,13 +113,14 @@ impl Display for Activity {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "{} launches, {} syncs, {} reads ({} bytes), {} compilations ({:.1} ms)",
+            "{} launches, {} syncs, {} reads ({} bytes), {} compilations ({:.1} ms), {} barriers",
             self.launches,
             self.syncs,
             self.reads,
             self.read_bytes,
             self.compilations,
-            self.compile_micros as f64 / 1000.0
+            self.compile_micros as f64 / 1000.0,
+            self.barriers
         )
     }
 }
@@ -126,6 +140,7 @@ mod tests {
         counters.sync();
         counters.read(16);
         counters.compilation(1500);
+        counters.barrier();
 
         let region = counters.reading() - before;
         assert_eq!(
@@ -137,11 +152,12 @@ mod tests {
                 read_bytes: 16,
                 compilations: 1,
                 compile_micros: 1500,
+                barriers: 1,
             }
         );
         assert_eq!(
             region.to_string(),
-            "2 launches, 1 syncs, 1 reads (16 bytes), 1 compilations (1.5 ms)"
+            "2 launches, 1 syncs, 1 reads (16 bytes), 1 compilations (1.5 ms), 1 barriers"
         );
     }
 }

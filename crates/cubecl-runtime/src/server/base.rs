@@ -876,6 +876,19 @@ pub trait Server:
         InFlight::default()
     }
 
+    /// Attribute `stream_id`'s launches from now on to `label` (`None`: to
+    /// no label), for [`gpu_time_by_label`](Self::gpu_time_by_label).
+    /// Backends that don't time work by label ignore it.
+    fn set_label(&mut self, stream_id: StreamId, label: Option<&'static str>) {
+        let _ = (stream_id, label);
+    }
+
+    /// Measured GPU time of completed work, in microseconds, by the label it
+    /// was launched under. Never waits; work still in flight isn't counted.
+    fn gpu_time_by_label(&mut self) -> Vec<(&'static str, u64)> {
+        Vec::new()
+    }
+
     /// Resolves once [`in_flight`](Self::in_flight) for `stream_id` is below
     /// `gpu_micros` of estimated GPU time, without blocking a thread.
     fn in_flight_below(&mut self, stream_id: StreamId, gpu_micros: u64) -> DynFut<()> {
