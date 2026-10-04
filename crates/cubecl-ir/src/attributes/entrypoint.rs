@@ -89,6 +89,30 @@ pub struct BufferBindingAttr {
     pub ext_meta_pos: Option<usize>,
 }
 
+dict_key!(ATTR_FAST_MATH, "fast_math");
+
+/// The fast-math flags (`FastMath` as an `EnumSet`'s bits) a float operation
+/// was created under. An operation without it has precise IEEE semantics:
+/// correctly rounded where the target promises it, never reassociated or
+/// contracted.
+#[pliron_attr(name = "cube.fast_math", format = "`<` $bits `>`", verifier = "succ")]
+#[derive(new, PartialEq, Eq, Clone, Copy, Debug, Hash)]
+pub struct FastMathAttr {
+    pub bits: u64,
+}
+
+impl FastMathAttr {
+    /// The flags.
+    pub fn flags(&self) -> crate::EnumSet<crate::FastMath> {
+        crate::EnumSet::from_u64_truncated(self.bits)
+    }
+
+    /// Whether the flags allow `flag`.
+    pub fn allows(&self, flag: crate::FastMath) -> bool {
+        self.flags().contains(flag)
+    }
+}
+
 /// [Op] that may define an entry point.
 ///
 /// ### Attribute(s):

@@ -11,7 +11,9 @@ metal_op_with_out!(MagnitudeOp, |op, ctx| {
     let scalar_ty = op.result_type(ctx).to_cpp(ctx);
     let vec = op.input(ctx).vector_size(ctx);
     let input = format!("reinterpret_cast<const thread {scalar_ty}{vec}&>({input})");
-    let precise = ctx.target().precise_prefix(ctx, op.result_type(ctx));
+    let precise = ctx
+        .target()
+        .math_prefix(ctx, op.get_operation(), op.result_type(ctx));
     format!("{precise}length({input})")
 });
 
@@ -23,7 +25,9 @@ metal_op_with_out!(NormalizeOp, |op, ctx| {
     let vec = op.input(ctx).vector_size(ctx);
     let msl_ty = format!("{scalar_ty}{vec}");
     let out_ty = op.result_type(ctx).to_cpp(ctx);
-    let precise = ctx.target().precise_prefix(ctx, op.input(ctx));
+    let precise = ctx
+        .target()
+        .math_prefix(ctx, op.get_operation(), op.input(ctx));
     scoped_block!(
         format!("{msl_ty} normalized = {precise}normalize(reinterpret_cast<const thread {msl_ty}&>({input}));")
         format!("return reinterpret_cast<const thread {out_ty}&>(normalized);")

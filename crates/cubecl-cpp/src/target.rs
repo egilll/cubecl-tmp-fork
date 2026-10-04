@@ -1,7 +1,13 @@
 use core::fmt::Debug;
 
-use cubecl_core::ir::{ContextExt, interfaces::TypedExt};
+use cubecl_core::ir::{
+    ContextExt, FastMath,
+    attributes::{ATTR_FAST_MATH, FastMathAttr},
+    dialect::OperationPtrExt,
+    interfaces::TypedExt,
+};
 use pliron::{context::Context, r#type::Typed};
+use pliron::{context::Ptr, operation::Operation};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
@@ -30,13 +36,23 @@ impl Target {
         }
     }
 
-    /// The namespace that pins a `float` math function to its precise variant. On Metal, a
-    /// plain `exp` is the fast or the precise one depending on the compile options, and wgpu's
-    /// passthrough and the native runtime set those differently, so the source names the
-    /// variant itself. Only `float` has both.
-    pub fn precise_prefix(&self, ctx: &Context, ty: impl Typed) -> &'static str {
+    /// The namespace that pins a `float` math function to a variant. On Metal,
+    /// a plain `exp` is the fast or the precise one depending on the compile
+    /// options, and wgpu's passthrough and the native runtime set those
+    /// differently, so the source names the variant itself: `fast::` for an
+    /// operation created under `fast_math` with reduced precision allowed,
+    /// `precise::` otherwise. Only `float` has both.
+    pub fn math_prefix(&self, ctx: &Context, op: Ptr<Operation>, ty: impl Typed) -> &'static str {
         match self {
-            Target::Metal if ty.scalar_ty(ctx).is_float32(ctx) => "precise::",
+            Target::Metal if ty.scalar_ty(ctx).is_float32(ctx) => {
+                let fast = op
+                    .get_attr::<FastMathAttr>(ctx, &ATTR_FAST_MATH)
+                    .is_some_and(|attr| attr.allows(FastMath::ReducedPrecision));
+                match fast {
+                    true => "fast::",
+                    false => "precise::",
+                }
+            }
             _ => "",
         }
     }

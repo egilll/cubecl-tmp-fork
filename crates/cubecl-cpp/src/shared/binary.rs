@@ -111,7 +111,9 @@ promotes_int!(URemOp);
 shared_op_with_out!(FRemOp, |op, ctx| {
     let lhs = op.lhs(ctx).name(ctx);
     let rhs = op.rhs(ctx).name(ctx);
-    let precise = ctx.target().precise_prefix(ctx, op.get_result(ctx));
+    let precise = ctx
+        .target()
+        .math_prefix(ctx, op.get_operation(), op.get_result(ctx));
     format!("{precise}fmod({lhs}, {rhs})")
 });
 unrolling!(FRemOp);
@@ -447,7 +449,9 @@ no_half!(PowiOp);
 shared_op_with_out!(ArcTan2Op, |op, ctx| {
     let lhs = op.lhs(ctx).name(ctx);
     let rhs = op.rhs(ctx).name(ctx);
-    let precise = ctx.target().precise_prefix(ctx, op.get_result(ctx));
+    let precise = ctx
+        .target()
+        .math_prefix(ctx, op.get_operation(), op.get_result(ctx));
     format!("{precise}atan2({lhs}, {rhs})")
 });
 unrolling!(ArcTan2Op);

@@ -66,7 +66,9 @@ pub struct MslTanhOp {
 unrolling!(MslTanhOp);
 no_msl_bfloat!(MslTanhOp);
 metal_op_with_out!(MslTanhOp, |op, ctx| {
-    let precise = ctx.target().precise_prefix(ctx, op.input(ctx));
+    let precise = ctx
+        .target()
+        .math_prefix(ctx, op.get_operation(), op.input(ctx));
     format!("{precise}tanh({})", op.input(ctx).name(ctx))
 });
 

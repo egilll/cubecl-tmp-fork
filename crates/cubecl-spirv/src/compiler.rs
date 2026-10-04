@@ -393,6 +393,33 @@ fn declare_entry_point(ctx: &mut Context, module: SpirvModuleOp, shared_args: Ve
     );
 }
 
+/// Forbid the driver from fusing a float add, subtract or multiply into an
+/// `fma`, unless the operation was created under `fast_math` allowing
+/// contraction. SPIR-V lets drivers contract undecorated arithmetic, which
+/// changes results and breaks error-free transformations (TwoSum,
+/// compensated sums) that rely on each operation being rounded on its own.
+pub(crate) fn decorate_contraction(ctx: &Context, source: Ptr<Operation>, new_op: Ptr<Operation>) {
+    use cubecl_ir::{
+        FastMath,
+        attributes::{ATTR_FAST_MATH, FastMathAttr},
+        dialect::OperationPtrExt,
+    };
+    let is_float_arith = Operation::get_op::<pliron_spirv::ops::FAddOp>(new_op, ctx).is_some()
+        || Operation::get_op::<pliron_spirv::ops::FSubOp>(new_op, ctx).is_some()
+        || Operation::get_op::<pliron_spirv::ops::FMulOp>(new_op, ctx).is_some();
+    if !is_float_arith {
+        return;
+    }
+    let may_contract = source
+        .get_attr::<FastMathAttr>(ctx, &ATTR_FAST_MATH)
+        .is_some_and(|attr| {
+            attr.allows(FastMath::AllowContraction) || attr.allows(FastMath::AllowTransform)
+        });
+    if !may_contract && let Some(op) = op_cast::<dyn DecoratableOp>(&*new_op.dyn_op(ctx)) {
+        pliron_spirv::decorations::set_decoration_no_contraction(op, ctx);
+    }
+}
+
 pub(crate) fn decorate_uniform(ctx: &Context, op: Ptr<Operation>, uniformity: Option<UniformAttr>) {
     let Some(uniformity) = uniformity else {
         return;

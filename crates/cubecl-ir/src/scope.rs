@@ -579,6 +579,30 @@ impl Scope {
     pub fn register(&self, op: &dyn Op) {
         let ctx = self.ctx();
         self.inserter().append_op(ctx, op);
+        self.mark_fast_math(op);
+    }
+
+    /// Stamp a float-producing `op` with the fast-math flags in effect, so
+    /// backends can relax exactly the operations a `fast_math` scope created.
+    fn mark_fast_math(&self, op: &dyn Op) {
+        let flags = self.state().modes.fp_math_mode;
+        if flags.is_empty() {
+            return;
+        }
+        let ctx = self.ctx();
+        let operation = op.get_operation();
+        let produces_float = operation.deref(ctx).results().next().is_some_and(|result| {
+            result
+                .try_get_scalar_ty(ctx)
+                .is_some_and(|ty| ty.is_float(ctx))
+        });
+        if produces_float {
+            operation.set_attr(
+                ctx,
+                &crate::attributes::ATTR_FAST_MATH,
+                crate::attributes::FastMathAttr::new(flags.as_u64()),
+            );
+        }
     }
 
     /// Register an [`Instruction`] into the scope and return its result.

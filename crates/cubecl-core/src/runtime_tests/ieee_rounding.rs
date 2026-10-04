@@ -53,6 +53,53 @@ pub fn test_div_sqrt_correctly_rounded<R: Runtime>(client: Client) {
     );
 }
 
+#[cube(launch)]
+fn kernel_two_sum(lhs: &[f32], rhs: &[f32], sum: &mut [f32], error: &mut [f32]) {
+    let i = ABSOLUTE_POS;
+    if i < sum.len() {
+        let (a, b) = (lhs[i], rhs[i]);
+        let s = a + b;
+        let bb = s - a;
+        sum[i] = s;
+        error[i] = (a - (s - bb)) + (b - bb);
+    }
+}
+
+/// TwoSum's error term is exact only if every operation is rounded on its
+/// own: no reassociation, no contraction. Pins that the IEEE default holds
+/// for arithmetic, not just for single operations.
+pub fn test_two_sum_is_exact<R: Runtime>(client: Client) {
+    let n = 4096;
+    let lhs: Vec<f32> = (0..n)
+        .map(|i| (i as f32 * 0.7311).sin() * 1e4 + (i % 7) as f32 * 1e-3)
+        .collect();
+    let rhs: Vec<f32> = (0..n).map(|i| (i as f32 * 1.37).cos() * 1e-4).collect();
+    let lhs_buffer = crate::compute::Buffer::create(&client, &lhs);
+    let rhs_buffer = crate::compute::Buffer::create(&client, &rhs);
+    let sum = crate::compute::Buffer::<f32>::empty(&client, n);
+    let error = crate::compute::Buffer::<f32>::empty(&client, n);
+    kernel_two_sum::launch(
+        &client,
+        CubeCount::Static((n as u32).div_ceil(256), 1, 1),
+        CubeDim::new_1d(256),
+        (&lhs_buffer).into(),
+        (&rhs_buffer).into(),
+        (&sum).into(),
+        (&error).into(),
+    );
+    let (sum, error) = (sum.read(&client).unwrap(), error.read(&client).unwrap());
+    let wrong = (0..n)
+        .filter(|&i| {
+            let (a, b) = (lhs[i], rhs[i]);
+            let s = a + b;
+            let bb = s - a;
+            let e = (a - (s - bb)) + (b - bb);
+            sum[i].to_bits() != s.to_bits() || error[i].to_bits() != e.to_bits()
+        })
+        .count();
+    assert_eq!(wrong, 0, "TwoSum results of {n} that differ from the CPU's");
+}
+
 #[allow(missing_docs)]
 #[macro_export]
 macro_rules! testgen_ieee_rounding {
@@ -65,6 +112,14 @@ macro_rules! testgen_ieee_rounding {
             cubecl_core::runtime_tests::ieee_rounding::test_div_sqrt_correctly_rounded::<
                 TestRuntime,
             >(client);
+        }
+
+        #[$crate::runtime_tests::test_log::test]
+        fn test_two_sum_is_exact() {
+            let client = TestRuntime::client(&Default::default());
+            cubecl_core::runtime_tests::ieee_rounding::test_two_sum_is_exact::<TestRuntime>(
+                client,
+            );
         }
     };
 }

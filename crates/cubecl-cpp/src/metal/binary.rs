@@ -88,14 +88,18 @@ metal_op_with_out!(FMaxOp, |op, ctx| {
 no_msl_bfloat!(FMaxOp);
 
 metal_op_with_out!(PowfOp, |op, ctx| {
-    let precise = ctx.target().precise_prefix(ctx, op.get_result(ctx));
+    let precise = ctx
+        .target()
+        .math_prefix(ctx, op.get_operation(), op.get_result(ctx));
     let lhs = op.lhs(ctx).name(ctx);
     let rhs = op.rhs(ctx).name(ctx);
     format!("{precise}pow({lhs}, {rhs})")
 });
 
 metal_op_with_out!(PowiOp, |op, ctx| {
-    let precise = ctx.target().precise_prefix(ctx, op.get_result(ctx));
+    let precise = ctx
+        .target()
+        .math_prefix(ctx, op.get_operation(), op.get_result(ctx));
     let lhs = op.lhs(ctx).name(ctx);
     let rhs = op.rhs(ctx).name(ctx);
     format!("{precise}pow({lhs}, {rhs})")
@@ -104,14 +108,18 @@ metal_op_with_out!(PowiOp, |op, ctx| {
 metal_op_with_out!(HypotOp, |op, ctx| {
     let lhs = op.lhs(ctx).name(ctx);
     let rhs = op.rhs(ctx).name(ctx);
-    let precise = ctx.target().precise_prefix(ctx, op.get_result(ctx));
+    let precise = ctx
+        .target()
+        .math_prefix(ctx, op.get_operation(), op.get_result(ctx));
     format!("{precise}length(float2({lhs}, {rhs}))")
 });
 
 metal_op_with_out!(RhypotOp, |op, ctx| {
     let lhs = op.lhs(ctx).name(ctx);
     let rhs = op.rhs(ctx).name(ctx);
-    let precise = ctx.target().precise_prefix(ctx, op.get_result(ctx));
+    let precise = ctx
+        .target()
+        .math_prefix(ctx, op.get_operation(), op.get_result(ctx));
     format!("{precise}rsqrt({lhs} * {lhs} + {rhs} * {rhs})")
 });
 
