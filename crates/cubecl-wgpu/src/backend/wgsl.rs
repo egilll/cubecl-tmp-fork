@@ -70,6 +70,7 @@ pub fn register_wgsl_features(
 }
 
 pub fn register_types(props: &mut DeviceProperties, adapter: &wgpu::Adapter) {
+    props.register_lowered_complex32();
     use cubecl_core::ir::{AddressType, ElemType, FloatKind, IntKind};
     use cubecl_ir::features::*;
 

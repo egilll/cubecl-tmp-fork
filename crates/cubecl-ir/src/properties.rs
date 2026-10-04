@@ -518,6 +518,18 @@ impl DeviceProperties {
         *self.features.types.complex.entry(ty.into()).or_default() |= uses.into();
     }
 
+    /// Register `c32` for a target with no complex type that runs
+    /// `cubecl_opt`'s `LowerComplexPass`, which turns it into a two-lane
+    /// `f32` vector: the same bytes, so it can sit in buffers too.
+    pub fn register_lowered_complex32(&mut self) {
+        let ty = ElemType::Complex(crate::ComplexKind::C32);
+        self.register_type_usage(ty, TypeUsage::Conversion | TypeUsage::Buffer);
+        self.register_complex_usage(
+            ty,
+            ComplexUsage::Core | ComplexUsage::Compare | ComplexUsage::Math,
+        );
+    }
+
     /// Register a semantic type to the features
     pub fn register_semantic_type(&mut self, ty: SemanticType) {
         self.features.types.semantic.insert(ty);

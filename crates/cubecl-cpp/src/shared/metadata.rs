@@ -57,8 +57,7 @@ pub struct CppReadDynamicMetaOp {
 }
 
 shared_op_with_out!(CppReadScalarOp, |op, ctx| {
-    let ty = op.ty(ctx).get_type(ctx).deref(ctx);
-    let elem = try_cast_ty!(ty, ctx, dyn ScalarType).elem_type(ctx);
+    let elem = cubecl_core::ir::ElemType::of_scalar_field(ctx, op.ty(ctx).get_type(ctx));
     let base = op.base(ctx).name(ctx);
     let offset = op.id(ctx).0;
     format!("{base}.scalars_{elem}[{offset}]")

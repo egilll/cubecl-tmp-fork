@@ -144,7 +144,7 @@ impl LowerInfoOp for ReadScalarOp {
         let scalars = ctx.aux_ty::<Info>().scalars.clone();
         let id = self.id(ctx).0;
         let ty = self.ty(ctx).get_type(ctx);
-        let elem = try_cast_ty!(ty.deref(ctx), ctx, dyn ScalarType).elem_type(ctx);
+        let elem = cubecl_ir::ElemType::of_scalar_field(ctx, ty);
         let field = scalars.iter().position(|s| s.ty == elem).unwrap();
 
         load_static_info(ctx, rewriter, info_st, field, ty, id)

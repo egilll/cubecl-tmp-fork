@@ -46,4 +46,9 @@ mod tests {
         use super::*;
         cubecl_core::testgen_ieee_rounding!();
     }
+
+    // c32 is lowered to a float2; c64 needs f64, which Metal lacks.
+    cubecl_core::testgen_complex_core!(cf32);
+    cubecl_core::testgen_complex_compare!(cf32);
+    cubecl_core::testgen_complex_math!(cf32);
 }

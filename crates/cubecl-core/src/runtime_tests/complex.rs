@@ -185,23 +185,23 @@ pub fn kernel_complex_imag_cf64(output: &mut [f64], input: &[num_complex::Comple
 }
 
 #[cube(launch_unchecked)]
-pub fn kernel_complex_eq<C: ComplexCompare>(output: &mut [u8], lhs: &[C], rhs: &[C]) {
+pub fn kernel_complex_eq<C: ComplexCompare>(output: &mut [u32], lhs: &[C], rhs: &[C]) {
     if ABSOLUTE_POS < output.len() {
         output[ABSOLUTE_POS] = if lhs[ABSOLUTE_POS] == rhs[ABSOLUTE_POS] {
-            1u8
+            1u32
         } else {
-            0u8
+            0u32
         };
     }
 }
 
 #[cube(launch_unchecked)]
-pub fn kernel_complex_ne<C: ComplexCompare>(output: &mut [u8], lhs: &[C], rhs: &[C]) {
+pub fn kernel_complex_ne<C: ComplexCompare>(output: &mut [u32], lhs: &[C], rhs: &[C]) {
     if ABSOLUTE_POS < output.len() {
         output[ABSOLUTE_POS] = if lhs[ABSOLUTE_POS] != rhs[ABSOLUTE_POS] {
-            1u8
+            1u32
         } else {
-            0u8
+            0u32
         };
     }
 }
@@ -387,7 +387,7 @@ macro_rules! test_complex_binary_bool_eq_op {
                 .map(|($lhs_var, $rhs_var)| $expected)
                 .collect::<vec::Vec<_>>();
 
-            let handle_output = client.empty(lhs.len() * core::mem::size_of::<u8>());
+            let handle_output = client.empty(lhs.len() * core::mem::size_of::<u32>());
             let handle_lhs = client.create_from_slice(C::as_bytes(&lhs));
             let handle_rhs = client.create_from_slice(C::as_bytes(&rhs));
 
@@ -615,7 +615,7 @@ test_complex_binary_bool_eq_op!(
         num_complex::Complex::new(1.0f32, 2.0f32),
         num_complex::Complex::new(3.0f32, -4.0f32),
     ],
-    expect: |lhs, rhs| if lhs == rhs { 1u8 } else { 0u8 }
+    expect: |lhs, rhs| if lhs == rhs { 1u32 } else { 0u32 }
 );
 test_complex_binary_bool_eq_op!(
     test_complex_eq_cf64,
@@ -629,7 +629,7 @@ test_complex_binary_bool_eq_op!(
         num_complex::Complex::new(1.0f64, 2.0f64),
         num_complex::Complex::new(3.0f64, -4.0f64),
     ],
-    expect: |lhs, rhs| if lhs == rhs { 1u8 } else { 0u8 }
+    expect: |lhs, rhs| if lhs == rhs { 1u32 } else { 0u32 }
 );
 test_complex_binary_bool_eq_op!(
     test_complex_ne_cf32,
@@ -643,7 +643,7 @@ test_complex_binary_bool_eq_op!(
         num_complex::Complex::new(1.0f32, 2.0f32),
         num_complex::Complex::new(3.0f32, -4.0f32),
     ],
-    expect: |lhs, rhs| if lhs != rhs { 1u8 } else { 0u8 }
+    expect: |lhs, rhs| if lhs != rhs { 1u32 } else { 0u32 }
 );
 test_complex_binary_bool_eq_op!(
     test_complex_ne_cf64,
@@ -657,7 +657,7 @@ test_complex_binary_bool_eq_op!(
         num_complex::Complex::new(1.0f64, 2.0f64),
         num_complex::Complex::new(3.0f64, -4.0f64),
     ],
-    expect: |lhs, rhs| if lhs != rhs { 1u8 } else { 0u8 }
+    expect: |lhs, rhs| if lhs != rhs { 1u32 } else { 0u32 }
 );
 test_complex_scalar_eq_op!(
     test_complex_constant_cf32,
@@ -1276,6 +1276,69 @@ macro_rules! testgen_complex_core {
             }
         }
     };
+    (cf32) => {
+        use super::*;
+
+        mod complex_core {
+            use super::*;
+
+            #[$crate::runtime_tests::test_log::test]
+            fn test_complex_add_cf32() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::complex::test_complex_add_cf32::<TestRuntime>(client);
+            }
+
+            #[$crate::runtime_tests::test_log::test]
+            fn test_complex_sub_cf32() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::complex::test_complex_sub_cf32::<TestRuntime>(client);
+            }
+
+            #[$crate::runtime_tests::test_log::test]
+            fn test_complex_mul_cf32() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::complex::test_complex_mul_cf32::<TestRuntime>(client);
+            }
+
+            #[$crate::runtime_tests::test_log::test]
+            fn test_complex_div_cf32() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::complex::test_complex_div_cf32::<TestRuntime>(client);
+            }
+
+            #[$crate::runtime_tests::test_log::test]
+            fn test_complex_neg_cf32() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::complex::test_complex_neg_cf32::<TestRuntime>(client);
+            }
+
+            #[$crate::runtime_tests::test_log::test]
+            fn test_complex_conj_cf32() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::complex::test_complex_conj_cf32::<TestRuntime>(client);
+            }
+
+            #[$crate::runtime_tests::test_log::test]
+            fn test_complex_real_cf32() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::complex::test_complex_real_cf32::<TestRuntime>(client);
+            }
+
+            #[$crate::runtime_tests::test_log::test]
+            fn test_complex_imag_cf32() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::complex::test_complex_imag_cf32::<TestRuntime>(client);
+            }
+
+            #[$crate::runtime_tests::test_log::test]
+            fn test_complex_constant_cf32() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::complex::test_complex_constant_cf32::<TestRuntime>(
+                    client,
+                );
+            }
+        }
+    };
 }
 
 #[allow(missing_docs)]
@@ -1309,6 +1372,25 @@ macro_rules! testgen_complex_compare {
             fn test_complex_ne_cf64() {
                 let client = TestRuntime::client(&Default::default());
                 cubecl_core::runtime_tests::complex::test_complex_ne_cf64::<TestRuntime>(client);
+            }
+        }
+    };
+    (cf32) => {
+        use super::*;
+
+        mod complex_compare {
+            use super::*;
+
+            #[$crate::runtime_tests::test_log::test]
+            fn test_complex_eq_cf32() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::complex::test_complex_eq_cf32::<TestRuntime>(client);
+            }
+
+            #[$crate::runtime_tests::test_log::test]
+            fn test_complex_ne_cf32() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::complex::test_complex_ne_cf32::<TestRuntime>(client);
             }
         }
     };
@@ -1463,6 +1545,85 @@ macro_rules! testgen_complex_math {
             fn test_complex_powf_negative_base_cf64() {
                 let client = TestRuntime::client(&Default::default());
                 cubecl_core::runtime_tests::complex::test_complex_powf_negative_base_cf64::<
+                    TestRuntime,
+                >(client);
+            }
+        }
+    };
+    (cf32) => {
+        use super::*;
+
+        mod complex_math {
+            use super::*;
+
+            #[$crate::runtime_tests::test_log::test]
+            fn test_complex_abs_cf32() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::complex::test_complex_abs_cf32::<TestRuntime>(client);
+            }
+
+            #[$crate::runtime_tests::test_log::test]
+            fn test_complex_exp_cf32() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::complex::test_complex_exp_cf32::<TestRuntime>(client);
+            }
+
+            #[$crate::runtime_tests::test_log::test]
+            fn test_complex_log_cf32() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::complex::test_complex_log_cf32::<TestRuntime>(client);
+            }
+
+            #[$crate::runtime_tests::test_log::test]
+            fn test_complex_sin_cf32() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::complex::test_complex_sin_cf32::<TestRuntime>(client);
+            }
+
+            #[$crate::runtime_tests::test_log::test]
+            fn test_complex_cos_cf32() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::complex::test_complex_cos_cf32::<TestRuntime>(client);
+            }
+
+            #[$crate::runtime_tests::test_log::test]
+            fn test_complex_sqrt_cf32() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::complex::test_complex_sqrt_cf32::<TestRuntime>(client);
+            }
+
+            #[$crate::runtime_tests::test_log::test]
+            fn test_complex_tanh_cf32() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::complex::test_complex_tanh_cf32::<TestRuntime>(client);
+            }
+
+            #[$crate::runtime_tests::test_log::test]
+            fn test_complex_powf_cf32() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::complex::test_complex_powf_cf32::<TestRuntime>(client);
+            }
+
+            #[$crate::runtime_tests::test_log::test]
+            fn test_complex_sqrt_negative_real_cf32() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::complex::test_complex_sqrt_negative_real_cf32::<
+                    TestRuntime,
+                >(client);
+            }
+
+            #[$crate::runtime_tests::test_log::test]
+            fn test_complex_tanh_large_real_cf32() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::complex::test_complex_tanh_large_real_cf32::<
+                    TestRuntime,
+                >(client);
+            }
+
+            #[$crate::runtime_tests::test_log::test]
+            fn test_complex_powf_negative_base_cf32() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::complex::test_complex_powf_negative_base_cf32::<
                     TestRuntime,
                 >(client);
             }

@@ -2,6 +2,7 @@ pub mod alloc_shared_memory;
 pub mod annotate_buffer_visibility;
 pub mod inline;
 pub mod inst_combine;
+pub mod lower_complex;
 pub mod mem2reg;
 pub mod sccp;
 pub mod simple_cse;

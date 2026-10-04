@@ -35,8 +35,7 @@ pub static DYNAMIC_META: LazyLock<Identifier> =
     LazyLock::new(|| "dynamic_meta".try_into().unwrap());
 
 wgsl_op_with_out!(ReadScalarOp; |op, ctx| {
-    let ty = op.ty(ctx).get_type(ctx).deref(ctx);
-    let elem = try_cast_ty!(ty, ctx, dyn ScalarType).elem_type(ctx);
+    let elem = cubecl_core::ir::ElemType::of_scalar_field(ctx, op.ty(ctx).get_type(ctx));
     format!("{}.scalars_{elem}[{}]", *INFO_VAR, op.id(ctx).0)
 });
 

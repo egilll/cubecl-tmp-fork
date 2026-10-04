@@ -517,6 +517,7 @@ fn device_local_heaps(instance: &InstanceShared, device: PhysicalDevice) -> Vec<
 }
 
 fn register_types(props: &mut DeviceProperties, ext_feat: &ExtendedFeatures<'_>) {
+    props.register_lowered_complex32();
     use cubecl_core::ir::{ElemType, FloatKind, IntKind};
 
     props.register_address_type(AddressType::U32);

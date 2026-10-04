@@ -244,6 +244,10 @@ where
         analyses.set_config(config);
 
         let mut passes = OpPass::<ModuleOp, Passes>::default();
+        // MSL has no complex type: c32 becomes a float2 before anything else.
+        if T::target() == Target::Metal {
+            passes.add_pass(cubecl_opt::passes::lower_complex::LowerComplexPass);
+        }
         // Metal compiles device functions and decides itself what to inline.
         // CUDA and HIP inline every call until their calls are validated.
         let inline = match (T::target(), CubeClRuntimeConfig::get().compilation.inline) {

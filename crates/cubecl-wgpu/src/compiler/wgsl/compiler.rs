@@ -131,6 +131,8 @@ impl WgslCompiler {
         analyses.set_config(config);
 
         let mut passes = OpPass::<ModuleOp, Passes>::default();
+        // WGSL has no complex type: c32 becomes a vec2<f32> before anything else.
+        passes.add_pass(cubecl_opt::passes::lower_complex::LowerComplexPass);
         // WGSL has functions, and the shader compiler decides what to inline.
         let inline = match CubeClRuntimeConfig::get().compilation.inline {
             InlineMode::Auto => InlinePolicy::target(false),

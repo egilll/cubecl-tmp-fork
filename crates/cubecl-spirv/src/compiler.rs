@@ -209,6 +209,8 @@ impl SpirvCompiler {
         analyses.set_config(config);
 
         let mut passes = OpPass::<ModuleOp, Passes>::default();
+        // SPIR-V has no complex type: c32 becomes a two-lane f32 vector first.
+        passes.add_pass(cubecl_opt::passes::lower_complex::LowerComplexPass);
         add_call_passes(&mut passes, InlinePolicy::All);
 
         let mut func_passes = OpPass::<FuncOp, Passes>::default();

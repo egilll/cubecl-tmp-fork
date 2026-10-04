@@ -228,6 +228,7 @@ fn register_features(
     _comp_options: &mut WgpuCompilationOptions,
 ) {
     register_types(props);
+    props.register_lowered_complex32();
     register_cmma(props);
     props.features.alignment = true;
     // This backend emits MSL, so the same `threadgroup_barrier(mem_flags::mem_device)` the

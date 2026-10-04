@@ -52,6 +52,7 @@ pub enum FloatKind {
 
 impl FloatKind {
     pub fn to_type(&self, ctx: &Context) -> TypeHandle {
+        use crate::ContextExt;
         match self {
             FloatKind::E2M1 => Float4E2M1Type::get(ctx).into(),
             FloatKind::E2M1x2 => Float4E2M1x2Type::get(ctx).into(),
@@ -184,6 +185,11 @@ impl ElemType {
             ElemType::Float(float_kind) => float_kind.to_type(ctx),
             ElemType::Int(int_kind) => int_kind.to_type(ctx),
             ElemType::UInt(uint_kind) => uint_kind.to_type(ctx),
+            // Past the complex lowering a `c32` is a two-lane `f32` vector, and
+            // types made from it later (the info struct's fields) have to agree.
+            ElemType::Complex(ComplexKind::C32) if ctx.has_aux_ty::<ComplexLowered>() => {
+                crate::types::VectorType::get(ctx, FloatKind::F32.to_type(ctx), 2).into()
+            }
             ElemType::Complex(ComplexKind::C32) => Complex32Type::get(ctx).into(),
             ElemType::Complex(ComplexKind::C64) => Complex64Type::get(ctx).into(),
             ElemType::Bool => BoolType::get(ctx).into(),
@@ -898,5 +904,27 @@ mod tests {
             hash(Type::Vector(f32_ty.intern(), 2)),
             hash(Type::Vector(f32_ty.intern(), 4))
         );
+    }
+}
+
+/// Marks a context whose `c32` values were lowered to two-lane `f32` vectors,
+/// for a target without a complex type. Set by `cubecl_opt`'s
+/// `LowerComplexPass`.
+pub struct ComplexLowered;
+
+impl ElemType {
+    /// The element type of the info-struct field a launch scalar of type
+    /// `ty` lives in. A scalar is never a vector, so a two-lane `f32` there is
+    /// a `c32` the complex lowering rewrote.
+    pub fn of_scalar_field(ctx: &Context, ty: TypeHandle) -> ElemType {
+        use crate::{ContextExt, interfaces::ScalarType, try_cast_ty};
+        let deref = ty.deref(ctx);
+        if let Some(vector) = deref.downcast_ref::<crate::types::VectorType>()
+            && vector.vectorization == 2
+            && ctx.has_aux_ty::<ComplexLowered>()
+        {
+            return ElemType::Complex(ComplexKind::C32);
+        }
+        try_cast_ty!(deref, ctx, dyn ScalarType).elem_type(ctx)
     }
 }

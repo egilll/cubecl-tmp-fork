@@ -204,6 +204,7 @@ fn register_metal_features(props: &mut DeviceProperties) {
 
 /// Register supported data types for Metal
 fn register_types(props: &mut DeviceProperties) {
+    props.register_lowered_complex32();
     props.register_address_type(AddressType::U32);
     props.register_address_type(AddressType::U64);
 

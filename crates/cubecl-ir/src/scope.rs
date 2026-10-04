@@ -201,6 +201,7 @@ pub trait ContextExt {
     fn aux_ty<T: Send + 'static>(&self) -> &T;
     fn aux_ty_mut<T: Send + 'static>(&mut self) -> &mut T;
     fn try_aux_ty_mut<T: Send + 'static>(&mut self) -> Option<&mut T>;
+    fn has_aux_ty<T: Send + 'static>(&self) -> bool;
     fn set_aux_ty<T: Send + 'static>(&mut self, value: T);
     fn set_address_type(&mut self, addr: AddressType);
     fn address_type(&self) -> AddressType;
@@ -221,6 +222,10 @@ impl ContextExt for Context {
             .ok_or_else(|| format!("Key for {} should exist", type_name::<T>()))
             .unwrap();
         self.aux_data[key].downcast_mut().unwrap()
+    }
+
+    fn has_aux_ty<T: Send + 'static>(&self) -> bool {
+        ty_key::<T>(self).is_some()
     }
 
     fn try_aux_ty_mut<T: Send + 'static>(&mut self) -> Option<&mut T> {
