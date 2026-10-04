@@ -15,7 +15,8 @@ use cubecl_core as cubecl;
 /// Inside a `#[cube]` function generic over `R: Real`, use the operators and
 /// the path form of the functions (`R::exp(x)`, `R::constant(0.5)`). The
 /// operator bounds sit on the expand type, so `a + b` traces into the right
-/// arithmetic for either.
+/// arithmetic for either, a `let mut` accumulator of type `R` can be
+/// reassigned in a loop, and `*sequence.index(i)` reads an `R` back out.
 pub trait Real:
     CubeType<
         ExpandType: AddExpand<Output = <Self as CubeType>::ExpandType>
@@ -23,6 +24,9 @@ pub trait Real:
                         + MulExpand<Output = <Self as CubeType>::ExpandType>
                         + DivExpand<Output = <Self as CubeType>::ExpandType>
                         + NegExpand
+                        + Assign
+                        + RuntimeAssign
+                        + DerefExpand<Target = <Self as CubeType>::ExpandType>
                         + Copy,
     > + core::ops::Add<Output = Self>
     + core::ops::Sub<Output = Self>
@@ -95,6 +99,23 @@ impl Real for f32 {
 pub struct Dual<N: Size> {
     pub value: f32,
     pub tangent: Vector<f32, N>,
+}
+
+// A `let mut` dual is reassigned field by field.
+impl<N: Size> Assign for DualExpand<N> {
+    fn __expand_assign_method(&mut self, scope: &Scope, value: Self) {
+        self.value.__expand_assign_method(scope, value.value);
+        self.tangent.__expand_assign_method(scope, value.tangent);
+    }
+}
+
+impl<N: Size> RuntimeAssign for DualExpand<N> {
+    fn init_mut(&self, scope: &Scope) -> Self {
+        DualExpand {
+            value: self.value.init_mut(scope),
+            tangent: self.tangent.init_mut(scope),
+        }
+    }
 }
 
 #[cube]
