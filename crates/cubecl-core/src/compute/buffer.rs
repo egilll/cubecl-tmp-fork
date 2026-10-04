@@ -126,7 +126,7 @@ impl<T: CubeElement> Buffer<T> {
     pub fn read_async(
         &self,
         client: &Client,
-    ) -> impl Future<Output = Result<Vec<T>, ServerError>> + Send + 'static {
+    ) -> impl Future<Output = Result<Vec<T>, ServerError>> + Send + 'static + use<T> {
         let len = self.len;
         let read = client.read_async(alloc::vec![self.handle.clone()]);
         async move {
