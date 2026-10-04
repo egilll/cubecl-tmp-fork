@@ -8,8 +8,7 @@ fn norm_test<F: Float, N: Size>(
 ) {
     if ABSOLUTE_POS < input.len() {
         output_a[ABSOLUTE_POS] = input[ABSOLUTE_POS].normalize();
-        output_b[ABSOLUTE_POS] =
-            input[ABSOLUTE_POS] / Vector::new(input[ABSOLUTE_POS].magnitude());
+        output_b[ABSOLUTE_POS] = input[ABSOLUTE_POS] / Vector::new(input[ABSOLUTE_POS].magnitude());
     }
 }
 

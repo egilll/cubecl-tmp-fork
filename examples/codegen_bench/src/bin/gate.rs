@@ -13,8 +13,8 @@ use objc2_metal::{
     MTLComputeCommandEncoder, MTLComputePipelineState, MTLCreateSystemDefaultDevice, MTLDevice,
     MTLLibrary, MTLResourceOptions, MTLSize,
 };
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 const SOURCE: &str = "#include <metal_stdlib>
@@ -35,7 +35,12 @@ unsafe impl Send for Gpu {}
 unsafe impl Sync for Gpu {}
 
 impl Gpu {
-    fn encode(&self, queue: &ProtocolObject<dyn MTLCommandQueue>, threads: usize, n: u32) -> Retained<ProtocolObject<dyn MTLCommandBuffer>> {
+    fn encode(
+        &self,
+        queue: &ProtocolObject<dyn MTLCommandQueue>,
+        threads: usize,
+        n: u32,
+    ) -> Retained<ProtocolObject<dyn MTLCommandBuffer>> {
         let cb = queue.commandBuffer().unwrap();
         let enc = cb.computeCommandEncoder().unwrap();
         enc.setComputePipelineState(&self.spin);
@@ -43,7 +48,11 @@ impl Gpu {
             enc.setBuffer_offset_atIndex(Some(&self.out), 0, 0);
             enc.setBytes_length_atIndex(std::ptr::NonNull::from(&n).cast(), 4, 1);
         }
-        let size = |w| MTLSize { width: w, height: 1, depth: 1 };
+        let size = |w| MTLSize {
+            width: w,
+            height: 1,
+            depth: 1,
+        };
         enc.dispatchThreads_threadsPerThreadgroup(size(threads), size(256));
         enc.endEncoding();
         cb.commit();
@@ -67,13 +76,19 @@ fn main() {
         .unwrap();
     let spin = device
         .newComputePipelineStateWithFunction_error(
-            &library.newFunctionWithName(&NSString::from_str("spin")).unwrap(),
+            &library
+                .newFunctionWithName(&NSString::from_str("spin"))
+                .unwrap(),
         )
         .unwrap();
     let out = device
         .newBufferWithLength_options(4 << 20, MTLResourceOptions::StorageModeShared)
         .unwrap();
-    let gpu = Arc::new(Gpu { device: device.clone(), spin, out });
+    let gpu = Arc::new(Gpu {
+        device: device.clone(),
+        spin,
+        out,
+    });
 
     // Calibrate the compute dispatch to about `dispatch_ms`.
     let queue = device.newCommandQueue().unwrap();
@@ -99,7 +114,12 @@ fn main() {
         let stop = Arc::new(AtomicBool::new(false));
         let aborts = Arc::new(AtomicU64::new(0));
         let compute = {
-            let (gpu, stop, aborts, queue) = (gpu.clone(), stop.clone(), aborts.clone(), compute_queue.clone());
+            let (gpu, stop, aborts, queue) = (
+                gpu.clone(),
+                stop.clone(),
+                aborts.clone(),
+                compute_queue.clone(),
+            );
             let queue = SendQueue(queue);
             std::thread::spawn(move || {
                 let queue = queue;
@@ -108,7 +128,8 @@ fn main() {
                 while !stop.load(Ordering::Relaxed) {
                     in_flight.push_back(gpu.encode(&queue.0, threads, n));
                     if in_flight.len() > 3 {
-                        let cb: Retained<ProtocolObject<dyn MTLCommandBuffer>> = in_flight.pop_front().unwrap();
+                        let cb: Retained<ProtocolObject<dyn MTLCommandBuffer>> =
+                            in_flight.pop_front().unwrap();
                         cb.waitUntilCompleted();
                         if cb.status() == MTLCommandBufferStatus::Error {
                             aborts.fetch_add(1, Ordering::Relaxed);
@@ -136,7 +157,11 @@ fn main() {
         compute.join().unwrap();
         println!(
             "{:>14}: frame round trip p50 {:?} p90 {:?} max {:?} ({} frames), aborts {}",
-            if separate { "separate queue" } else { "same queue" },
+            if separate {
+                "separate queue"
+            } else {
+                "same queue"
+            },
             percentile(&mut frames, 0.5),
             percentile(&mut frames, 0.9),
             percentile(&mut frames, 1.0),
