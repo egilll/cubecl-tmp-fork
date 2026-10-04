@@ -1,4 +1,4 @@
-use core::{marker::PhantomData, ops::Range};
+use core::{future::Future, marker::PhantomData, ops::Range};
 
 use alloc::vec::Vec;
 use cubecl_common::bytes::Bytes;
@@ -118,6 +118,21 @@ impl<T: CubeElement> Buffer<T> {
             &target.handle,
             Bytes::from_bytes_vec(T::as_bytes(data).to_vec()),
         );
+    }
+
+    /// Read the elements back once the device has written them, without
+    /// blocking a thread: the read is queued now and resolves when its
+    /// copy completes.
+    pub fn read_async(
+        &self,
+        client: &Client,
+    ) -> impl Future<Output = Result<Vec<T>, ServerError>> + Send + 'static {
+        let len = self.len;
+        let read = client.read_async(alloc::vec![self.handle.clone()]);
+        async move {
+            let mut bytes = read.await?;
+            Ok(T::from_bytes(&bytes.remove(0))[..len].to_vec())
+        }
     }
 
     /// Read the elements back.

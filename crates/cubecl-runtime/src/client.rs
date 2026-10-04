@@ -416,7 +416,7 @@ impl Client {
     pub fn read_async(
         &self,
         handles: Vec<Handle>,
-    ) -> impl Future<Output = Result<Vec<Bytes>, ServerError>> + Send {
+    ) -> impl Future<Output = Result<Vec<Bytes>, ServerError>> + Send + use<> {
         let shapes = handles
             .iter()
             .map(|it| [it.size_in_used() as usize].into())
