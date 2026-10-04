@@ -1692,6 +1692,16 @@ impl Client {
             .submit(move |server| server.allocation_mode(mode, stream_id));
     }
 
+    /// The [execution fault](ServerError::ExecutionFault) this client's
+    /// stream is stuck on, if any. Never waits, so a scheduler can look
+    /// between slices of work and [`reset_stream`](Self::reset_stream).
+    pub fn fault(&self) -> Option<ServerError> {
+        let stream_id = self.stream_id();
+        self.device
+            .submit_blocking(move |server| server.fault(stream_id))
+            .unwrap_or_resume()
+    }
+
     /// Recover this client's stream after an
     /// [execution fault](ServerError::ExecutionFault).
     ///

@@ -932,6 +932,13 @@ pub trait Server:
         Box::pin(async {})
     }
 
+    /// The execution fault `stream_id` is stuck on, if any, without waiting.
+    /// Runtimes that don't record faults report none.
+    fn fault(&mut self, stream_id: StreamId) -> Option<ServerError> {
+        let _ = stream_id;
+        None
+    }
+
     /// Recover `stream_id` after an [execution fault](ServerError::ExecutionFault):
     /// wait for what it submitted, fail every buffer whose write the fault
     /// may have lost (a later read of one reports the fault), and continue

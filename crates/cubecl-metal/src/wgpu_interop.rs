@@ -82,7 +82,9 @@ pub struct WgpuBridge {
 
 impl core::fmt::Debug for WgpuBridge {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("WgpuBridge").field("metal", &self.metal).finish()
+        f.debug_struct("WgpuBridge")
+            .field("metal", &self.metal)
+            .finish()
     }
 }
 

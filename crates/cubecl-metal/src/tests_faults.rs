@@ -140,3 +140,23 @@ fn a_fault_on_one_lane_leaves_another_lane_working() {
     assert_eq!(kept.read(&interactive).unwrap(), vec![2, 3, 4, 5]);
     background.reset_stream().unwrap();
 }
+
+#[test]
+fn a_fault_is_reported_without_waiting_until_reset() {
+    let client = R::client(&Default::default());
+    let input = Buffer::create(&client, &[1u32, 2, 3, 4]);
+    let output = Buffer::<u32>::empty(&client, 4);
+    assert!(client.fault().is_none());
+    inject_execution_fault::launch(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(4),
+        (&input).into(),
+        (&output).into(),
+    );
+    assert!(output.read(&client).is_err());
+    let fault = client.fault().expect("a sticky fault");
+    assert!(is_fault(&fault), "{fault}");
+    client.reset_stream().unwrap();
+    assert!(client.fault().is_none());
+}

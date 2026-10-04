@@ -456,7 +456,7 @@ impl Server for MetalServer {
                 crate::compute::accounting::size_class(cubes),
             )
         };
-        #[cfg(test)]
+        #[cfg(any(test, feature = "fault-injection"))]
         let kernel_name = kernel.name().to_string();
         let compiled = (|| {
             cubecl_server::validation::validate_cube_dim(&self.utilities.properties, &kernel_id)?;
@@ -692,7 +692,7 @@ impl Server for MetalServer {
             if let Some(active) = stream.active_encoder.as_mut() {
                 active.cost.dispatches.push((cost_key, cubes));
             }
-            #[cfg(test)]
+            #[cfg(any(test, feature = "fault-injection"))]
             if kernel_name.contains("inject_execution_fault")
                 && let Some(active) = stream.active_encoder.as_mut()
             {
@@ -833,6 +833,16 @@ impl Server for MetalServer {
             accounting: stream.accounting.clone(),
             threshold: gpu_micros,
         })
+    }
+
+    fn fault(&mut self, stream_id: StreamId) -> Option<ServerError> {
+        let mut resolved = self
+            .streams
+            .resolve(stream_id, std::iter::empty())
+            .expect("creating a Metal stream never fails");
+        let (stream, _) = resolved.current_and_failures();
+        let fault = stream.fault.slot.lock().clone();
+        fault.map(crate::compute::stream::StreamFault::into_error)
     }
 
     fn reset_stream(&mut self, stream_id: StreamId) -> Result<(), ServerError> {
