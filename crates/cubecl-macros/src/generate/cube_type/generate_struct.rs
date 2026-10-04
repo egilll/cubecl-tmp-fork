@@ -334,7 +334,8 @@ impl CubeTypeStruct {
     /// device function: its runtime fields become parameters, its comptime
     /// fields part of the specialization. A field that can't be passed, or a
     /// comptime field whose type isn't known to be `Hash`, makes a call taking
-    /// the struct trace inline. A device function can't return a struct yet.
+    /// the struct trace inline. A struct without comptime fields is returned
+    /// by its runtime fields.
     fn call_arg_impl(&self) -> proc_macro2::TokenStream {
         let call = frontend_type("call");
         let name_expand = &self.name_expand;
@@ -358,6 +359,30 @@ impl CubeTypeStruct {
             .map(|it| it.ident.as_ref().unwrap())
             .collect();
 
+        // Returned by its runtime fields, in order. A struct with comptime
+        // fields can't be rebuilt from results alone, so a call returning one
+        // traces inline.
+        let returns = match comptime_names.is_empty() {
+            true => quote! {
+                fn call_returns(
+                    &self,
+                    scope: &#call::__private::Scope,
+                ) -> ::core::option::Option<#call::__private::Vec<#call::__private::Value>> {
+                    let mut values = #call::__private::Vec::new();
+                    #(values.extend(#call::CallArg::call_returns(&self.#runtime_names, scope)?);)*
+                    ::core::option::Option::Some(values)
+                }
+
+                fn call_from_results(
+                    results: &mut dyn ::core::iter::Iterator<Item = #call::__private::Value>,
+                ) -> Self {
+                    Self {
+                        #(#runtime_names: #call::CallArg::call_from_results(results),)*
+                    }
+                }
+            },
+            false => quote![],
+        };
         quote! {
             impl #generics #call::CallArg for #name_expand #generic_names #where_clause {
                 fn call_slots(
@@ -390,6 +415,8 @@ impl CubeTypeStruct {
                         #(#comptime_names: ::core::clone::Clone::clone(&self.#comptime_names),)*
                     }
                 }
+
+                #returns
             }
         }
     }

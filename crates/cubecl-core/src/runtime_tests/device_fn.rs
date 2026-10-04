@@ -336,11 +336,78 @@ pub fn test_device_fn_calls<R: Runtime>(client: Client) {
     }
 }
 
+#[derive(CubeType, CubeTypeMut, Clone, Copy)]
+#[expand(derive(Clone, Copy))]
+pub struct Pair {
+    re: f32,
+    im: f32,
+}
+
+#[cube(inline(never))]
+fn rotate(p: Pair, angle: f32) -> Pair {
+    let (s, c) = (f32::sin(angle), f32::cos(angle));
+    Pair {
+        re: p.re * c - p.im * s,
+        im: p.re * s + p.im * c,
+    }
+}
+
+#[cube(launch)]
+pub fn kernel_device_fn_struct_returns(input: &[f32], output: &mut [f32]) {
+    let i = ABSOLUTE_POS;
+    if i < input.len() {
+        let x = input[i];
+        let mut p = Pair { re: x, im: x * 0.5 };
+        for k in 0..3u32 {
+            p = rotate(p, x * 0.1 + f32::cast_from(k));
+        }
+        output[2 * i] = p.re;
+        output[2 * i + 1] = p.im;
+    }
+}
+
+/// A function returning a struct, called in a loop, matches plain Rust.
+pub fn test_device_fn_struct_returns<R: Runtime>(client: Client) {
+    let input: Vec<f32> = (0..32).map(|i| i as f32 * 0.25 - 3.0).collect();
+    let input_buffer = crate::compute::Buffer::create(&client, &input);
+    let output = crate::compute::Buffer::<f32>::empty(&client, 64);
+    kernel_device_fn_struct_returns::launch(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(32),
+        (&input_buffer).into(),
+        (&output).into(),
+    );
+    let output = output.read(&client).unwrap();
+    for (i, x) in input.iter().enumerate() {
+        let (mut re, mut im) = (*x, x * 0.5);
+        for k in 0..3 {
+            let angle = x * 0.1 + k as f32;
+            let (s, c) = (angle.sin(), angle.cos());
+            (re, im) = (re * c - im * s, re * s + im * c);
+        }
+        for (actual, expected) in [(output[2 * i], re), (output[2 * i + 1], im)] {
+            assert!(
+                (actual - expected).abs() <= 1e-4 * expected.abs().max(1.0),
+                "element {i}: {actual} vs {expected}"
+            );
+        }
+    }
+}
+
 #[allow(missing_docs)]
 #[macro_export]
 macro_rules! testgen_device_fn {
     () => {
         use super::*;
+
+        #[$crate::runtime_tests::test_log::test]
+        fn test_device_fn_struct_returns() {
+            let client = TestRuntime::client(&Default::default());
+            cubecl_core::runtime_tests::device_fn::test_device_fn_struct_returns::<TestRuntime>(
+                client,
+            );
+        }
 
         #[$crate::runtime_tests::test_log::test]
         fn test_device_fn_calls() {

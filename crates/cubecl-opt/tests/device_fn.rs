@@ -500,7 +500,7 @@ struct Table {
 
 #[cube]
 impl Table {
-    // Returns a struct, which a function can't yet: traced inline.
+    // Returns a struct: called, the struct's field as the result.
     fn new(base: f32) -> Table {
         Table { base }
     }
@@ -533,8 +533,9 @@ fn an_impl_calls_its_methods_but_inline_ones() {
     let traced = trace(|scope| {
         table_calls::expand(scope);
     });
-    assert_eq!(count::<CallOp>(&traced.ctx, traced.module), 2);
-    assert_eq!(count::<FuncOp>(&traced.ctx, traced.module), 2);
+    // `new` once and `lookup` twice; `shift` and `lookup_inline` traced inline.
+    assert_eq!(count::<CallOp>(&traced.ctx, traced.module), 3);
+    assert_eq!(count::<FuncOp>(&traced.ctx, traced.module), 3);
 }
 
 #[cube]
@@ -602,4 +603,39 @@ fn a_comptime_value_that_cant_be_hashed_traces_inline() {
     });
     assert_eq!(count::<CallOp>(&traced.ctx, traced.module), 0);
     assert_eq!(count::<FuncOp>(&traced.ctx, traced.module), 1);
+}
+
+#[derive(CubeType, Clone, Copy)]
+#[expand(derive(Clone, Copy))]
+struct Pair {
+    re: f32,
+    im: f32,
+}
+
+#[cube]
+fn rotate(p: Pair, angle: f32) -> Pair {
+    let (s, c) = (f32::sin(angle), f32::cos(angle));
+    Pair {
+        re: p.re * c - p.im * s,
+        im: p.re * s + p.im * c,
+    }
+}
+
+#[cube(inline)]
+fn pair_calls() -> f32 {
+    let x = f32::cast_from(UNIT_POS);
+    let a = rotate(Pair { re: x, im: x * 2.0 }, x * 0.1);
+    let b = rotate(a, x * 0.2);
+    b.re + b.im
+}
+
+#[test]
+fn a_struct_is_returned_through_out_parameters() {
+    let traced = trace(|scope| {
+        pair_calls::expand(scope);
+    });
+    pliron::operation::verify_operation(traced.module, &traced.ctx).expect("the module verifies");
+    // The kernel and `rotate`, called twice.
+    assert_eq!(count::<FuncOp>(&traced.ctx, traced.module), 2);
+    assert_eq!(count::<CallOp>(&traced.ctx, traced.module), 2);
 }

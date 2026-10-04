@@ -68,7 +68,14 @@ pub struct CallKey {
 #[derive(Debug, Clone)]
 pub enum DeviceFn {
     /// Traced into this function, which every call with the same key calls.
-    Function { symbol: Identifier, ty: TypeHandle },
+    ///
+    /// `outs` are the types a result beyond the first is written to, through
+    /// pointers to the caller's locals passed after the arguments.
+    Function {
+        symbol: Identifier,
+        ty: TypeHandle,
+        outs: Vec<TypeHandle>,
+    },
     /// Traced inline at every call, for the reason given: the body could not
     /// stand on its own.
     Inline(InlineReason),

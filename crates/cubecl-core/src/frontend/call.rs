@@ -21,10 +21,14 @@ use alloc::{string::String, vec::Vec};
 use core::hash::{Hash, Hasher};
 
 use cubecl_ir::{
-    ExpandValue, OpInserter, Scope,
+    AddressSpace, ExpandValue, FuncOpExt, OpInserter, Scope,
     convert::closure_captures,
     device_fn::{CallArgKey, CallKey, DeviceFn, InlineReason, hash_unordered},
-    dialect::{branch::ReturnOp, call::CallOp},
+    dialect::{
+        branch::ReturnOp,
+        call::CallOp,
+        memory::{LoadOp, StoreOp},
+    },
     pliron::{
         builtin::{ops::FuncOp, types::FunctionType},
         identifier::Identifier,
@@ -326,8 +330,8 @@ pub fn device_call<R: CallArg>(
     };
 
     match scope.state().device_fns.get(&key).cloned() {
-        Some(DeviceFn::Function { symbol, ty }) => {
-            return Some(emit_call(scope, symbol, ty, params));
+        Some(DeviceFn::Function { symbol, ty, outs }) => {
+            return Some(emit_call(scope, symbol, ty, params, &outs));
         }
         Some(DeviceFn::Inline(_)) => return None,
         None => {}
@@ -344,11 +348,26 @@ pub fn device_call<R: CallArg>(
     let result = trace(&child, &mut block_args.into_iter());
     let returned = result.call_returns(&child);
     let terminates = child.expand_state().may_return;
+    // A function returns one value. The rest of a struct's fields leave
+    // through pointers to locals of the caller, appended as parameters: they
+    // are fresh and only written, so nothing aliases, and once a call is
+    // inlined the locals are promoted away.
+    let mut outs = Vec::new();
     if let Some(returned) = &returned {
-        let ret = match returned.as_slice() {
-            [] => ReturnOp::new(scope.ctx_mut()),
-            [value] => ReturnOp::new_with_value(scope.ctx_mut(), *value),
-            _ => unreachable!("a device function returns at most one value"),
+        for value in returned.iter().skip(1) {
+            let value_ty = value.get_type(scope.ctx());
+            let ptr_ty = PointerType::get(scope.ctx(), value_ty, AddressSpace::Local);
+            let idx = func.push_argument(scope.ctx(), ptr_ty.into());
+            let ptr = func
+                .get_entry_block(scope.ctx())
+                .deref(scope.ctx())
+                .get_argument(idx);
+            child.register(&StoreOp::new(scope.ctx_mut(), ptr, *value));
+            outs.push(value_ty);
+        }
+        let ret = match returned.first() {
+            None => ReturnOp::new(scope.ctx_mut()),
+            Some(value) => ReturnOp::new_with_value(scope.ctx_mut(), *value),
         };
         child.register(&ret);
     }
@@ -373,8 +392,19 @@ pub fn device_call<R: CallArg>(
     }
 
     let returned = returned.expect("checked above");
-    let result_types = returned.iter().map(|it| it.get_type(scope.ctx())).collect();
-    let ty: TypeHandle = FunctionType::get(scope.ctx(), param_types, result_types).into();
+    let result_types = returned
+        .first()
+        .map(|it| it.get_type(scope.ctx()))
+        .into_iter()
+        .collect();
+    let all_params = param_types
+        .into_iter()
+        .chain(
+            outs.iter()
+                .map(|ty| PointerType::get(scope.ctx(), *ty, AddressSpace::Local).into()),
+        )
+        .collect();
+    let ty: TypeHandle = FunctionType::get(scope.ctx(), all_params, result_types).into();
     func.set_attr_builtin_func_type(scope.ctx(), ty.into());
 
     scope.register_func(func);
@@ -383,20 +413,31 @@ pub fn device_call<R: CallArg>(
         DeviceFn::Function {
             symbol: name.clone(),
             ty,
+            outs: outs.clone(),
         },
     );
-    Some(emit_call(scope, name, ty, params))
+    Some(emit_call(scope, name, ty, params, &outs))
 }
 
 fn emit_call<R: CallArg>(
     scope: &Scope,
     symbol: Identifier,
     ty: TypeHandle,
-    params: Vec<Value>,
+    mut params: Vec<Value>,
+    outs: &[TypeHandle],
 ) -> R {
+    let locals: Vec<Value> = outs
+        .iter()
+        .map(|ty| scope.create_local_mut(*ty, None))
+        .collect();
+    params.extend(locals.iter().copied());
     let call = CallOp::new(scope.ctx_mut(), symbol, ty, params);
     scope.register(&call);
-    let results: Vec<Value> = call.get_operation().deref(scope.ctx()).results().collect();
+    let mut results: Vec<Value> = call.get_operation().deref(scope.ctx()).results().collect();
+    for local in locals {
+        let load = LoadOp::new(scope.ctx_mut(), local);
+        results.push(scope.register_with_result(&load));
+    }
     R::call_from_results(&mut results.into_iter())
 }
 
