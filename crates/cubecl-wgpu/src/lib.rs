@@ -193,11 +193,6 @@ fn double(@builtin(global_invocation_id) id: vec3<u32>) {
     }
 
     cubecl_core::testgen_complex_validation!();
-
-    mod ieee_rounding {
-        use super::*;
-        cubecl_core::testgen_ieee_rounding!();
-    }
 }
 
 #[cfg(all(test, feature = "spirv"))]
@@ -229,4 +224,9 @@ mod tests_msl {
     // buffer completes, so a window's end waits for the device, and an enclosing window measures
     // that idle gap. Add it once the readback is deferred instead of waited for.
     cubecl_core::testgen_complex_validation!();
+
+    mod ieee_rounding {
+        use super::*;
+        cubecl_core::testgen_ieee_rounding!();
+    }
 }

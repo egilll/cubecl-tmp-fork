@@ -339,6 +339,11 @@ impl CubeTypeStruct {
         let call = frontend_type("call");
         let name_expand = &self.name_expand;
         let (generics, generic_names, where_clause) = self.generics.split_for_impl();
+        if self.no_call_arg.is_present() {
+            return quote! {
+                impl #generics #call::CallArg for #name_expand #generic_names #where_clause {}
+            };
+        }
 
         let runtime_names: Vec<_> = self
             .fields

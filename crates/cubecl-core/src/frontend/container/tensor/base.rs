@@ -7,7 +7,10 @@ use crate as cubecl;
 
 /// The tensor type is a wrapper around `[T]` that comes with more
 /// metadata such as [stride](Tensor::stride) and [shape](Tensor::shape).
+// Its shape and strides are read from the kernel's metadata for its own
+// binding, which a device function doesn't have.
 #[derive(CubeType)]
+#[cube(no_call_arg)]
 pub struct Tensor<T: CubePrimitive> {
     pub(super) meta: TensorMeta,
     pub(super) buffer: [T],
@@ -15,6 +18,7 @@ pub struct Tensor<T: CubePrimitive> {
 
 #[derive(CubeType, Clone)]
 #[expand(derive(Clone))]
+#[cube(no_call_arg)]
 pub struct OwnedTensor<T: CubePrimitive> {
     #[allow(unused)]
     pub(super) meta: TensorMeta,

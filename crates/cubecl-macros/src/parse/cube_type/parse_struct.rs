@@ -18,6 +18,11 @@ pub struct CubeTypeStruct {
     pub vis: Visibility,
     pub skip_bounds: Flag,
     pub derive: Option<syn::Meta>,
+    /// `#[cube(no_call_arg)]`: a device function never takes the struct, and
+    /// a call passing it is traced inline. For a struct whose methods need
+    /// what only the kernel's own arguments carry, such as a tensor's
+    /// metadata.
+    pub no_call_arg: Flag,
 }
 
 #[derive(FromField, Clone, Debug)]
