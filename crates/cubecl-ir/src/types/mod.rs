@@ -54,8 +54,10 @@ impl MaybePackedType for VectorType {
 
 #[type_interface_impl]
 impl AlignedType for VectorType {
+    /// A vector aligns to a power of two, as every target requires: three
+    /// lanes align like four.
     fn align(&self, ctx: &Context) -> usize {
-        self.inner.align(ctx) * self.vectorization
+        (self.inner.align(ctx) * self.vectorization).next_power_of_two()
     }
 }
 

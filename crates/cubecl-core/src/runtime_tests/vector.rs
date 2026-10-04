@@ -388,11 +388,58 @@ pub fn test_vector_cross<R: Runtime, F: Float + CubeElement>(client: Client) {
     assert_eq!(output.read(&client).unwrap(), expected.to_vec());
 }
 
+/// A device function's 3-lane vector: its type is declared in the target
+/// source, which needs a power-of-two alignment.
+#[cube]
+fn three_lanes<F: Float>(input: &[F], at: usize) -> Vector<F, Const<3>> {
+    let mut v = Vector::<F, Const<3>>::new(input[at]);
+    v.insert(1usize, input[at + 1]);
+    v.insert(2usize, input[at + 2]);
+    v
+}
+
+#[cube(launch)]
+pub fn kernel_vector_three_lane_function<F: Float>(input: &[F], output: &mut [F]) {
+    if UNIT_POS == 0 {
+        let c = three_lanes::<F>(input, 0usize).cross(&three_lanes::<F>(input, 3usize));
+        #[unroll]
+        for i in 0..3 {
+            output[i] = c.extract(i);
+        }
+    }
+}
+
+pub fn test_vector_three_lane_function<R: Runtime, F: Float + CubeElement>(client: Client) {
+    let input = Buffer::create(
+        &client,
+        &[1.0, 2.0, 3.0, -4.0, 0.5, 2.0].map(|x: f32| F::new(x)),
+    );
+    let output = Buffer::<F>::empty(&client, 3);
+    kernel_vector_three_lane_function::launch::<F>(
+        &client,
+        CubeCount::new_single(),
+        CubeDim::new_single(),
+        (&input).into(),
+        (&output).into(),
+    );
+    let expected = [2.5f32, -14.0, 8.5].map(|x| F::new(x));
+    assert_eq!(output.read(&client).unwrap(), expected.to_vec());
+}
+
 #[allow(missing_docs)]
 #[macro_export]
 macro_rules! testgen_vector {
     () => {
         use super::*;
+
+        #[$crate::runtime_tests::test_log::test]
+        fn test_vector_three_lane_function() {
+            let client = TestRuntime::client(&Default::default());
+            cubecl_core::runtime_tests::vector::test_vector_three_lane_function::<
+                TestRuntime,
+                FloatType,
+            >(client);
+        }
 
         #[$crate::runtime_tests::test_log::test]
         fn test_vector_cross() {
