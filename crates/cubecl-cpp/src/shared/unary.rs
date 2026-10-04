@@ -38,8 +38,10 @@ use crate::{
 pub trait FunctionFmt {
     fn base_function_name() -> &'static str;
     fn function_name(ctx: &Context, ty: impl Typed) -> String {
-        let prefix = ctx.target().ty_prefix(ctx, ty);
-        format!("{prefix}{}", Self::base_function_name())
+        let target = ctx.target();
+        let precise = target.precise_prefix(ctx, &ty);
+        let prefix = target.ty_prefix(ctx, ty);
+        format!("{precise}{prefix}{}", Self::base_function_name())
     }
     fn format_unary(ctx: &Context, input: Value) -> String {
         format!("{}({})", Self::function_name(ctx, input), input.name(ctx))

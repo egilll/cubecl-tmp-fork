@@ -22,7 +22,13 @@ use crate::{
 
 dict_key!(ATTR_BUILTIN_ATTRIBUTE, "metal_builtin");
 
+/// The source carries its own math semantics, so the same kernel computes the same bits whichever
+/// compile options build it: wgpu's passthrough uses Metal's defaults (fast math), the native
+/// runtime asks for safe math. `math_mode(safe)` covers the arithmetic (no reassociation, no
+/// reciprocal division); the precise variant of each `float` function is named where it is called,
+/// since no pragma covers those.
 const IMPORT: &str = "
+#pragma METAL fp math_mode(safe)
 #include <metal_stdlib>
 using namespace metal;
 ";

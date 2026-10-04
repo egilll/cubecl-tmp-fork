@@ -18,7 +18,7 @@ use pliron::value::Value;
 use crate::{
     metal::metal_op_with_out,
     shared::{convert::no_msl_bfloat, ty::TypeExtCPP, unary::lower_target_unop, unroll::unrolling},
-    target::Metal,
+    target::{CtxTarget, Metal},
 };
 
 metal_op_with_out!(FAbsOp, |op, ctx| {
@@ -66,7 +66,8 @@ pub struct MslTanhOp {
 unrolling!(MslTanhOp);
 no_msl_bfloat!(MslTanhOp);
 metal_op_with_out!(MslTanhOp, |op, ctx| {
-    format!("tanh({})", op.input(ctx).name(ctx))
+    let precise = ctx.target().precise_prefix(ctx, op.input(ctx));
+    format!("{precise}tanh({})", op.input(ctx).name(ctx))
 });
 
 /// use the simple version because otherwise we'd get an infinite lowering loop

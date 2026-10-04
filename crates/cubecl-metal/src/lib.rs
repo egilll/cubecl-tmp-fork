@@ -37,4 +37,9 @@ mod tests {
     // one window at a time (`Stream::profiling`), so an inner `start_profile`
     // replaces the outer's collector and the outer window ends up measuring
     // nothing. Add it once the collector is a stack.
+
+    mod ieee_rounding {
+        use super::*;
+        cubecl_core::testgen_ieee_rounding!();
+    }
 }

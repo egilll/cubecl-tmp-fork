@@ -67,9 +67,9 @@ impl MetalContext {
         let msl_compile_options = MTLCompileOptions::new();
         // MSL 3.2 for lambdas.
         msl_compile_options.setLanguageVersion(MTLLanguageVersion::Version3_2);
-        // Compile with IEEE-safe math by default; per-op fast math is opted into separately.
-        // `mathMode` disables FP reassociation/contraction, `mathFloatingPointFunctions`
-        // keeps math functions precise.
+        // The MSL states its own math semantics (`math_mode(safe)` and `precise::` functions),
+        // so these only repeat it: the same source compiles to the same code here and through
+        // wgpu's passthrough, which keeps Metal's fast-math defaults.
         msl_compile_options.setMathMode(MTLMathMode::Safe);
         msl_compile_options.setMathFloatingPointFunctions(MTLMathFloatingPointFunctions::Precise);
 

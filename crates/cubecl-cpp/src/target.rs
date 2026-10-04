@@ -1,6 +1,6 @@
 use core::fmt::Debug;
 
-use cubecl_core::ir::ContextExt;
+use cubecl_core::ir::{ContextExt, interfaces::TypedExt};
 use pliron::{context::Context, r#type::Typed};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -27,6 +27,17 @@ impl Target {
             self.half2_prefix()
         } else {
             ""
+        }
+    }
+
+    /// The namespace that pins a `float` math function to its precise variant. On Metal, a
+    /// plain `exp` is the fast or the precise one depending on the compile options, and wgpu's
+    /// passthrough and the native runtime set those differently, so the source names the
+    /// variant itself. Only `float` has both.
+    pub fn precise_prefix(&self, ctx: &Context, ty: impl Typed) -> &'static str {
+        match self {
+            Target::Metal if ty.scalar_ty(ctx).is_float32(ctx) => "precise::",
+            _ => "",
         }
     }
 

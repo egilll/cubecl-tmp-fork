@@ -3,6 +3,7 @@ use cubecl_core::ir::{dialect::vector::*, interfaces::TypedExt, prelude::*};
 use crate::{
     metal::metal_op_with_out,
     shared::{scoped_block, ty::TypeExtCPP},
+    target::CtxTarget,
 };
 
 metal_op_with_out!(MagnitudeOp, |op, ctx| {
@@ -10,7 +11,8 @@ metal_op_with_out!(MagnitudeOp, |op, ctx| {
     let scalar_ty = op.result_type(ctx).to_cpp(ctx);
     let vec = op.input(ctx).vector_size(ctx);
     let input = format!("reinterpret_cast<const thread {scalar_ty}{vec}&>({input})");
-    format!("length({input})")
+    let precise = ctx.target().precise_prefix(ctx, op.result_type(ctx));
+    format!("{precise}length({input})")
 });
 
 // The result is a vector too: the MSL vector is named from the scalar, and the value MSL returns
@@ -21,8 +23,9 @@ metal_op_with_out!(NormalizeOp, |op, ctx| {
     let vec = op.input(ctx).vector_size(ctx);
     let msl_ty = format!("{scalar_ty}{vec}");
     let out_ty = op.result_type(ctx).to_cpp(ctx);
+    let precise = ctx.target().precise_prefix(ctx, op.input(ctx));
     scoped_block!(
-        format!("{msl_ty} normalized = normalize(reinterpret_cast<const thread {msl_ty}&>({input}));")
+        format!("{msl_ty} normalized = {precise}normalize(reinterpret_cast<const thread {msl_ty}&>({input}));")
         format!("return reinterpret_cast<const thread {out_ty}&>(normalized);")
     )
 });

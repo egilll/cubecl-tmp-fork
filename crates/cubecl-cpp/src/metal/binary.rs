@@ -11,7 +11,7 @@ use cubecl_core::{
 use crate::{
     metal::metal_op_with_out,
     shared::{CppValue, convert::no_msl_bfloat, lowering::LowerOp, unroll::unrolling},
-    target::Metal,
+    target::{CtxTarget, Metal},
 };
 
 /// An operand of a signed saturating builtin, spelled in the type MSL overloads it on.
@@ -88,27 +88,31 @@ metal_op_with_out!(FMaxOp, |op, ctx| {
 no_msl_bfloat!(FMaxOp);
 
 metal_op_with_out!(PowfOp, |op, ctx| {
+    let precise = ctx.target().precise_prefix(ctx, op.get_result(ctx));
     let lhs = op.lhs(ctx).name(ctx);
     let rhs = op.rhs(ctx).name(ctx);
-    format!("pow({lhs}, {rhs})")
+    format!("{precise}pow({lhs}, {rhs})")
 });
 
 metal_op_with_out!(PowiOp, |op, ctx| {
+    let precise = ctx.target().precise_prefix(ctx, op.get_result(ctx));
     let lhs = op.lhs(ctx).name(ctx);
     let rhs = op.rhs(ctx).name(ctx);
-    format!("pow({lhs}, {rhs})")
+    format!("{precise}pow({lhs}, {rhs})")
 });
 
 metal_op_with_out!(HypotOp, |op, ctx| {
     let lhs = op.lhs(ctx).name(ctx);
     let rhs = op.rhs(ctx).name(ctx);
-    format!("length(float2({lhs}, {rhs}))")
+    let precise = ctx.target().precise_prefix(ctx, op.get_result(ctx));
+    format!("{precise}length(float2({lhs}, {rhs}))")
 });
 
 metal_op_with_out!(RhypotOp, |op, ctx| {
     let lhs = op.lhs(ctx).name(ctx);
     let rhs = op.rhs(ctx).name(ctx);
-    format!("rsqrt({lhs} * {lhs} + {rhs} * {rhs})")
+    let precise = ctx.target().precise_prefix(ctx, op.get_result(ctx));
+    format!("{precise}rsqrt({lhs} * {lhs} + {rhs} * {rhs})")
 });
 
 #[op_interface_impl]
