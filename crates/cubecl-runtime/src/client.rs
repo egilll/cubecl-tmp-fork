@@ -41,6 +41,8 @@ pub struct Client {
     device: DeviceHandle<dyn Server>,
     utilities: Arc<ServerUtilities>,
     stream_id: Option<StreamId>,
+    /// GPU time, µs, that [`Client::pace`] lets this client keep in flight.
+    in_flight_budget: Option<u64>,
 }
 
 /// A captured graph produced by [`Client::stop_capture`]: a recorded
@@ -191,6 +193,7 @@ impl Clone for Client {
             device: self.device.clone(),
             utilities: self.utilities.clone(),
             stream_id: self.stream_id,
+            in_flight_budget: self.in_flight_budget,
         }
     }
 }
@@ -219,6 +222,7 @@ impl Client {
             device: context,
             utilities,
             stream_id: None,
+            in_flight_budget: None,
         })
     }
 
@@ -237,6 +241,7 @@ impl Client {
             device: context,
             utilities,
             stream_id: None,
+            in_flight_budget: None,
         }
     }
 
@@ -297,6 +302,28 @@ impl Client {
         self.device
             .submit_blocking(move |server| server.in_flight_below(stream_id, gpu_micros))
             .unwrap_or_resume()
+    }
+
+    /// This client, whose [`pace`](Self::pace) keeps at most `gpu_micros`
+    /// of estimated GPU time in flight on its stream: the budget of a lane,
+    /// set once where the lane is created and carried by every clone.
+    #[must_use]
+    pub fn with_in_flight_budget(&self, gpu_micros: u64) -> Self {
+        let mut client = self.clone();
+        client.in_flight_budget = Some(gpu_micros);
+        client
+    }
+
+    /// The in-flight budget [`pace`](Self::pace) holds to, if one is set.
+    pub fn in_flight_budget(&self) -> Option<u64> {
+        self.in_flight_budget
+    }
+
+    /// Resolves once this client's stream is below its in-flight budget
+    /// (`default_micros` when none is set), so a long loop of launches keeps
+    /// the device busy without queueing far ahead of other work.
+    pub fn pace(&self, default_micros: u64) -> DynFut<()> {
+        self.in_flight_below(self.in_flight_budget.unwrap_or(default_micros))
     }
 
     /// This client, bound to lane `lane`: a stream of its own that no

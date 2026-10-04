@@ -103,6 +103,32 @@ fn in_flight_work_is_counted_until_it_completes() {
 }
 
 #[test]
+fn a_lane_paces_to_its_own_budget() {
+    let client = R::client(&Default::default())
+        .lane(22)
+        .with_in_flight_budget(2_000);
+    assert_eq!(client.clone().in_flight_budget(), Some(2_000));
+    assert_eq!(
+        R::client(&Default::default()).lane(22).in_flight_budget(),
+        None
+    );
+    let buffer = Buffer::<u32>::empty(&client, 1 << 16);
+    for value in 0..16 {
+        cubecl_core::future::block_on(client.pace(1));
+        fill::launch(
+            &client,
+            CubeCount::Static(256, 1, 1),
+            CubeDim::new_1d(256),
+            (&buffer).into(),
+            value,
+            20_000,
+        );
+    }
+    cubecl_core::future::block_on(client.sync()).unwrap();
+    assert!(buffer.read(&client).unwrap().iter().all(|&x| x == 15));
+}
+
+#[test]
 fn gpu_time_is_attributed_to_labels() {
     let client = R::client(&Default::default()).lane(21);
     let buffer = Buffer::<u32>::empty(&client, 1 << 16);
