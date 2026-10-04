@@ -128,3 +128,33 @@ fn a_lease_is_read_by_wgpu_on_the_same_device() {
     assert_eq!(u32::from_bytes(&bytes), &[11, 21, 31, 41]);
     drop(lease);
 }
+
+/// The bridge refuses write usages and wraps its own device's leases for
+/// wgpu to read.
+#[cfg(feature = "wgpu")]
+#[test]
+fn the_bridge_checks_device_and_usage() {
+    use cubecl_core::future::block_on;
+
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::METAL,
+        ..wgpu::InstanceDescriptor::new_without_display_handle()
+    });
+    let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
+        .expect("a Metal adapter");
+    let (device, _queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
+    let bridge = crate::wgpu_interop::WgpuBridge::new(&device).expect("Metal behind wgpu");
+    let client = R::client(&bridge.metal());
+    let output = Buffer::create(&client, &[1u32, 2, 3, 4]);
+    let lease = block_on(client.export::<MetalServer>(output.handle())).unwrap();
+    assert_eq!(
+        bridge
+            .buffer(&lease, wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST)
+            .err(),
+        Some(crate::wgpu_interop::BridgeError::WriteUsage)
+    );
+    let (_, offset, size) = bridge.buffer(&lease, wgpu::BufferUsages::STORAGE).unwrap();
+    assert_eq!(size, 16);
+    assert!(offset % 4 == 0);
+
+}
