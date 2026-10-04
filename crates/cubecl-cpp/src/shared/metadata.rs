@@ -3,10 +3,8 @@ use cubecl_core::ir::{
     attributes::{EntrypointInterface, FuncInterface, IndexAttr},
     dialect::general::{BufferLenOp, ReadScalarOp, ShapeOp, StrideOp},
     ident,
-    interfaces::ScalarType,
     prelude::*,
     rewrite::RewriteOp,
-    try_cast_ty,
     types::scalar::IndexType,
 };
 use pliron::{

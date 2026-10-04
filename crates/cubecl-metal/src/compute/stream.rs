@@ -156,6 +156,30 @@ fn install_completion_handler(
     seq: u64,
     injected: bool,
 ) {
+    install_completion_handler_signaling(
+        command_buffer,
+        temporaries,
+        signal_event,
+        state,
+        seq,
+        injected,
+        false,
+    )
+}
+
+/// [`install_completion_handler`], which with `signal_on_success` also
+/// signals the event from the handler when the buffer succeeds, instead of
+/// from the GPU. Completion handlers of one queue run in order, so a wait on
+/// such an event also sees every fault an earlier buffer of the queue hit.
+fn install_completion_handler_signaling(
+    command_buffer: &ProtocolObject<dyn MTLCommandBuffer>,
+    temporaries: Vec<Retained<ProtocolObject<dyn MTLBuffer>>>,
+    signal_event: Option<(Retained<ProtocolObject<dyn MTLSharedEvent>>, u64)>,
+    state: Arc<FaultState>,
+    seq: u64,
+    injected: bool,
+    signal_on_success: bool,
+) {
     let temporaries = Mutex::new(Some(temporaries));
     let block = block2::RcBlock::new(
         move |cmd_buf: NonNull<ProtocolObject<dyn MTLCommandBuffer>>| {
@@ -169,6 +193,9 @@ fn install_completion_handler(
                     state
                         .confirmed
                         .fetch_max(seq, core::sync::atomic::Ordering::AcqRel);
+                }
+                if signal_on_success && let Some((event, value)) = &signal_event {
+                    event.setSignaledValue(*value);
                 }
             } else {
                 let fault = match cmd_buf.error().filter(|_| !injected) {
@@ -383,7 +410,7 @@ impl MetalStream {
         &mut self,
         regions: &[(crate::memory::MetalBufferHandle, u64, u64)],
     ) -> Result<(MetalEvent, Vec<Retained<ProtocolObject<dyn MTLBuffer>>>), ServerError> {
-        use objc2_metal::{MTLBlitCommandEncoder, MTLCommandEncoder, MTLEvent, MTLResourceOptions};
+        use objc2_metal::{MTLBlitCommandEncoder, MTLCommandEncoder, MTLResourceOptions};
 
         let command_buffer = (*self.queue)
             .commandBuffer()
@@ -413,18 +440,20 @@ impl MetalStream {
         }
         blit.endEncoding();
 
+        // Signaled by the completion handler rather than the GPU: handlers
+        // run in queue order, so by then a fault of any earlier buffer of
+        // this stream is recorded, and the read fails on it instead of
+        // returning bytes the faulted work never wrote.
         self.event_counter += 1;
         let value = self.event_counter;
-        let event_ref: &ProtocolObject<dyn MTLEvent> =
-            ProtocolObject::from_ref(&*self.shared_event);
-        command_buffer.encodeSignalEvent_value(event_ref, value);
-        install_completion_handler(
+        install_completion_handler_signaling(
             &command_buffer,
             Vec::new(),
             Some((self.shared_event.clone(), value)),
             self.fault.clone(),
             0,
             false,
+            true,
         );
         command_buffer.commit();
         self.last_command_buffer = Some(command_buffer);

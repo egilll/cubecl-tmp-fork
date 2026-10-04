@@ -52,7 +52,6 @@ pub enum FloatKind {
 
 impl FloatKind {
     pub fn to_type(&self, ctx: &Context) -> TypeHandle {
-        use crate::ContextExt;
         match self {
             FloatKind::E2M1 => Float4E2M1Type::get(ctx).into(),
             FloatKind::E2M1x2 => Float4E2M1x2Type::get(ctx).into(),

@@ -8,10 +8,8 @@ use cubecl_ir::{
         math::IAddOp,
     },
     ident,
-    interfaces::ScalarType,
     metadata::Info,
     prelude::*,
-    try_cast_ty,
     types::{ArrayType, RuntimeArrayType, scalar::IndexType},
 };
 use itertools::Itertools;

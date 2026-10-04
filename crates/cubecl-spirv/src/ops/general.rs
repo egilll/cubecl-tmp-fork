@@ -4,10 +4,9 @@ use cubecl_ir::{
         general::{self, BufferLenOp, ReadScalarOp, ShapeOp, StrideOp},
         math::IAddOp,
     },
-    interfaces::{ScalarType, TypedExt},
+    interfaces::TypedExt,
     metadata::Info,
     prelude::*,
-    try_cast_ty,
 };
 use cubecl_opt::passes::uniformity::{DEVICE_UNIFORM, op_dyn_uniformity};
 use pliron_spirv::{
