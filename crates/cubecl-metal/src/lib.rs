@@ -25,6 +25,8 @@ mod tests_hazards;
 mod tests_launch_errors;
 #[cfg(test)]
 mod tests_multistream;
+#[cfg(test)]
+mod tests_reads;
 
 #[cfg(test)]
 mod tests {

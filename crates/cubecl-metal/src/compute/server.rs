@@ -112,6 +112,13 @@ fn resolve_origin_resource(
     Ok((resource, offset, storage_handle.size()))
 }
 
+/// Staging buffers a pending read owns until it copies out of them.
+struct SendBuffers(Vec<Retained<ProtocolObject<dyn objc2_metal::MTLBuffer>>>);
+
+// SAFETY: the buffers are shared-storage `MTLBuffer`s, retained atomically,
+// and only read on the CPU once the GPU work writing them completed.
+unsafe impl Send for SendBuffers {}
+
 /// The identity of the `MTLBuffer` behind a resource, for hazard tracking.
 fn buffer_address(resource: &MetalBufferHandle) -> usize {
     let buffer: &ProtocolObject<dyn MTLBuffer> = resource.inner().as_ref();
@@ -259,37 +266,98 @@ impl Server for MetalServer {
             .resolve(stream_id, descriptors.iter().map(|d| &d.handle))
             .expect("creating a Metal stream never fails");
 
-        // Flush, wait, then read.
-        let (stream, failures) = resolved.current_and_failures();
-        let event = MetalStreamBackend::flush(stream, failures);
-
-        if let Err(e) = MetalStreamBackend::wait_event_sync(event) {
-            return Box::pin(async move { Err(e) });
-        }
-
-        let results: Result<Vec<_>, ServerError> = descriptors
+        // Each region, resolved while the server is at hand.
+        let regions: Result<Vec<_>, ServerError> = descriptors
             .iter()
             .map(|descriptor| {
-                let (resource, offset, _) =
-                    resolve_origin_resource(&mut resolved, &descriptor.handle)
-                        .map_err(ServerError::from)?;
-
-                let buffer = resource.inner();
-                let protocol_obj: &ProtocolObject<dyn MTLBuffer> = buffer.as_ref();
-                let base_ptr = protocol_obj.contents().as_ptr() as *const u8;
-                let src_ptr = unsafe { base_ptr.add(offset as usize) };
-                let bytes = read_pitched(
-                    src_ptr,
-                    &descriptor.shape,
-                    &descriptor.strides,
-                    descriptor.elem_size,
-                );
-
-                Ok(Bytes::from_bytes_vec(bytes))
+                resolve_origin_resource(&mut resolved, &descriptor.handle)
+                    .map_err(ServerError::from)
             })
             .collect();
+        let regions = match regions {
+            Ok(regions) => regions,
+            Err(err) => return Box::pin(async move { Err(err) }),
+        };
 
-        Box::pin(async move { results })
+        let (stream, failures) = resolved.current_and_failures();
+        let bindings: Vec<BufferBinding> = descriptors.iter().map(|d| d.handle.clone()).collect();
+        let local = descriptors.iter().all(|d| d.handle.stream == stream_id);
+        let faulted = stream.fault.slot.lock().is_some();
+        let pending = stream.pending_writer(&bindings);
+
+        // Everything that writes these bytes already ran: copy them now,
+        // without waiting for the rest of the stream.
+        if local && !faulted && pending.is_none() {
+            let results = descriptors
+                .iter()
+                .zip(&regions)
+                .map(|(descriptor, (resource, offset, _))| {
+                    let buffer: &ProtocolObject<dyn MTLBuffer> = resource.inner().as_ref();
+                    let base_ptr = buffer.contents().as_ptr() as *const u8;
+                    let src_ptr = unsafe { base_ptr.add(*offset as usize) };
+                    Bytes::from_bytes_vec(read_pitched(
+                        src_ptr,
+                        &descriptor.shape,
+                        &descriptor.strides,
+                        descriptor.elem_size,
+                    ))
+                })
+                .collect();
+            return Box::pin(async move { Ok(results) });
+        }
+
+        // Otherwise copy on the GPU, in stream order, into staging the read
+        // owns: the copy sees exactly the writes submitted before the read,
+        // and no later launch can change what it returns. The future then
+        // waits for that copy only, without blocking a thread.
+        let blittable = regions
+            .iter()
+            .all(|(_, offset, size)| offset % 4 == 0 && size % 4 == 0 && *size > 0);
+        let flushed = MetalStreamBackend::flush(stream, failures);
+        if !blittable {
+            let waited = MetalStreamBackend::wait_event_sync(flushed);
+            let results = waited.map(|()| {
+                descriptors
+                    .iter()
+                    .zip(&regions)
+                    .map(|(descriptor, (resource, offset, _))| {
+                        let buffer: &ProtocolObject<dyn MTLBuffer> = resource.inner().as_ref();
+                        let base_ptr = buffer.contents().as_ptr() as *const u8;
+                        let src_ptr = unsafe { base_ptr.add(*offset as usize) };
+                        Bytes::from_bytes_vec(read_pitched(
+                            src_ptr,
+                            &descriptor.shape,
+                            &descriptor.strides,
+                            descriptor.elem_size,
+                        ))
+                    })
+                    .collect()
+            });
+            return Box::pin(async move { results });
+        }
+
+        let (event, stagings) = match stream.copy_to_staging(&regions) {
+            Ok(it) => it,
+            Err(err) => return Box::pin(async move { Err(err) }),
+        };
+        let layouts: Vec<_> = descriptors
+            .into_iter()
+            .map(|d| (d.shape, d.strides, d.elem_size))
+            .collect();
+        let stagings = SendBuffers(stagings);
+        Box::pin(async move {
+            event.completion().await?;
+            let stagings = stagings;
+            Ok(stagings
+                .0
+                .iter()
+                .zip(&layouts)
+                .map(|(staging, (shape, strides, elem_size))| {
+                    let base_ptr = staging.contents().as_ptr() as *const u8;
+                    Bytes::from_bytes_vec(read_pitched(base_ptr, shape, strides, *elem_size))
+                })
+                .collect())
+        })
     }
 
     fn write(&mut self, descriptors: Vec<(CopyDescriptor, Bytes)>, stream_id: StreamId) {
@@ -633,12 +701,34 @@ impl Server for MetalServer {
         }
         let mut resolved = self
             .streams
-            .resolve(stream_id, std::iter::empty())
+            .resolve(stream_id, handles.iter())
             .expect("creating a Metal stream never fails");
         let (stream, failures) = resolved.current_and_failures();
+        // Waiting on particular buffers needs only the work that writes them;
+        // with none named, everything submitted so far.
+        let local = handles.iter().all(|handle| handle.stream == stream_id);
+        let faulted = stream.fault.slot.lock().is_some();
+        if !handles.is_empty() && local && !faulted {
+            match stream.pending_writer(&handles) {
+                None => return Box::pin(async { Ok(()) }),
+                Some(seq) => {
+                    let open = stream
+                        .active_encoder
+                        .as_ref()
+                        .is_some_and(|active| active.seq == seq);
+                    if !open && let Some(value) = stream.event_for_batch(seq) {
+                        let event = crate::compute::stream::MetalEvent::new(
+                            stream.shared_event.clone(),
+                            value,
+                            stream.fault.clone(),
+                        );
+                        return Box::pin(event.completion());
+                    }
+                }
+            }
+        }
         let fence = MetalStreamBackend::flush(stream, failures);
-
-        Box::pin(async move { MetalStreamBackend::wait_event_sync(fence) })
+        Box::pin(fence.completion())
     }
 
     fn reset_stream(&mut self, stream_id: StreamId) -> Result<(), ServerError> {

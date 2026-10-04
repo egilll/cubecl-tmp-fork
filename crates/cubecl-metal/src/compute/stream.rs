@@ -266,6 +266,9 @@ pub struct MetalStream {
     /// carried them, until a completion confirms it: what a fault leaves
     /// unwritten, so what [`MetalStream::reset`] fails.
     pub unconfirmed_writes: Vec<(u64, BufferBinding)>,
+    /// The event value each recently flushed batch signals, by sequence
+    /// number, so a host access can wait for just the batch it needs.
+    pub batch_events: std::collections::VecDeque<(u64, u64)>,
 }
 
 impl std::fmt::Debug for MetalStream {
@@ -373,6 +376,87 @@ impl MetalStream {
             .extend(bindings.into_iter().map(|binding| (seq, binding)));
     }
 
+    /// Copy each `(buffer, offset, size)` region into a fresh shared staging
+    /// buffer, in a command buffer committed after everything this stream
+    /// submitted so far, and return the event that signals the copies.
+    pub fn copy_to_staging(
+        &mut self,
+        regions: &[(crate::memory::MetalBufferHandle, u64, u64)],
+    ) -> Result<(MetalEvent, Vec<Retained<ProtocolObject<dyn MTLBuffer>>>), ServerError> {
+        use objc2_metal::{MTLBlitCommandEncoder, MTLCommandEncoder, MTLEvent, MTLResourceOptions};
+
+        let command_buffer = (*self.queue)
+            .commandBuffer()
+            .expect("Failed to create command buffer");
+        let blit = command_buffer
+            .blitCommandEncoder()
+            .expect("Failed to create blit command encoder");
+        let mut stagings = Vec::with_capacity(regions.len());
+        for (resource, offset, size) in regions {
+            let staging = (*self.device)
+                .newBufferWithLength_options(*size as usize, MTLResourceOptions::StorageModeShared)
+                .ok_or_else(|| ServerError::Generic {
+                    reason: format!("failed to allocate a {size} B staging buffer for a read"),
+                    backtrace: cubecl_environment::backtrace::BackTrace::capture(),
+                })?;
+            let source: &ProtocolObject<dyn MTLBuffer> = resource.inner().as_ref();
+            unsafe {
+                blit.copyFromBuffer_sourceOffset_toBuffer_destinationOffset_size(
+                    source,
+                    *offset as usize,
+                    &staging,
+                    0,
+                    *size as usize,
+                );
+            }
+            stagings.push(staging);
+        }
+        blit.endEncoding();
+
+        self.event_counter += 1;
+        let value = self.event_counter;
+        let event_ref: &ProtocolObject<dyn MTLEvent> =
+            ProtocolObject::from_ref(&*self.shared_event);
+        command_buffer.encodeSignalEvent_value(event_ref, value);
+        install_completion_handler(
+            &command_buffer,
+            Vec::new(),
+            Some((self.shared_event.clone(), value)),
+            self.fault.clone(),
+            0,
+            false,
+        );
+        command_buffer.commit();
+        self.last_command_buffer = Some(command_buffer);
+        Ok((
+            MetalEvent::new(self.shared_event.clone(), value, self.fault.clone()),
+            stagings,
+        ))
+    }
+
+    /// The newest command buffer that writes into any of `bindings` and
+    /// hasn't completed yet, if any.
+    pub fn pending_writer(&self, bindings: &[BufferBinding]) -> Option<u64> {
+        let confirmed = self
+            .fault
+            .confirmed
+            .load(core::sync::atomic::Ordering::Acquire);
+        self.unconfirmed_writes
+            .iter()
+            .filter(|(seq, _)| *seq > confirmed)
+            .filter(|(_, written)| bindings.iter().any(|binding| overlaps(written, binding)))
+            .map(|(seq, _)| *seq)
+            .max()
+    }
+
+    /// The event value the flushed batch `seq` signals, if it is still known.
+    pub fn event_for_batch(&self, seq: u64) -> Option<u64> {
+        self.batch_events
+            .iter()
+            .find(|(batch, _)| *batch == seq)
+            .map(|(_, value)| *value)
+    }
+
     /// Recover from an execution fault: wait for what was submitted, then
     /// start over with a new queue and an empty fault slot. Returns the fault
     /// and the buffers whose writes it may have lost, which the caller fails,
@@ -421,6 +505,13 @@ impl MetalStream {
             self.submitted_ops = 0;
         }
     }
+}
+
+/// Whether two bindings share bytes of one allocation.
+fn overlaps(a: &BufferBinding, b: &BufferBinding) -> bool {
+    let (id_a, start_a, end_a) = a.claim_key();
+    let (id_b, start_b, end_b) = b.claim_key();
+    id_a == id_b && start_a < end_b && start_b < end_a
 }
 
 /// Metal event for synchronization using `MTLSharedEvent`.
@@ -479,6 +570,16 @@ impl MetalEvent {
         Ok(())
     }
 
+    /// Resolves once the event is signaled, without blocking a thread: the
+    /// event's listener wakes the future. Fails as [`wait_sync`](Self::wait_sync)
+    /// does when the stream faulted.
+    pub fn completion(self) -> impl core::future::Future<Output = Result<(), ServerError>> + Send {
+        EventCompletion {
+            event: self,
+            state: Arc::new(Mutex::new(ListenState::default())),
+        }
+    }
+
     pub fn wait_async(self, stream: &mut MetalStream) {
         use objc2_metal::{MTLCommandBuffer, MTLCommandEncoder, MTLEvent};
 
@@ -510,6 +611,70 @@ impl MetalEvent {
             ProtocolObject::from_ref(&*self.shared_event);
         (*command_buffer).encodeWaitForEvent_value(event_ref, self.value);
         (*command_buffer).commit();
+    }
+}
+
+#[derive(Default)]
+struct ListenState {
+    registered: bool,
+    waker: Option<core::task::Waker>,
+}
+
+struct EventCompletion {
+    event: MetalEvent,
+    state: Arc<Mutex<ListenState>>,
+}
+
+// SAFETY: as `MetalEvent`; the listener state is behind a mutex.
+unsafe impl Send for EventCompletion {}
+
+impl core::future::Future for EventCompletion {
+    type Output = Result<(), ServerError>;
+
+    fn poll(
+        self: core::pin::Pin<&mut Self>,
+        cx: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<Self::Output> {
+        let this = self.get_mut();
+        if this.event.is_complete() {
+            std::sync::atomic::fence(std::sync::atomic::Ordering::Acquire);
+            return core::task::Poll::Ready(match this.event.fault.slot.lock().clone() {
+                Some(fault) => Err(fault.into_error()),
+                None => Ok(()),
+            });
+        }
+        let mut state = this.state.lock();
+        state.waker = Some(cx.waker().clone());
+        if !state.registered {
+            state.registered = true;
+            let shared = this.state.clone();
+            let block = block2::RcBlock::new(
+                move |_: NonNull<ProtocolObject<dyn MTLSharedEvent>>, _: u64| {
+                    if let Some(waker) = shared.lock().waker.take() {
+                        waker.wake();
+                    }
+                },
+            );
+            let listener = objc2_metal::MTLSharedEventListener::new();
+            // SAFETY: Metal copies the block; it only touches the mutex-held
+            // waker, from Metal's notification queue. A value already reached
+            // notifies at once.
+            unsafe {
+                this.event.shared_event.notifyListener_atValue_block(
+                    &listener,
+                    this.event.value,
+                    block2::RcBlock::as_ptr(&block) as *mut _,
+                );
+            }
+        }
+        drop(state);
+        // The event may have been signaled between the check and the
+        // registration; the listener then fires at once, but check again so
+        // a missed wake can't strand the future.
+        if this.event.is_complete() {
+            cx.waker().wake_by_ref();
+        }
+        core::task::Poll::Pending
     }
 }
 
@@ -589,6 +754,7 @@ impl EventStreamBackend for MetalStreamBackend {
             fault: Arc::new(FaultState::default()),
             batch_seq: 0,
             unconfirmed_writes: Vec::new(),
+            batch_events: std::collections::VecDeque::new(),
         })
     }
 
@@ -613,6 +779,12 @@ impl EventStreamBackend for MetalStreamBackend {
                 (*active.command_buffer).encodeSignalEvent_value(event_ref, signal_value);
             }
 
+            if !active.inject_fault {
+                stream.batch_events.push_back((active.seq, signal_value));
+                if stream.batch_events.len() > 512 {
+                    stream.batch_events.pop_front();
+                }
+            }
             install_completion_handler(
                 &active.command_buffer,
                 active.temporaries,
