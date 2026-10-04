@@ -374,6 +374,8 @@ impl Server for MetalServer {
         // failure in it leaves nothing stale, and tainting its buffers would
         // fail unrelated reads of memory the run deliberately left alone.
         let kernel_id = kernel.id();
+        #[cfg(test)]
+        let kernel_name = kernel.name().to_string();
         let compiled = (|| {
             cubecl_server::validation::validate_cube_dim(&self.utilities.properties, &kernel_id)?;
             cubecl_server::validation::validate_units(&self.utilities.properties, &kernel_id)?;
@@ -409,6 +411,9 @@ impl Server for MetalServer {
         // the launch instead, and the scope settles that too.
         let mut written = self.write_set();
         written.extend(bindings.buffers_written(io.as_deref()).cloned());
+        // What a fault in this launch's command buffer would leave unwritten.
+        let lost_on_fault: Vec<BufferBinding> =
+            bindings.buffers_written(io.as_deref()).cloned().collect();
         // A dynamic count travels outside `resources`, so `buffers_read`
         // never names it — yet the dispatch reads it as its grid dimensions,
         // which is exactly the garbage-as-cube-count read the skip exists to
@@ -597,6 +602,13 @@ impl Server for MetalServer {
 
             stream.batch_ops += 1;
             stream.batch_bytes += total_buffer_bytes;
+            stream.note_writes(lost_on_fault);
+            #[cfg(test)]
+            if kernel_name.contains("inject_execution_fault")
+                && let Some(active) = stream.active_encoder.as_mut()
+            {
+                active.inject_fault = true;
+            }
 
             let needs_flush = stream.batch_ops > stream.max_ops_per_batch
                 || (stream.batch_bytes >> 20) > stream.max_mb_per_batch;
@@ -627,6 +639,22 @@ impl Server for MetalServer {
         let fence = MetalStreamBackend::flush(stream, failures);
 
         Box::pin(async move { MetalStreamBackend::wait_event_sync(fence) })
+    }
+
+    fn reset_stream(&mut self, stream_id: StreamId) -> Result<(), ServerError> {
+        let mut resolved = self
+            .streams
+            .resolve(stream_id, std::iter::empty())
+            .expect("creating a Metal stream never fails");
+        let (stream, _) = resolved.current_and_failures();
+        let Some((fault, lost)) = stream.reset() else {
+            return Ok(());
+        };
+        drop(resolved);
+        // A read of anything the faulted work was writing fails on the fault
+        // from now on, instead of returning the bytes that were there before.
+        failed_writing(self, stream_id, lost, fault.into_error());
+        Ok(())
     }
 
     fn check(

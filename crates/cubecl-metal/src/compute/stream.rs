@@ -1,5 +1,6 @@
 use crate::compute::copies::MetalCopies;
 use crate::memory::MetalStorage;
+use cubecl_core::server::ExecutionFaultKind;
 use cubecl_core::{MemoryConfiguration, server::ServerError};
 use cubecl_environment::sync::Mutex;
 use cubecl_ir::MemoryDeviceProperties;
@@ -14,8 +15,8 @@ use cubecl_server::{
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_metal::{
-    MTLBuffer, MTLCommandBuffer, MTLCommandBufferStatus, MTLCommandQueue, MTLComputeCommandEncoder,
-    MTLDevice, MTLDispatchType, MTLSharedEvent,
+    MTLBuffer, MTLCommandBuffer, MTLCommandBufferError, MTLCommandBufferStatus, MTLCommandQueue,
+    MTLComputeCommandEncoder, MTLDevice, MTLDispatchType, MTLSharedEvent,
 };
 use std::ptr::NonNull;
 use std::sync::Arc;
@@ -28,6 +29,12 @@ pub struct ActiveEncoder {
     pub temporaries: Vec<Retained<ProtocolObject<dyn MTLBuffer>>>,
     /// What the dispatches since the last barrier touch.
     pub hazards: Hazards,
+    /// This command buffer's place in the stream's order, see
+    /// [`FaultState::confirmed`].
+    pub seq: u64,
+    /// Report a fault when it completes, for tests of recovery: a real GPU
+    /// fault can't be caused on demand. Only tests set it.
+    pub inject_fault: bool,
 }
 
 /// A byte range of one `MTLBuffer`, keyed by the buffer's address.
@@ -83,6 +90,59 @@ impl Hazards {
     }
 }
 
+/// What a stream's completion handlers report back.
+#[derive(Debug, Default)]
+pub struct FaultState {
+    /// The first failure, sticky until the stream is reset.
+    pub slot: Mutex<Option<StreamFault>>,
+    /// The sequence number of the last command buffer that completed with no
+    /// fault before it: the writes of every batch up to it landed.
+    pub confirmed: core::sync::atomic::AtomicU64,
+}
+
+/// The first failure a stream's command buffers reported.
+#[derive(Debug, Clone)]
+pub struct StreamFault {
+    pub kind: ExecutionFaultKind,
+    pub reason: String,
+}
+
+impl StreamFault {
+    /// Classify a failed command buffer from its `MTLCommandBufferError` code
+    /// and its messages. The causes macOS reports through IOGPU
+    /// (`kIOGPUCommandBufferCallbackError…`) only appear in the error's
+    /// description and underlying error, so those are matched by name.
+    pub(crate) fn classify(code: isize, description: &str, debug: &str) -> Self {
+        let text = format!("{description} {debug}");
+        let has = |needles: &[&str]| needles.iter().any(|needle| text.contains(needle));
+        let kind = if has(&["ImpactingInteractivity", "Impacting Interactivity"]) {
+            ExecutionFaultKind::Interactivity
+        } else if has(&["InnocentVictim", "Innocent Victim"]) {
+            ExecutionFaultKind::InnocentVictim
+        } else if code == MTLCommandBufferError::PageFault.0 as isize || has(&["PageFault"]) {
+            ExecutionFaultKind::PageFault
+        } else if code == MTLCommandBufferError::Timeout.0 as isize || has(&["Hang", "Timeout"]) {
+            ExecutionFaultKind::Timeout
+        } else if code == MTLCommandBufferError::OutOfMemory.0 as isize {
+            ExecutionFaultKind::OutOfMemory
+        } else {
+            ExecutionFaultKind::Unknown
+        };
+        Self {
+            kind,
+            reason: description.to_string(),
+        }
+    }
+
+    pub fn into_error(self) -> ServerError {
+        ServerError::ExecutionFault {
+            kind: self.kind,
+            reason: self.reason,
+            backtrace: cubecl_environment::backtrace::BackTrace::capture(),
+        }
+    }
+}
+
 /// Installs a completion handler that drops `temporaries` and, on a failed
 /// command buffer, records the fault on the stream's sticky slot. `signal_event`
 /// is `Some` when the buffer signals an event; it is forced on failure so
@@ -92,7 +152,9 @@ fn install_completion_handler(
     command_buffer: &ProtocolObject<dyn MTLCommandBuffer>,
     temporaries: Vec<Retained<ProtocolObject<dyn MTLBuffer>>>,
     signal_event: Option<(Retained<ProtocolObject<dyn MTLSharedEvent>>, u64)>,
-    fault: Arc<Mutex<Option<String>>>,
+    state: Arc<FaultState>,
+    seq: u64,
+    injected: bool,
 ) {
     let temporaries = Mutex::new(Some(temporaries));
     let block = block2::RcBlock::new(
@@ -100,15 +162,36 @@ fn install_completion_handler(
             let _ = temporaries.lock().take();
 
             let cmd_buf = unsafe { cmd_buf.as_ref() };
-            if cmd_buf.status() == MTLCommandBufferStatus::Error {
-                let reason = match cmd_buf.error() {
-                    Some(err) => format!(
-                        "Metal command buffer failed: {}",
-                        err.localizedDescription()
+            if cmd_buf.status() != MTLCommandBufferStatus::Error && !injected {
+                // Buffers complete in queue order, so everything up to this
+                // one ran, unless an earlier one already faulted.
+                if state.slot.lock().is_none() {
+                    state
+                        .confirmed
+                        .fetch_max(seq, core::sync::atomic::Ordering::AcqRel);
+                }
+            } else {
+                let fault = match cmd_buf.error().filter(|_| !injected) {
+                    Some(err) => StreamFault::classify(
+                        err.code(),
+                        &format!("{}", err.localizedDescription()),
+                        &format!("{err:?}"),
                     ),
-                    None => "Metal command buffer failed with an unknown error".to_string(),
+                    None => StreamFault {
+                        kind: ExecutionFaultKind::Unknown,
+                        reason: match injected {
+                            true => "a fault injected by a test".to_string(),
+                            false => {
+                                "Metal command buffer failed with an unknown error".to_string()
+                            }
+                        },
+                    },
                 };
-                log::warn!("{reason}");
+                log::warn!(
+                    "Metal command buffer failed ({}): {}",
+                    fault.kind,
+                    fault.reason
+                );
 
                 // A fault at execution time can name no buffer: the work's
                 // claims were released at enqueue — a claim covers enqueue,
@@ -119,9 +202,9 @@ fn install_completion_handler(
                 // writes taint their destinations with it. First fault wins,
                 // and none is ever cleared — clearing is exactly how stale
                 // bytes would start reading clean again.
-                let mut slot = fault.lock();
+                let mut slot = state.slot.lock();
                 if slot.is_none() {
-                    *slot = Some(reason);
+                    *slot = Some(fault);
                 }
 
                 // Metal leaves encoded events unsignaled on fault; signal
@@ -176,7 +259,13 @@ pub struct MetalStream {
     /// [`MetalEvent`], whose waits fail on it — see
     /// [`install_completion_handler`] for why the fault lives here and not on
     /// a buffer.
-    pub fault: Arc<Mutex<Option<String>>>,
+    pub fault: Arc<FaultState>,
+    /// The sequence number of the last command buffer opened.
+    pub batch_seq: u64,
+    /// What launches wrote, by the sequence number of the command buffer that
+    /// carried them, until a completion confirms it: what a fault leaves
+    /// unwritten, so what [`MetalStream::reset`] fails.
+    pub unconfirmed_writes: Vec<(u64, BufferBinding)>,
 }
 
 impl std::fmt::Debug for MetalStream {
@@ -221,11 +310,14 @@ impl MetalStream {
                 .computeCommandEncoderWithDispatchType(MTLDispatchType::Concurrent)
                 .expect("Failed to create compute command encoder");
 
+            self.batch_seq += 1;
             self.active_encoder = Some(ActiveEncoder {
                 command_buffer,
                 encoder,
                 temporaries: Vec::new(),
                 hazards: Hazards::default(),
+                seq: self.batch_seq,
+                inject_fault: false,
             });
         }
 
@@ -244,6 +336,8 @@ impl MetalStream {
                 active.temporaries,
                 None,
                 self.fault.clone(),
+                active.seq,
+                active.inject_fault,
             );
             (*active.command_buffer).commit();
             // As a flush does: an open profile measures the dispatches this
@@ -263,6 +357,44 @@ impl MetalStream {
         }
         // Everything submitted has run, so nothing is left to regulate.
         self.submitted_ops = 0;
+    }
+
+    /// Record that the open command buffer writes `bindings`.
+    pub fn note_writes(&mut self, bindings: impl IntoIterator<Item = BufferBinding>) {
+        let seq = self.batch_seq;
+        if self.unconfirmed_writes.len() >= 1024 {
+            let confirmed = self
+                .fault
+                .confirmed
+                .load(core::sync::atomic::Ordering::Acquire);
+            self.unconfirmed_writes.retain(|(s, _)| *s > confirmed);
+        }
+        self.unconfirmed_writes
+            .extend(bindings.into_iter().map(|binding| (seq, binding)));
+    }
+
+    /// Recover from an execution fault: wait for what was submitted, then
+    /// start over with a new queue and an empty fault slot. Returns the fault
+    /// and the buffers whose writes it may have lost, which the caller fails,
+    /// or `None` when the stream has no fault.
+    pub fn reset(&mut self) -> Option<(StreamFault, Vec<BufferBinding>)> {
+        let fault = self.fault.slot.lock().clone()?;
+        self.finish();
+        let confirmed = self
+            .fault
+            .confirmed
+            .load(core::sync::atomic::Ordering::Acquire);
+        let lost = core::mem::take(&mut self.unconfirmed_writes)
+            .into_iter()
+            .filter(|(seq, _)| *seq > confirmed)
+            .map(|(_, binding)| binding)
+            .collect();
+        self.queue = (*self.device)
+            .newCommandQueue()
+            .expect("Failed to create command queue");
+        // Handlers still in flight hold the old state; nothing new reads it.
+        self.fault = Arc::new(FaultState::default());
+        Some((fault, lost))
     }
 
     /// Empty the outdated pools into the current pages.
@@ -298,7 +430,7 @@ pub struct MetalEvent {
     pub value: u64,
     /// The stream's sticky fault slot, checked after every wait: a forced
     /// event completes the wait, and this is what fails it.
-    fault: Arc<Mutex<Option<String>>>,
+    fault: Arc<FaultState>,
 }
 
 // SAFETY: MTLSharedEvent's signaledValue is atomically updated by the GPU.
@@ -308,7 +440,7 @@ impl MetalEvent {
     pub fn new(
         shared_event: Retained<ProtocolObject<dyn MTLSharedEvent>>,
         value: u64,
-        fault: Arc<Mutex<Option<String>>>,
+        fault: Arc<FaultState>,
     ) -> Self {
         Self {
             shared_event,
@@ -341,11 +473,8 @@ impl MetalEvent {
             });
         }
         std::sync::atomic::fence(std::sync::atomic::Ordering::Acquire);
-        if let Some(reason) = self.fault.lock().clone() {
-            return Err(ServerError::Generic {
-                reason: format!("the Metal stream faulted at execution time: {reason}"),
-                backtrace: cubecl_environment::backtrace::BackTrace::capture(),
-            });
+        if let Some(fault) = self.fault.slot.lock().clone() {
+            return Err(fault.into_error());
         }
         Ok(())
     }
@@ -367,6 +496,8 @@ impl MetalEvent {
                 active.temporaries,
                 None,
                 stream.fault.clone(),
+                active.seq,
+                active.inject_fault,
             );
             (*active.command_buffer).commit();
         }
@@ -455,7 +586,9 @@ impl EventStreamBackend for MetalStreamBackend {
             last_command_buffer: None,
             profiling: None,
             timestamps: TimestampProfiler::default(),
-            fault: Arc::new(Mutex::new(None)),
+            fault: Arc::new(FaultState::default()),
+            batch_seq: 0,
+            unconfirmed_writes: Vec::new(),
         })
     }
 
@@ -470,15 +603,23 @@ impl EventStreamBackend for MetalStreamBackend {
         let command_buffer = if let Some(active) = stream.active_encoder.take() {
             (*active.encoder).endEncoding();
 
-            let event_ref: &ProtocolObject<dyn MTLEvent> =
-                ProtocolObject::from_ref(&*stream.shared_event);
-            (*active.command_buffer).encodeSignalEvent_value(event_ref, signal_value);
+            // Metal never signals a faulted command buffer's event; its
+            // completion handler does, after recording the fault. An injected
+            // fault has to look the same, or a wait could see the signal
+            // before the fault.
+            if !active.inject_fault {
+                let event_ref: &ProtocolObject<dyn MTLEvent> =
+                    ProtocolObject::from_ref(&*stream.shared_event);
+                (*active.command_buffer).encodeSignalEvent_value(event_ref, signal_value);
+            }
 
             install_completion_handler(
                 &active.command_buffer,
                 active.temporaries,
                 signal,
                 stream.fault.clone(),
+                active.seq,
+                active.inject_fault,
             );
             (*active.command_buffer).commit();
             active.command_buffer
@@ -490,7 +631,15 @@ impl EventStreamBackend for MetalStreamBackend {
             let event_ref: &ProtocolObject<dyn MTLEvent> =
                 ProtocolObject::from_ref(&*stream.shared_event);
             (*signal_buffer).encodeSignalEvent_value(event_ref, signal_value);
-            install_completion_handler(&signal_buffer, Vec::new(), signal, stream.fault.clone());
+            // Carries no work, so it confirms nothing.
+            install_completion_handler(
+                &signal_buffer,
+                Vec::new(),
+                signal,
+                stream.fault.clone(),
+                0,
+                false,
+            );
             (*signal_buffer).commit();
             signal_buffer
         };

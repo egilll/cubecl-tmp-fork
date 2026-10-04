@@ -343,6 +343,39 @@ impl core::fmt::Debug for ResourceLimitError {
     }
 }
 
+/// What went wrong when submitted work failed on the device.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(serializable, derive(serde::Serialize, serde::Deserialize))]
+pub enum ExecutionFaultKind {
+    /// A kernel accessed memory it doesn't own: a bug in the kernel or in
+    /// the lengths it was given.
+    PageFault,
+    /// The system aborted the work because it kept the GPU from the display
+    /// for too long. Contention, not a bug: split long dispatches.
+    Interactivity,
+    /// Another process's fault reset the GPU, taking this work with it.
+    InnocentVictim,
+    /// The work hung, or ran past the driver's time limit.
+    Timeout,
+    /// The device ran out of memory while running the work.
+    OutOfMemory,
+    /// Anything the driver doesn't say more about.
+    Unknown,
+}
+
+impl Display for ExecutionFaultKind {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Self::PageFault => "page fault",
+            Self::Interactivity => "aborted for interactivity",
+            Self::InnocentVictim => "innocent victim of another fault",
+            Self::Timeout => "timeout",
+            Self::OutOfMemory => "out of memory",
+            Self::Unknown => "unknown",
+        })
+    }
+}
+
 /// A collective operation between the devices of one runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(serializable, derive(serde::Serialize, serde::Deserialize))]
@@ -442,6 +475,23 @@ pub enum ServerError {
     /// sticky (an illegal address, a trap, a hardware fault, etc.)
     #[error("The device is poisoned\nCaused by:\n  {0}")]
     DevicePoisoned(#[from] DevicePoison),
+
+    /// Work already submitted on a stream failed while the device ran it, so
+    /// what it was writing was never written. The stream keeps failing every
+    /// wait until [`reset_stream`](crate::client::Client::reset_stream) on a
+    /// runtime that supports it.
+    #[error(
+        "An execution fault ({kind}) happened on a stream\nCaused by:\n  {reason}\nBacktrace:\n{backtrace}"
+    )]
+    ExecutionFault {
+        /// What the driver says went wrong.
+        kind: ExecutionFaultKind,
+        /// The driver's own message.
+        reason: String,
+        /// The backtrace for this error.
+        #[cfg_attr(serializable, serde(skip))]
+        backtrace: BackTrace,
+    },
 
     /// A launch error happened
     #[error("A launch error happened\nCaused by:\n  {0}")]
@@ -807,6 +857,22 @@ pub trait Server:
     /// Refused while a stream records a graph: releasing memory waits on the
     /// device, and a wait on a stream that records aborts its capture.
     fn memory_cleanup(&mut self, stream_id: StreamId) -> Result<(), ServerError>;
+
+    /// Recover `stream_id` after an [execution fault](ServerError::ExecutionFault):
+    /// wait for what it submitted, fail every buffer whose write the fault
+    /// may have lost (a later read of one reports the fault), and continue
+    /// with a fresh stream. A stream with no fault is left as it is.
+    ///
+    /// Runtimes that can't recover a single stream refuse.
+    fn reset_stream(&mut self, stream_id: StreamId) -> Result<(), ServerError> {
+        let _ = stream_id;
+        Err(ServerError::Generic {
+            reason: "this runtime can't reset a stream after an execution fault; \
+                     recreate the device instead"
+                .into(),
+            backtrace: BackTrace::capture(),
+        })
+    }
 
     /// Enable collecting timestamps.
     fn start_profile(&mut self, stream_id: StreamId) -> Result<ProfilingToken, ServerError>;

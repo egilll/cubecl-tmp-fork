@@ -18,6 +18,8 @@ mod tests_bf16_cast;
 #[cfg(test)]
 mod tests_expm1;
 #[cfg(test)]
+mod tests_faults;
+#[cfg(test)]
 mod tests_hazards;
 #[cfg(test)]
 mod tests_launch_errors;

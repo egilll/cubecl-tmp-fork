@@ -1555,6 +1555,25 @@ impl Client {
             .submit(move |server| server.allocation_mode(mode, stream_id));
     }
 
+    /// Recover this client's stream after an
+    /// [execution fault](ServerError::ExecutionFault).
+    ///
+    /// Every buffer the faulted work was writing is failed: reading it
+    /// reports the fault, and relaunching what writes it repairs it. Buffers
+    /// written by work that completed before the fault keep their contents.
+    /// New work on the stream runs normally afterwards.
+    ///
+    /// # Errors
+    ///
+    /// When the runtime can't recover a single stream; recreate the device
+    /// instead.
+    pub fn reset_stream(&self) -> Result<(), ServerError> {
+        let stream_id = self.stream_id();
+        self.device
+            .submit_blocking(move |server| server.reset_stream(stream_id))
+            .unwrap_or_resume()
+    }
+
     /// Ask the client to release memory that it can release.
     ///
     /// Nb: Results will vary on what the memory allocator deems beneficial,
