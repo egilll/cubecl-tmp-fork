@@ -367,6 +367,19 @@ pub struct InFlight {
     pub batches: u64,
 }
 
+/// Measured GPU time of the completed command buffers carrying one tag.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct TagTime {
+    /// Their GPU time, in microseconds.
+    pub micros: f64,
+    /// The cubes their dispatches launched.
+    pub cubes: u64,
+    /// How many there were.
+    pub batches: u64,
+    /// The longest one, in microseconds.
+    pub max_micros: f64,
+}
+
 /// What went wrong when submitted work failed on the device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(serializable, derive(serde::Serialize, serde::Deserialize))]
@@ -922,6 +935,20 @@ pub trait Server:
     /// Measured GPU time of completed work, in microseconds, by the label it
     /// was launched under. Never waits; work still in flight isn't counted.
     fn gpu_time_by_label(&mut self) -> Vec<(&'static str, u64)> {
+        Vec::new()
+    }
+
+    /// Tag `stream_id`'s launches from now on with `tag` (`None`: no tag),
+    /// independently of their label, for
+    /// [`gpu_time_by_tag`](Self::gpu_time_by_tag). Backends that don't time
+    /// work by tag ignore it.
+    fn set_tag(&mut self, stream_id: StreamId, tag: Option<&'static str>) {
+        let _ = (stream_id, tag);
+    }
+
+    /// Measured GPU time of completed work by the tag it was launched with.
+    /// Never waits; work still in flight isn't counted.
+    fn gpu_time_by_tag(&mut self) -> Vec<(&'static str, TagTime)> {
         Vec::new()
     }
 

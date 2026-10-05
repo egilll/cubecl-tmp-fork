@@ -295,6 +295,28 @@ impl Client {
             .unwrap_or_resume()
     }
 
+    /// Tag this client's launches from now on with `tag`, or with none.
+    /// Tags are independent of labels: a label groups work for reporting,
+    /// a tag identifies one kind of launch whose cost a caller learns from
+    /// [`gpu_time_by_tag`](Self::gpu_time_by_tag). A backend that can only
+    /// time whole batches commits the open batch when the tag changes, so a
+    /// tagged batch holds only that tag's launches.
+    pub fn set_tag(&self, tag: Option<&'static str>) {
+        let stream_id = self.stream_id();
+        self.device
+            .submit_blocking(move |server| server.set_tag(stream_id, tag))
+            .unwrap_or_resume()
+    }
+
+    /// Measured GPU time of completed work by tag (see
+    /// [`set_tag`](Self::set_tag)). Never waits. Backends that don't time
+    /// work by tag report nothing.
+    pub fn gpu_time_by_tag(&self) -> Vec<(&'static str, crate::server::TagTime)> {
+        self.device
+            .submit_blocking(move |server| server.gpu_time_by_tag())
+            .unwrap_or_resume()
+    }
+
     /// Resolves once less than `gpu_micros` of estimated GPU time is in
     /// flight on this client's stream, without blocking a thread.
     pub fn in_flight_below(&self, gpu_micros: u64) -> DynFut<()> {

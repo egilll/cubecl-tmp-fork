@@ -164,6 +164,45 @@ fn gpu_time_is_attributed_to_labels() {
 }
 
 #[test]
+fn tags_time_their_own_batches_under_a_label() {
+    let client = R::client(&Default::default()).lane(23);
+    let buffer = Buffer::<u32>::empty(&client, 1 << 16);
+    client.set_label(Some("test_outer"));
+    for (tag, cubes) in [("test_small_tile", 16u32), ("test_large_tile", 256)] {
+        client.set_tag(Some(tag));
+        fill::launch(
+            &client,
+            CubeCount::Static(cubes, 1, 1),
+            CubeDim::new_1d(256),
+            (&buffer).into(),
+            1,
+            2_000,
+        );
+        client.set_tag(None);
+    }
+    client.set_label(None);
+    cubecl_core::future::block_on(client.sync()).unwrap();
+    cubecl_core::future::block_on(client.in_flight_below(1));
+
+    let tags = client.gpu_time_by_tag();
+    let of = |name| tags.iter().find(|(tag, _)| *tag == name).unwrap().1;
+    let (small, large) = (of("test_small_tile"), of("test_large_tile"));
+    assert_eq!((small.cubes, small.batches), (16, 1), "{tags:?}");
+    assert_eq!((large.cubes, large.batches), (256, 1), "{tags:?}");
+    assert!(
+        large.max_micros > 0.0 && large.max_micros == large.micros,
+        "{tags:?}"
+    );
+    // Tags leave the label's accounting intact.
+    let labels = client.gpu_time_by_label();
+    assert!(
+        labels
+            .iter()
+            .any(|(label, micros)| *label == "test_outer" && *micros > 0)
+    );
+}
+
+#[test]
 fn barriers_between_dependent_dispatches_are_counted() {
     let client = R::client(&Default::default()).lane(22);
     let buffer = Buffer::<u32>::empty(&client, 256);

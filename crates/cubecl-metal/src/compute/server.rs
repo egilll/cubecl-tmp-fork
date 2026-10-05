@@ -793,6 +793,43 @@ impl Server for MetalServer {
         stream.label = label;
     }
 
+    fn set_tag(&mut self, stream_id: StreamId, tag: Option<&'static str>) {
+        let mut resolved = self
+            .streams
+            .resolve(stream_id, std::iter::empty())
+            .expect("creating a Metal stream never fails");
+        let (stream, failures) = resolved.current_and_failures();
+        if stream.tag == tag {
+            return;
+        }
+        if stream.batch_ops > 0 {
+            MetalStreamBackend::flush(stream, failures);
+        }
+        stream.tag = tag;
+    }
+
+    fn gpu_time_by_tag(&mut self) -> Vec<(&'static str, cubecl_core::server::TagTime)> {
+        let mut totals: std::collections::HashMap<&'static str, cubecl_core::server::TagTime> =
+            Default::default();
+        for stream_id in self.stream_ids() {
+            let mut resolved = self
+                .streams
+                .resolve(stream_id, std::iter::empty())
+                .expect("creating a Metal stream never fails");
+            let (stream, _) = resolved.current_and_failures();
+            for (tag, time) in stream.accounting.by_tag() {
+                let total = totals.entry(tag).or_default();
+                total.micros += time.micros;
+                total.cubes += time.cubes;
+                total.batches += time.batches;
+                total.max_micros = total.max_micros.max(time.max_micros);
+            }
+        }
+        let mut totals: Vec<_> = totals.into_iter().collect();
+        totals.sort_by_key(|(tag, _)| *tag);
+        totals
+    }
+
     fn gpu_time_by_label(&mut self) -> Vec<(&'static str, u64)> {
         let mut totals: std::collections::HashMap<&'static str, u64> = Default::default();
         for stream_id in self.stream_ids() {

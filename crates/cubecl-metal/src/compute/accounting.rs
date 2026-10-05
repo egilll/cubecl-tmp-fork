@@ -12,6 +12,7 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+use cubecl_core::server::TagTime;
 use cubecl_environment::sync::Mutex;
 
 /// What a dispatch is estimated by: its kernel and a class of its size.
@@ -33,6 +34,8 @@ pub struct Accounting {
     waiters: Mutex<Vec<(u64, Waker)>>,
     /// Measured GPU microseconds of completed batches, by label.
     by_label: Mutex<HashMap<&'static str, u64>>,
+    /// Measured GPU time of completed batches, by tag.
+    by_tag: Mutex<HashMap<&'static str, TagTime>>,
 }
 
 /// What a committed command buffer carries, for its completion handler.
@@ -44,6 +47,8 @@ pub struct BatchCost {
     pub estimate_micros: u64,
     /// The label its launches were made under.
     pub label: Option<&'static str>,
+    /// The tag its launches carried.
+    pub tag: Option<&'static str>,
 }
 
 /// The size class of a dispatch of `cubes` cubes: its power of two, so a
@@ -73,6 +78,15 @@ impl Accounting {
     pub fn completed(&self, batch: &BatchCost, gpu_micros: Option<f64>) {
         if let (Some(gpu_micros), Some(label)) = (gpu_micros, batch.label) {
             *self.by_label.lock().entry(label).or_default() += gpu_micros.round() as u64;
+        }
+        if let (Some(gpu_micros), Some(tag)) = (gpu_micros, batch.tag) {
+            let cubes: u64 = batch.dispatches.iter().map(|(_, cubes)| cubes).sum();
+            let mut tags = self.by_tag.lock();
+            let time = tags.entry(tag).or_default();
+            time.micros += gpu_micros;
+            time.cubes += cubes;
+            time.batches += 1;
+            time.max_micros = time.max_micros.max(gpu_micros);
         }
         if let Some(gpu_micros) = gpu_micros {
             let cubes: u64 = batch.dispatches.iter().map(|(_, cubes)| cubes).sum();
@@ -109,6 +123,15 @@ impl Accounting {
             .lock()
             .iter()
             .map(|(label, micros)| (*label, *micros))
+            .collect()
+    }
+
+    /// Measured GPU time so far, by tag.
+    pub fn by_tag(&self) -> Vec<(&'static str, TagTime)> {
+        self.by_tag
+            .lock()
+            .iter()
+            .map(|(tag, time)| (*tag, *time))
             .collect()
     }
 
@@ -169,6 +192,7 @@ mod tests {
             dispatches: vec![(key, 64), (key, 64)],
             estimate_micros: 2000,
             label: None,
+            tag: None,
         };
         accounting.committed(batch.estimate_micros);
         assert_eq!(accounting.in_flight(), (2000, 1));
@@ -184,6 +208,7 @@ mod tests {
                 dispatches: vec![(key, 64)],
                 estimate_micros: 128,
                 label: None,
+                tag: None,
             },
             Some(64.0 * 6.0),
         );
@@ -197,6 +222,7 @@ mod tests {
             dispatches: vec![],
             estimate_micros: 500,
             label: None,
+            tag: None,
         };
         accounting.committed(500);
         let mut below = core::pin::pin!(Below {
