@@ -114,7 +114,10 @@ pub fn test_typed_buffer_refuses_another_element<R: Runtime>(client: Client) {
         .downcast_ref::<alloc::string::String>()
         .cloned()
         .unwrap_or_default();
-    assert!(message.contains("f64") && message.contains("f32"), "{message}");
+    assert!(
+        message.contains("f64") && message.contains("f32"),
+        "{message}"
+    );
 }
 
 #[allow(missing_docs)]
