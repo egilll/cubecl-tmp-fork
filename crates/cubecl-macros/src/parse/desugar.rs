@@ -81,6 +81,30 @@ fn desugar_tuple_destructure(
     init: LocalInit,
     id: usize,
 ) -> Vec<Stmt> {
+    // A literal tuple binds each pattern to its own element, so a mutable
+    // binding of a constant element becomes a runtime variable as
+    // `let mut x = 0.0;` does.
+    let fields = fields.into_iter().collect::<Vec<_>>();
+    if let syn::Expr::Tuple(tuple) = &*init.expr
+        && tuple.elems.len() == fields.len()
+    {
+        let bindings = fields.iter().zip(&tuple.elems).map(|(pat, elem)| {
+            quote_spanned! {pat.span()=>
+                let #pat = #elem;
+            }
+        });
+        return parse_quote! {
+            #(#bindings)*
+        };
+    }
+    desugar_tuple_through_init(fields, init, id)
+}
+
+fn desugar_tuple_through_init(
+    fields: impl IntoIterator<Item = Pat>,
+    init: LocalInit,
+    id: usize,
+) -> Vec<Stmt> {
     let init_ident = format_ident!("__tuple_destructure_init_{id}");
     let fields = fields.into_iter().enumerate().map(|(i, pat)| {
         let member = Index::from(i);

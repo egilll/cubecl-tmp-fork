@@ -20,6 +20,19 @@ pub fn kernel_assign_one_tuple<F: Float>(output: &mut [F]) {
 }
 
 #[cube(launch)]
+pub fn kernel_accumulate_destructured<F: Float>(output: &mut [F]) {
+    if UNIT_POS == 0 {
+        let (mut low, mut high) = (F::new(0f32), F::new(1f32));
+        for _ in 0..4u32 {
+            low += F::new(1.5f32);
+            high *= F::new(2f32);
+        }
+        output[0] = low;
+        output[1] = high;
+    }
+}
+
+#[cube(launch)]
 pub fn kernel_add_assign_array<F: Float, N: Size>(output: &mut [Vector<F, N>]) {
     if UNIT_POS == 0 {
         output[0] = Vector::new(F::new(5f32));
@@ -129,6 +142,23 @@ pub fn test_kernel_assign_one_tuple<R: Runtime, F: Float + CubeElement>(client: 
     assert_eq!(actual[0], F::new(5.0));
 }
 
+/// Mutable bindings destructured from a tuple of constants are variables.
+pub fn test_kernel_accumulate_destructured<R: Runtime, F: Float + CubeElement>(client: Client) {
+    let handle = client.create_from_slice(F::as_bytes(&[F::new(0.0), F::new(0.0)]));
+
+    kernel_accumulate_destructured::launch::<F>(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new(&client, 1),
+        unsafe { BufferArg::from_raw_parts(handle.clone(), 2) },
+    );
+
+    let actual = client.read_one(handle).unwrap();
+    let actual = F::from_bytes(&actual);
+
+    assert_eq!(actual[..2], [F::new(6.0), F::new(16.0)]);
+}
+
 pub fn test_kernel_add_assign_array<R: Runtime, F: Float + CubeElement>(client: Client) {
     let handle = client.create_from_slice(F::as_bytes(&[F::new(0.0), F::new(1.0)]));
 
@@ -233,6 +263,15 @@ macro_rules! testgen_assign {
         fn test_assign_struct_copy() {
             let client = TestRuntime::client(&Default::default());
             cubecl_core::runtime_tests::assign::test_kernel_assign_struct_copy::<
+                TestRuntime,
+                FloatType,
+            >(client);
+        }
+
+        #[$crate::runtime_tests::test_log::test]
+        fn test_accumulate_destructured() {
+            let client = TestRuntime::client(&Default::default());
+            cubecl_core::runtime_tests::assign::test_kernel_accumulate_destructured::<
                 TestRuntime,
                 FloatType,
             >(client);
