@@ -156,13 +156,13 @@ impl<T: CubeElement> From<&Buffer<T>> for BufferArg {
     fn from(buffer: &Buffer<T>) -> Self {
         // SAFETY: the length was recorded when the allocation was made for
         // exactly that many elements of `T`.
-        unsafe { BufferArg::from_raw_parts(buffer.handle.clone(), buffer.len) }
+        unsafe { BufferArg::from_raw_parts(buffer.handle.clone(), buffer.len) }.typed(T::cube_type())
     }
 }
 
 impl<T: CubeElement> From<Buffer<T>> for BufferArg {
     fn from(buffer: Buffer<T>) -> Self {
         // SAFETY: as above.
-        unsafe { BufferArg::from_raw_parts(buffer.handle, buffer.len) }
+        unsafe { BufferArg::from_raw_parts(buffer.handle, buffer.len) }.typed(T::cube_type())
     }
 }

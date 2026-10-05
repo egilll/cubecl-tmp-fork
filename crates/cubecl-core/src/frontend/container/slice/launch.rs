@@ -15,6 +15,9 @@ pub struct BufferCompilationArg {
 pub struct BufferBinding {
     pub handle: cubecl_runtime::server::BufferBinding,
     pub(crate) length: [usize; 1],
+    /// The element type the buffer was made for, when it is known; a
+    /// kernel slice of another element type refuses it.
+    pub(crate) elem: Option<ElemType>,
 }
 
 pub enum BufferArg {
@@ -58,6 +61,18 @@ impl BufferArg {
             BufferArg::Handle {
                 handle: BufferBinding::from_raw_parts_binding(binding, length),
             }
+        }
+    }
+
+    /// This argument, declared to hold elements of `elem`: binding it to a
+    /// kernel slice of another element type panics at launch.
+    pub fn typed(self, elem: ElemType) -> Self {
+        match self {
+            BufferArg::Handle { mut handle } => {
+                handle.elem = Some(elem);
+                BufferArg::Handle { handle }
+            }
+            alias => alias,
         }
     }
 
@@ -118,6 +133,7 @@ impl BufferBinding {
         Self {
             handle,
             length: [length],
+            elem: None,
         }
     }
 
@@ -152,9 +168,22 @@ impl<C: CubePrimitive> LaunchArg for [C] {
     type CompilationArg = BufferCompilationArg;
 
     fn register(arg: Self::RuntimeArg, launcher: &mut KernelLauncher) -> Self::CompilationArg {
-        let elem_size = launcher.with_scope(|scope| C::__expand_size(scope));
+        let (elem_size, expected) = launcher.with_scope(|scope| {
+            (
+                C::__expand_size(scope),
+                scalar_elem(scope.ctx(), C::__expand_as_type(scope)),
+            )
+        });
         let inplace = match &arg {
-            BufferArg::Handle { .. } => None,
+            BufferArg::Handle { handle } => {
+                if let (Some(elem), Some(expected)) = (handle.elem, expected) {
+                    assert!(
+                        elem == expected,
+                        "a buffer of {elem} is bound to a kernel slice of {expected}"
+                    );
+                }
+                None
+            }
             BufferArg::Alias { input_pos, .. } => Some(*input_pos),
         };
         launcher.register_buffer(arg, elem_size);
@@ -173,4 +202,28 @@ impl<C: CubePrimitive> LaunchArg for [C] {
             slice::from_raw_parts::<C>(scope, buffer, 0usize.into_expand(scope), len.into());
         slice_var.expand.into()
     }
+}
+
+/// The scalar element under `ty`'s vector, atomic and pointer layers, when
+/// it has one.
+fn scalar_elem(ctx: &pliron::context::Context, ty: pliron::r#type::TypeHandle) -> Option<ElemType> {
+    use cubecl_ir::interfaces::{HasElementType, ScalarType, ScalarizableType};
+    use pliron::r#type::type_cast;
+    let mut ty = ty;
+    for _ in 0..8 {
+        let deref = ty.deref(ctx);
+        if let Some(scalar) = type_cast::<dyn ScalarType>(&*deref) {
+            return Some(scalar.elem_type(ctx));
+        }
+        let next = if let Some(scalarizable) = type_cast::<dyn ScalarizableType>(&*deref) {
+            Some(scalarizable.scalar_type(ctx))
+        } else {
+            type_cast::<dyn HasElementType>(&*deref).and_then(|inner| inner.element_type(ctx))
+        };
+        match next {
+            Some(next) if next != ty => ty = next,
+            _ => return None,
+        }
+    }
+    None
 }

@@ -69,6 +69,54 @@ pub fn test_typed_buffer_write<R: Runtime>(client: Client) {
     assert_eq!(buffer.read(&client).unwrap(), [0, 0, 0, 7, 8, 9, 1, 0]);
 }
 
+#[cube(launch)]
+fn kernel_count(counts: &[Atomic<u32>], vectors: &mut [Vector<u32, Const<2>>]) {
+    if ABSOLUTE_POS < counts.len() {
+        counts[ABSOLUTE_POS].fetch_add(1u32);
+    }
+    if ABSOLUTE_POS < vectors.len() {
+        vectors[ABSOLUTE_POS] = Vector::new(ABSOLUTE_POS as u32);
+    }
+}
+
+/// A typed buffer binds to atomic and vector views of its own element.
+pub fn test_typed_buffer_views<R: Runtime>(client: Client) {
+    let counts = Buffer::create(&client, &[0u32; 4]);
+    let vectors = Buffer::<u32>::empty(&client, 8);
+    kernel_count::launch(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(4),
+        (&counts).into(),
+        (&vectors).into(),
+    );
+    assert_eq!(counts.read(&client).unwrap(), [1, 1, 1, 1]);
+    assert_eq!(vectors.read(&client).unwrap(), [0, 0, 1, 1, 2, 2, 3, 3]);
+}
+
+/// A typed buffer of another element type is refused when the kernel is
+/// launched, instead of being read as raw memory.
+pub fn test_typed_buffer_refuses_another_element<R: Runtime>(client: Client) {
+    let doubles = Buffer::create(&client, &[1.0f64; 4]);
+    let output = Buffer::<f32>::empty(&client, 4);
+    let refused = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        kernel_scale::launch(
+            &client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(4),
+            (&doubles).into(),
+            (&output).into(),
+            1.0,
+        );
+    }));
+    let message = refused.expect_err("an f64 buffer bound to an f32 slice");
+    let message = message
+        .downcast_ref::<alloc::string::String>()
+        .cloned()
+        .unwrap_or_default();
+    assert!(message.contains("f64") && message.contains("f32"), "{message}");
+}
+
 #[allow(missing_docs)]
 #[macro_export]
 macro_rules! testgen_typed_buffer {
@@ -81,6 +129,22 @@ macro_rules! testgen_typed_buffer {
             cubecl_core::runtime_tests::typed_buffer::test_typed_buffer_launch::<TestRuntime>(
                 client,
             );
+        }
+
+        #[$crate::runtime_tests::test_log::test]
+        fn test_typed_buffer_views() {
+            let client = TestRuntime::client(&Default::default());
+            cubecl_core::runtime_tests::typed_buffer::test_typed_buffer_views::<TestRuntime>(
+                client,
+            );
+        }
+
+        #[$crate::runtime_tests::test_log::test]
+        fn test_typed_buffer_refuses_another_element() {
+            let client = TestRuntime::client(&Default::default());
+            cubecl_core::runtime_tests::typed_buffer::test_typed_buffer_refuses_another_element::<
+                TestRuntime,
+            >(client);
         }
 
         #[$crate::runtime_tests::test_log::test]
