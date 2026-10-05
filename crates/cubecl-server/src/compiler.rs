@@ -130,6 +130,9 @@ impl Record for CompilationRecord {
 #[derive(Debug)]
 pub struct CompilationRecording {
     open: Option<OpenRecording>,
+    /// A `compile` span, entered for the trip.
+    #[cfg(feature = "tracing")]
+    _span: tracing::span::EnteredSpan,
 }
 
 /// What a [`CompilationRecording`] holds while the environment records.
@@ -152,7 +155,11 @@ impl CompilationRecording {
             ir: None,
             source: None,
         });
-        Self { open }
+        Self {
+            open,
+            #[cfg(feature = "tracing")]
+            _span: tracing::trace_span!("compile", kernel = kernel_id.type_name()).entered(),
+        }
     }
 
     /// The kernel was defined: keep its IR, at [`RecordLevel::Full`] only.

@@ -1,0 +1,96 @@
+thread 'opt 83im3hxgphbcmnxg5k0nzdopc' panicked at /rustc-dev/3659db0d3e2cd634c766fcda79ed118eca31a9fd/compiler/rustc_codegen_ssa/src/back/write.rs:852:21:
+Error writing pre-lto-bitcode file `/Users/egill/ceiling-speaker/target/debug/incremental/cubecl_ir-3evifscsz2neb/s-hmww067r40-1xup12z-working/83im3hxgphbcmnxg5k0nzdopc.pre-lto.bc`: No space left on device (os error 28)
+stack backtrace:
+   0:        0x10aaf5a30 - <std[3481ffee1ddac92b]::backtrace::Backtrace>::create
+   1:        0x1089d5c44 - std[3481ffee1ddac92b]::panicking::update_hook::<alloc[5ba70d8e0b02b3d3]::boxed::Box<rustc_driver_impl[3e54176ecd4586a0]::install_ice_hook::{closure#1}>>::{closure#0}
+   2:        0x10ab0860c - std[3481ffee1ddac92b]::panicking::panic_with_hook
+   3:        0x10aaeb5a8 - std[3481ffee1ddac92b]::panicking::panic_handler::{closure#0}
+   4:        0x10aadff14 - std[3481ffee1ddac92b]::sys::backtrace::__rust_end_short_backtrace::<std[3481ffee1ddac92b]::panicking::panic_handler::{closure#0}, !>
+   5:        0x10aaecad0 - __rustc[1b6846d77d192586]::rust_begin_unwind
+   6:        0x10abd285c - core[239db92ec08792be]::panicking::panic_fmt
+   7:        0x10ac2a6c0 - rustc_codegen_ssa[a9192bcbcc355378]::back::write::execute_optimize_work_item::<rustc_codegen_llvm[1cb1047ae51eee71]::LlvmCodegenBackend>::{closure#1}
+   8:        0x1085e1654 - std[3481ffee1ddac92b]::sys::backtrace::__rust_begin_short_backtrace::<rustc_codegen_ssa[a9192bcbcc355378]::back::write::spawn_work<rustc_codegen_llvm[1cb1047ae51eee71]::LlvmCodegenBackend>::{closure#0}, ()>
+   9:        0x108627008 - <std[3481ffee1ddac92b]::thread::lifecycle::spawn_unchecked<rustc_codegen_ssa[a9192bcbcc355378]::back::write::spawn_work<rustc_codegen_llvm[1cb1047ae51eee71]::LlvmCodegenBackend>::{closure#0}, ()>::{closure#1} as core[239db92ec08792be]::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+  10:        0x10ab1376c - <std[3481ffee1ddac92b]::sys::thread::unix::Thread>::new::thread_start
+  11:        0x18bf5fc58 - __pthread_cond_wait
+
+
+rustc version: 1.99.0-nightly (3659db0d3 2026-07-05)
+platform: aarch64-apple-darwinthread 'opt f2r235am51b02p0c7sjxx0cmb' panicked at /rustc-dev/3659db0d3e2cd634c766fcda79ed118eca31a9fd/compiler/rustc_codegen_ssa/src/back/write.rs:852:21:
+Error writing pre-lto-bitcode file `/Users/egill/ceiling-speaker/target/debug/incremental/cubecl_ir-3evifscsz2neb/s-hmww067r40-1xup12z-working/f2r235am51b02p0c7sjxx0cmb.pre-lto.bc`: No space left on device (os error 28)
+stack backtrace:
+   0:        0x10aaf5a30 - <std[3481ffee1ddac92b]::backtrace::Backtrace>::create
+   1:        0x1089d5c44 - std[3481ffee1ddac92b]::panicking::update_hook::<alloc[5ba70d8e0b02b3d3]::boxed::Box<rustc_driver_impl[3e54176ecd4586a0]::install_ice_hook::{closure#1}>>::{closure#0}
+   2:        0x10ab0860c - std[3481ffee1ddac92b]::panicking::panic_with_hook
+   3:        0x10aaeb5a8 - std[3481ffee1ddac92b]::panicking::panic_handler::{closure#0}
+   4:        0x10aadff14 - std[3481ffee1ddac92b]::sys::backtrace::__rust_end_short_backtrace::<std[3481ffee1ddac92b]::panicking::panic_handler::{closure#0}, !>
+   5:        0x10aaecad0 - __rustc[1b6846d77d192586]::rust_begin_unwind
+   6:        0x10abd285c - core[239db92ec08792be]::panicking::panic_fmt
+   7:        0x10ac2a6c0 - rustc_codegen_ssa[a9192bcbcc355378]::back::write::execute_optimize_work_item::<rustc_codegen_llvm[1cb1047ae51eee71]::LlvmCodegenBackend>::{closure#1}
+   8:        0x1085e1654 - std[3481ffee1ddac92b]::sys::backtrace::__rust_begin_short_backtrace::<rustc_codegen_ssa[a9192bcbcc355378]::back::write::spawn_work<rustc_codegen_llvm[1cb1047ae51eee71]::LlvmCodegenBackend>::{closure#0}, ()>
+   9:        0x108627008 - <std[3481ffee1ddac92b]::thread::lifecycle::spawn_unchecked<rustc_codegen_ssa[a9192bcbcc355378]::back::write::spawn_work<rustc_codegen_llvm[1cb1047ae51eee71]::LlvmCodegenBackend>::{closure#0}, ()>::{closure#1} as core[239db92ec08792be]::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+  10:        0x10ab1376c - <std[3481ffee1ddac92b]::sys::thread::unix::Thread>::new::thread_start
+  11:        0x18bf5fc58 - __pthread_cond_wait
+thread 'opt 3rygrai5pyckhlp8puz0hma1u' panicked at /rustc-dev/3659db0d3e2cd634c766fcda79ed118eca31a9fd/compiler/rustc_codegen_ssa/src/back/write.rs:852:21:
+Error writing pre-lto-bitcode file `/Users/egill/ceiling-speaker/target/debug/incremental/cubecl_ir-3evifscsz2neb/s-hmww067r40-1xup12z-working/3rygrai5pyckhlp8puz0hma1u.pre-lto.bc`: No space left on device (os error 28)
+stack backtrace:
+   0:        0x10aaf5a30 - <std[3481ffee1ddac92b]::backtrace::Backtrace>::create
+   1:        0x1089d5c44 - std[3481ffee1ddac92b]::panicking::update_hook::<alloc[5ba70d8e0b02b3d3]::boxed::Box<rustc_driver_impl[3e54176ecd4586a0]::install_ice_hook::{closure#1}>>::{closure#0}
+   2:        0x10ab0860c - std[3481ffee1ddac92b]::panicking::panic_with_hook
+   3:        0x10aaeb5a8 - std[3481ffee1ddac92b]::panicking::panic_handler::{closure#0}
+   4:        0x10aadff14 - std[3481ffee1ddac92b]::sys::backtrace::__rust_end_short_backtrace::<std[3481ffee1ddac92b]::panicking::panic_handler::{closure#0}, !>
+   5:        0x10aaecad0 - __rustc[1b6846d77d192586]::rust_begin_unwind
+   6:        0x10abd285c - core[239db92ec08792be]::panicking::panic_fmt
+   7:        0x10ac2a6c0 - rustc_codegen_ssa[a9192bcbcc355378]::back::write::execute_optimize_work_item::<rustc_codegen_llvm[1cb1047ae51eee71]::LlvmCodegenBackend>::{closure#1}
+   8:        0x1085e1654 - std[3481ffee1ddac92b]::sys::backtrace::__rust_begin_short_backtrace::<rustc_codegen_ssa[a9192bcbcc355378]::back::write::spawn_work<rustc_codegen_llvm[1cb1047ae51eee71]::LlvmCodegenBackend>::{closure#0}, ()>
+   9:        0x108627008 - <std[3481ffee1ddac92b]::thread::lifecycle::spawn_unchecked<rustc_codegen_ssa[a9192bcbcc355378]::back::write::spawn_work<rustc_codegen_llvm[1cb1047ae51eee71]::LlvmCodegenBackend>::{closure#0}, ()>::{closure#1} as core[239db92ec08792be]::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+  10:        0x10ab1376c - <std[3481ffee1ddac92b]::sys::thread::unix::Thread>::new::thread_start
+  11:        0x18bf5fc58 - __pthread_cond_wait
+thread 'opt 59od6ms9ywme2wi38ihc2z73r' panicked at /rustc-dev/3659db0d3e2cd634c766fcda79ed118eca31a9fd/compiler/rustc_codegen_ssa/src/back/write.rs:852:21:
+Error writing pre-lto-bitcode file `/Users/egill/ceiling-speaker/target/debug/incremental/cubecl_ir-3evifscsz2neb/s-hmww067r40-1xup12z-working/59od6ms9ywme2wi38ihc2z73r.pre-lto.bc`: No space left on device (os error 28)
+stack backtrace:
+   0:        0x10aaf5a30 - <std[3481ffee1ddac92b]::backtrace::Backtrace>::create
+   1:        0x1089d5c44 - std[3481ffee1ddac92b]::panicking::update_hook::<alloc[5ba70d8e0b02b3d3]::boxed::Box<rustc_driver_impl[3e54176ecd4586a0]::install_ice_hook::{closure#1}>>::{closure#0}
+   2:        0x10ab0860c - std[3481ffee1ddac92b]::panicking::panic_with_hook
+   3:        0x10aaeb5a8 - std[3481ffee1ddac92b]::panicking::panic_handler::{closure#0}
+   4:        0x10aadff14 - std[3481ffee1ddac92b]::sys::backtrace::__rust_end_short_backtrace::<std[3481ffee1ddac92b]::panicking::panic_handler::{closure#0}, !>
+   5:        0x10aaecad0 - __rustc[1b6846d77d192586]::rust_begin_unwind
+   6:        0x10abd285c - core[239db92ec08792be]::panicking::panic_fmt
+   7:        0x10ac2a6c0 - rustc_codegen_ssa[a9192bcbcc355378]::back::write::execute_optimize_work_item::<rustc_codegen_llvm[1cb1047ae51eee71]::LlvmCodegenBackend>::{closure#1}
+   8:        0x1085e1654 - std[3481ffee1ddac92b]::sys::backtrace::__rust_begin_short_backtrace::<rustc_codegen_ssa[a9192bcbcc355378]::back::write::spawn_work<rustc_codegen_llvm[1cb1047ae51eee71]::LlvmCodegenBackend>::{closure#0}, ()>
+   9:        0x108627008 - <std[3481ffee1ddac92b]::thread::lifecycle::spawn_unchecked<rustc_codegen_ssa[a9192bcbcc355378]::back::write::spawn_work<rustc_codegen_llvm[1cb1047ae51eee71]::LlvmCodegenBackend>::{closure#0}, ()>::{closure#1} as core[239db92ec08792be]::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+  10:        0x10ab1376c - <std[3481ffee1ddac92b]::sys::thread::unix::Thread>::new::thread_start
+  11:        0x18bf5fc58 - __pthread_cond_wait
+thread 'opt 13l601esncdjqp08u2c4iliyh' panicked at /rustc-dev/3659db0d3e2cd634c766fcda79ed118eca31a9fd/compiler/rustc_codegen_ssa/src/back/write.rs:852:21:
+Error writing pre-lto-bitcode file `/Users/egill/ceiling-speaker/target/debug/incremental/cubecl_ir-3evifscsz2neb/s-hmww067r40-1xup12z-working/13l601esncdjqp08u2c4iliyh.pre-lto.bc`: No space left on device (os error 28)
+stack backtrace:
+   0:        0x10aaf5a30 - <std[3481ffee1ddac92b]::backtrace::Backtrace>::create
+   1:        0x1089d5c44 - std[3481ffee1ddac92b]::panicking::update_hook::<alloc[5ba70d8e0b02b3d3]::boxed::Box<rustc_driver_impl[3e54176ecd4586a0]::install_ice_hook::{closure#1}>>::{closure#0}
+   2:        0x10ab0860c - std[3481ffee1ddac92b]::panicking::panic_with_hook
+   3:        0x10aaeb5a8 - std[3481ffee1ddac92b]::panicking::panic_handler::{closure#0}
+   4:        0x10aadff14 - std[3481ffee1ddac92b]::sys::backtrace::__rust_end_short_backtrace::<std[3481ffee1ddac92b]::panicking::panic_handler::{closure#0}, !>
+   5:        0x10aaecad0 - __rustc[1b6846d77d192586]::rust_begin_unwind
+   6:        0x10abd285c - core[239db92ec08792be]::panicking::panic_fmt
+   7:        0x10ac2a6c0 - rustc_codegen_ssa[a9192bcbcc355378]::back::write::execute_optimize_work_item::<rustc_codegen_llvm[1cb1047ae51eee71]::LlvmCodegenBackend>::{closure#1}
+   8:        0x1085e1654 - std[3481ffee1ddac92b]::sys::backtrace::__rust_begin_short_backtrace::<rustc_codegen_ssa[a9192bcbcc355378]::back::write::spawn_work<rustc_codegen_llvm[1cb1047ae51eee71]::LlvmCodegenBackend>::{closure#0}, ()>
+   9:        0x108627008 - <std[3481ffee1ddac92b]::thread::lifecycle::spawn_unchecked<rustc_codegen_ssa[a9192bcbcc355378]::back::write::spawn_work<rustc_codegen_llvm[1cb1047ae51eee71]::LlvmCodegenBackend>::{closure#0}, ()>::{closure#1} as core[239db92ec08792be]::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+  10:        0x10ab1376c - <std[3481ffee1ddac92b]::sys::thread::unix::Thread>::new::thread_start
+  11:        0x18bf5fc58 - __pthread_cond_wait
+thread 'coordinator' panicked at /rustc-dev/3659db0d3e2cd634c766fcda79ed118eca31a9fd/compiler/rustc_codegen_ssa/src/back/write.rs:1696:29:
+/rustc-dev/3659db0d3e2cd634c766fcda79ed118eca31a9fd/compiler/rustc_codegen_ssa/src/back/write.rs:1696:29: worker thread panicked
+stack backtrace:
+   0:        0x10aaf5a30 - <std[3481ffee1ddac92b]::backtrace::Backtrace>::create
+   1:        0x1089d5c44 - std[3481ffee1ddac92b]::panicking::update_hook::<alloc[5ba70d8e0b02b3d3]::boxed::Box<rustc_driver_impl[3e54176ecd4586a0]::install_ice_hook::{closure#1}>>::{closure#0}
+   2:        0x10ab0860c - std[3481ffee1ddac92b]::panicking::panic_with_hook
+   3:        0x1095e3138 - std[3481ffee1ddac92b]::panicking::begin_panic::<alloc[5ba70d8e0b02b3d3]::string::String>::{closure#0}
+   4:        0x109599954 - std[3481ffee1ddac92b]::sys::backtrace::__rust_end_short_backtrace::<std[3481ffee1ddac92b]::panicking::begin_panic<alloc[5ba70d8e0b02b3d3]::string::String>::{closure#0}, !>
+   5:        0x10acaeb9c - std[3481ffee1ddac92b]::panicking::begin_panic::<alloc[5ba70d8e0b02b3d3]::string::String>
+   6:        0x10acaf280 - rustc_middle[83af35075457367e]::util::bug::opt_span_bug_fmt::<rustc_span[be6408d807943664]::span_encoding::Span>::{closure#0}
+   7:        0x1095e3b84 - rustc_middle[83af35075457367e]::ty::context::tls::with_opt::<rustc_middle[83af35075457367e]::util::bug::opt_span_bug_fmt<rustc_span[be6408d807943664]::span_encoding::Span>::{closure#0}, !>::{closure#0}
+   8:        0x1095a2d58 - rustc_middle[83af35075457367e]::ty::context::tls::with_context_opt::<rustc_middle[83af35075457367e]::ty::context::tls::with_opt<rustc_middle[83af35075457367e]::util::bug::opt_span_bug_fmt<rustc_span[be6408d807943664]::span_encoding::Span>::{closure#0}, !>::{closure#0}, !>
+   9:        0x10acb3cdc - rustc_middle[83af35075457367e]::util::bug::bug_fmt
+  10:        0x10861cad4 - rustc_codegen_ssa[a9192bcbcc355378]::back::write::start_executing_work::<rustc_codegen_llvm[1cb1047ae51eee71]::LlvmCodegenBackend>::{closure#3}
+  11:        0x1085e2100 - std[3481ffee1ddac92b]::sys::backtrace::__rust_begin_short_backtrace::<rustc_codegen_ssa[a9192bcbcc355378]::back::write::start_executing_work<rustc_codegen_llvm[1cb1047ae51eee71]::LlvmCodegenBackend>::{closure#3}, core[239db92ec08792be]::result::Result<rustc_codegen_ssa[a9192bcbcc355378]::back::write::MaybeLtoModules<rustc_codegen_llvm[1cb1047ae51eee71]::LlvmCodegenBackend>, ()>>
+  12:        0x108627580 - <std[3481ffee1ddac92b]::thread::lifecycle::spawn_unchecked<rustc_codegen_ssa[a9192bcbcc355378]::back::write::start_executing_work<rustc_codegen_llvm[1cb1047ae51eee71]::LlvmCodegenBackend>::{closure#3}, core[239db92ec08792be]::result::Result<rustc_codegen_ssa[a9192bcbcc355378]::back::write::MaybeLtoModules<rustc_codegen_llvm[1cb1047ae51eee71]::LlvmCodegenBackend>, ()>>::{closure#1} as core[239db92ec08792be]::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+  13:        0x10ab1376c - <std[3481ffee1ddac92b]::sys::thread::unix::Thread>::new::thread_start
+  14:        0x18bf5fc58 - __pthread_cond_wait

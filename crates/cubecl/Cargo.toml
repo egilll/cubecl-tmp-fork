@@ -57,6 +57,7 @@ tracing = [
     "cubecl-cuda?/tracing",
     "cubecl-cpu?/tracing",
     "cubecl-hip?/tracing",
+    "cubecl-metal?/tracing",
     "cubecl-wgpu?/tracing",
 ]
 

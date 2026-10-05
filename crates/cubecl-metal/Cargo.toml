@@ -17,6 +17,7 @@ persistence = ["cubecl-server/persistence"]
 # A kernel whose name contains `inject_execution_fault` makes its command
 # buffer report an execution fault: for fault drills, never for releases.
 fault-injection = []
+tracing = ["cubecl-server/tracing", "cubecl-common/tracing", "cubecl-core/tracing"]
 # Run on the Metal device behind a wgpu device, and hand leased buffers to it.
 wgpu = ["dep:wgpu", "dep:wgpu-hal"]
 std = [

@@ -623,6 +623,8 @@ impl Client {
             .unwrap_or_resume()
     }
 
+    #[cfg_attr(feature = "tracing", tracing::instrument(level = "trace", name = "allocate",
+        skip_all, fields(buffers = descriptors.len())))]
     fn do_create_from_slices(
         &self,
         descriptors: Vec<MemoryLayoutDescriptor>,
@@ -663,6 +665,8 @@ impl Client {
         layouts
     }
 
+    #[cfg_attr(feature = "tracing", tracing::instrument(level = "trace", name = "allocate",
+        skip_all, fields(buffers = descriptors.len())))]
     fn do_create(
         &self,
         descriptors: Vec<MemoryLayoutDescriptor>,
@@ -934,6 +938,8 @@ impl Client {
         self.do_create(descriptors, data)
     }
 
+    #[cfg_attr(feature = "tracing", tracing::instrument(level = "trace", name = "allocate",
+        skip_all, fields(buffers = descriptors.len())))]
     fn do_empty(&self, descriptors: Vec<MemoryLayoutDescriptor>) -> Vec<MemoryLayout> {
         let stream_id = self.stream_id();
         let (handle_base, layouts) =
