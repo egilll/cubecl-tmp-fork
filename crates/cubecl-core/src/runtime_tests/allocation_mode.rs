@@ -35,6 +35,23 @@ pub fn a_new_threads_first_allocation_honors_its_allocation_mode<R: Runtime>(cli
     .expect("the allocation-mode test thread panicked");
 }
 
+/// A lane client's window applies to its lane, whichever stream the opening
+/// thread would otherwise use.
+pub fn a_lane_clients_window_applies_to_its_lane<R: Runtime>(client: Client) {
+    let lane = client.lane(7);
+    let persistent = lane.memory_persistent_allocation((), |_| lane.empty(SIZE));
+    let report = lane.memory_report(MemoryScope::CurrentStream);
+    let stream = report
+        .streams
+        .first()
+        .expect("the lane's stream exists once it allocated");
+    assert_eq!(
+        stream.pools.persistent.usage.number_allocs, 1,
+        "the allocation made inside the lane's window is persistent"
+    );
+    drop(persistent);
+}
+
 #[allow(missing_docs)]
 #[macro_export]
 macro_rules! testgen_allocation_mode {
@@ -47,6 +64,14 @@ macro_rules! testgen_allocation_mode {
             fn a_new_threads_first_allocation_honors_its_allocation_mode() {
                 let client = TestRuntime::client(&Default::default());
                 cubecl_core::runtime_tests::allocation_mode::a_new_threads_first_allocation_honors_its_allocation_mode::<
+                    TestRuntime,
+                >(client);
+            }
+
+            #[$crate::runtime_tests::test_log::test]
+            fn a_lane_clients_window_applies_to_its_lane() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::allocation_mode::a_lane_clients_window_applies_to_its_lane::<
                     TestRuntime,
                 >(client);
             }

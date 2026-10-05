@@ -795,7 +795,9 @@ impl Client {
         input: Input,
         task: F,
     ) -> Re {
-        let stream_id = StreamId::current();
+        // The client's stream: a lane client allocates on its lane, whichever
+        // thread runs the task.
+        let stream_id = self.stream_id();
 
         self.device.submit(move |server| {
             server.allocation_mode(mode, stream_id);
