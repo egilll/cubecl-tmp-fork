@@ -94,7 +94,7 @@ impl ToTokens for CubeTrait {
                 #(#original_body)*
 
                 #(
-                    #[allow(clippy::too_many_arguments)]
+                    #[allow(clippy::too_many_arguments, unused_braces)]
                     #assoc_fns
                 )*
 

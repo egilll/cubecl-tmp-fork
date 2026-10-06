@@ -204,11 +204,13 @@ impl CubeTrait {
         let mut generics = item.generics;
         StripDefault.visit_generics_mut(&mut generics);
 
+        // A default associated function needs no expand trait, so its body
+        // is always expanded; default methods are opt-in, as they add one.
         let mut defaults = Vec::new();
         for trait_item in &item.items {
-            if args.default_methods.is_present()
-                && let TraitItem::Fn(func) = trait_item
+            if let TraitItem::Fn(func) = trait_item
                 && let Some(body) = &func.default
+                && (args.default_methods.is_present() || !has_receiver(&func.sig))
             {
                 let mut default_args = args.clone();
                 default_args.inline = Some(super::kernel::InlineHint::Always);
