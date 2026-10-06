@@ -106,8 +106,9 @@ impl<Q: DeviceRepr + Send + Sync, V: SliceVisibility, K: StorageKey + Send + Syn
 }
 
 /// Device storage of `Q` values updated atomically, addressed by `K`. Each
-/// update needs the operation on `Q` it performs, such as `Add` for
-/// [`fetch_add`](Self::fetch_add).
+/// update needs the operation on `Q` it performs: `Add` for
+/// [`fetch_add`](Self::fetch_add), an order for
+/// [`fetch_max`](Self::fetch_max).
 #[derive(CubeType)]
 pub struct AtomicStorage<Q: DeviceRepr, K: StorageKey = usize> {
     inner: alloc::boxed::Box<[Atomic<Q::Repr>]>,
@@ -161,7 +162,7 @@ where
 #[cube]
 impl<Q, K: StorageKey> AtomicStorage<Q, K>
 where
-    Q: Ordered<Repr: CubePrimitive<Scalar: AtomicNumeric>>,
+    Q: DeviceRepr<Repr: CubePrimitive<Scalar: AtomicNumeric>> + PartialOrd,
 {
     /// Keeps the smaller value, returning the previous value.
     pub fn fetch_min(&self, key: K, value: Q) -> Q {
