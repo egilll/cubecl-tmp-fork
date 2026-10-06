@@ -2,25 +2,31 @@ use core::marker::PhantomData;
 
 use crate::{self as cubecl, prelude::*};
 
+/// Device storage of `Q` values in their native representation, addressed by
+/// `K`. A table keyed by an ID brand accepts only that ID.
 #[derive(CubeType)]
-pub struct Storage<Q: DeviceRepr, V: SliceVisibility = ReadWrite> {
+pub struct Storage<Q: DeviceRepr, V: SliceVisibility = ReadWrite, K: StorageKey = usize> {
     inner: alloc::boxed::Box<[Q::Repr]>,
     #[cube(comptime)]
-    marker: PhantomData<(Q, V)>,
+    marker: PhantomData<(Q, V, K)>,
 }
 
 #[cube]
-impl<Q: DeviceRepr, V: SliceVisibility> Storage<Q, V> {
+impl<Q: DeviceRepr, V: SliceVisibility, K: StorageKey> Storage<Q, V, K> {
     #[cube(inline)]
     pub fn len(&self) -> usize {
         self.inner.len()
     }
 
-    pub fn load(&self, index: usize) -> Q {
+    pub fn load(&self, key: K) -> Q {
+        intrinsic!(|scope| { self.__expand_load_at_method(scope, K::__expand_position(scope, key)) })
+    }
+
+    fn load_at(&self, position: usize) -> Q {
         intrinsic!(|scope| {
             Q::expand_from_repr(
                 self.inner
-                    .__expand_index_method(scope, index)
+                    .__expand_index_method(scope, position)
                     .__expand_deref_method(scope),
             )
         })
@@ -28,25 +34,36 @@ impl<Q: DeviceRepr, V: SliceVisibility> Storage<Q, V> {
 }
 
 #[cube]
-impl<Q: DeviceRepr> Storage<Q, ReadWrite> {
+impl<Q: DeviceRepr, K: StorageKey> Storage<Q, ReadWrite, K> {
+    pub fn store(&mut self, key: K, value: Q) {
+        intrinsic!(|scope| {
+            self.__expand_store_at_method(scope, K::__expand_position(scope, key), value)
+        })
+    }
+
     pub fn fill(&mut self, value: Q) {
         let value = Q::into_repr(value);
-        for index in 0..self.len() {
-            self.store(index, Q::from_repr(value));
+        for position in 0..self.len() {
+            self.store_at(position, Q::from_repr(value));
         }
     }
 
-    pub fn gather(&mut self, table: &Storage<Q, ReadOnly>, indices: &[u32]) {
-        for index in 0..self.len() {
-            self.store(index, table.load(indices[index] as usize));
+    /// Writes `table[keys[i]]` to position `i`.
+    pub fn gather<T: DeviceRepr + StorageKey>(
+        &mut self,
+        table: &Storage<Q, ReadOnly, T>,
+        keys: &Storage<T, ReadOnly>,
+    ) {
+        for position in 0..self.len() {
+            self.store_at(position, table.load(keys.load_at(position)));
         }
     }
 
-    pub fn store(&mut self, index: usize, value: Q) {
+    fn store_at(&mut self, position: usize, value: Q) {
         intrinsic!(|scope| {
             let value = Q::expand_into_repr(value);
             self.inner
-                .__expand_index_mut_method(scope, index)
+                .__expand_index_mut_method(scope, position)
                 .__expand_assign_method(scope, value);
         })
     }
@@ -76,7 +93,9 @@ impl<Q: DeviceRepr> TypedBufferArg<Q> {
     }
 }
 
-impl<Q: DeviceRepr + Send + Sync, V: SliceVisibility> LaunchArg for Storage<Q, V> {
+impl<Q: DeviceRepr + Send + Sync, V: SliceVisibility, K: StorageKey + Send + Sync> LaunchArg
+    for Storage<Q, V, K>
+{
     type RuntimeArg = TypedBufferArg<Q>;
     type CompilationArg = BufferCompilationArg;
 

@@ -14,13 +14,10 @@ struct Seconds(f32);
 #[derive(CubeType, DeviceRepr, Clone)]
 struct Speed(f32);
 
-#[derive(CubeType)]
+#[repr(transparent)]
+#[derive(CubeType, DeviceRepr)]
+#[device_repr(copy, key)]
 struct CellId(usize);
-
-#[cube(inline)]
-fn at<Q: DeviceRepr>(table: &Storage<Q, ReadOnly>, cell: CellId) -> Q {
-    table.load(cell.0)
-}
 
 #[cube]
 impl core::ops::Div<Seconds> for Meters {
@@ -41,18 +38,16 @@ fn velocity<L: Length>(length: L, duration: Seconds) -> Speed {
 
 #[cube(launch)]
 fn calculate(
-    input: &Storage<Meters, ReadOnly>,
-    duration: &Storage<Seconds, ReadOnly>,
+    input: &Storage<Meters, ReadOnly, CellId>,
+    duration: &Storage<Seconds, ReadOnly, CellId>,
     output: &mut Storage<Speed>,
 ) {
     let index = ABSOLUTE_POS;
     if index < output.len() {
+        let cell = CellId(index);
         output.store(
             index,
-            velocity::<Meters>(
-                at::<Meters>(input, CellId(index)),
-                at::<Seconds>(duration, CellId(index)),
-            ),
+            velocity::<Meters>(input.load(cell), duration.load(cell)),
         );
     }
 }

@@ -22,6 +22,11 @@ struct Point<F: 'static>(Vector<f32, Const<3>>, #[cube(comptime)] PhantomData<F>
 
 struct Room;
 
+#[repr(transparent)]
+#[derive(CubeType, DeviceRepr)]
+#[device_repr(copy, key)]
+struct Cell(u32);
+
 #[cube]
 impl core::ops::Div<Time> for Distance {
     type Output = Speed;
@@ -69,13 +74,13 @@ fn kernel_copy(input: &Storage<Distance, ReadOnly>, output: &mut Storage<Distanc
 
 #[cube(launch)]
 fn kernel_gather(
-    table: &Storage<Distance, ReadOnly>,
-    indices: &[u32],
+    table: &Storage<Distance, ReadOnly, Cell>,
+    cells: &Storage<Cell, ReadOnly>,
     output: &mut Storage<Distance>,
 ) {
     if ABSOLUTE_POS == 0 {
         output.fill(Distance(-1.0));
-        output.gather(table, indices);
+        output.gather(table, cells);
     }
 }
 
@@ -127,14 +132,14 @@ pub fn test_storage_round_trip<R: Runtime>(client: Client) {
     );
     assert_eq!(input.read(&client).unwrap()[5], Distance(123.0));
 
-    let indices = Buffer::create(&client, &[8u32, 6, 0, 5]);
+    let cells = StorageBuffer::create(&client, &[Cell(8), Cell(6), Cell(0), Cell(5)]);
     let gathered = StorageBuffer::<Distance>::empty(&client, 4);
     kernel_gather::launch(
         &client,
         CubeCount::Static(1, 1, 1),
         CubeDim::new_1d(1),
         (&input).into(),
-        (&indices).into(),
+        (&cells).into(),
         (&gathered).into(),
     );
     assert_eq!(

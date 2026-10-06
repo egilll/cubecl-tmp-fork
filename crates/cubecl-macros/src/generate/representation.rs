@@ -102,6 +102,7 @@ pub fn generate(input: &DeriveInput) -> syn::Result<TokenStream> {
 struct Options {
     copy: bool,
     eq: bool,
+    key: bool,
     ord: bool,
 }
 
@@ -122,10 +123,12 @@ impl Options {
                     options.copy = true;
                 } else if meta.path.is_ident("eq") {
                     options.eq = true;
+                } else if meta.path.is_ident("key") {
+                    options.key = true;
                 } else if meta.path.is_ident("ord") {
                     options.ord = true;
                 } else {
-                    return Err(meta.error("expected `copy`, `eq` or `ord`"));
+                    return Err(meta.error("expected `copy`, `eq`, `key` or `ord`"));
                 }
                 Ok(())
             })?;
@@ -143,15 +146,15 @@ impl Options {
             generics,
         } = value;
         let prelude = crate::paths::prelude_path();
-        let bounded = |predicates: [syn::WherePredicate; 2]| {
+        let bounded = |predicates: &[syn::WherePredicate]| {
             let mut generics = (*generics).clone();
-            generics.make_where_clause().predicates.extend(predicates);
+            generics.make_where_clause().predicates.extend(predicates.iter().cloned());
             generics
         };
         let mut tokens = TokenStream::new();
         if self.copy {
             let (impl_generics, ty_generics, clause) = generics.split_for_impl();
-            let expand_generics = bounded([
+            let expand_generics = bounded(&[
                 parse_quote!(#repr: ::core::marker::Copy),
                 parse_quote!(<#repr as #prelude::CubeType>::ExpandType: ::core::marker::Copy),
             ]);
@@ -175,7 +178,7 @@ impl Options {
             });
         }
         if self.eq {
-            let generics = bounded([
+            let generics = bounded(&[
                 parse_quote!(#repr: ::core::cmp::PartialEq),
                 parse_quote!(<#repr as #prelude::CubeType>::ExpandType: #prelude::PartialEqExpand),
             ]);
@@ -201,7 +204,7 @@ impl Options {
             });
         }
         if self.ord {
-            let generics = bounded([
+            let generics = bounded(&[
                 parse_quote!(#repr: #prelude::CubePartialOrd),
                 parse_quote!(<#repr as #prelude::CubeType>::ExpandType: #prelude::PartialOrdExpand),
             ]);
@@ -241,6 +244,20 @@ impl Options {
 
                 impl #impl_generics #prelude::OrderedExpand for #expanded #ty_generics #clause {
                     type Value = #name #ty_generics;
+                }
+            });
+        }
+        if self.key {
+            let generics = bounded(&[parse_quote!(#repr: #prelude::StorageKey)]);
+            let (impl_generics, ty_generics, clause) = generics.split_for_impl();
+            tokens.extend(quote! {
+                impl #impl_generics #prelude::StorageKey for #name #ty_generics #clause {
+                    fn __expand_position(
+                        scope: &#prelude::Scope,
+                        key: <Self as #prelude::CubeType>::ExpandType,
+                    ) -> #prelude::NativeExpand<usize> {
+                        <#repr as #prelude::StorageKey>::__expand_position(scope, key.#member)
+                    }
                 }
             });
         }

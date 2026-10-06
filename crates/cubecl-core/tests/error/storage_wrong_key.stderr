@@ -1,0 +1,34 @@
+error[E0308]: mismatched types
+  --> tests/error/storage_wrong_key.rs:16:16
+   |
+15 | fn area(areas: &Storage<f32, ReadOnly, CellId>, triangle: TriangleId) -> f32 {
+   |                                                                          --- this return type influences the call expression's return type
+16 |     areas.load(triangle)
+   |           ---- ^^^^^^^^ expected `CellId`, found `TriangleId`
+   |           |
+   |           arguments to this method are incorrect
+   |
+note: method defined here
+  --> src/frontend/container/storage.rs
+   |
+   |     pub fn load(&self, key: K) -> Q {
+   |            ^^^^
+
+error[E0277]: the trait bound `CellIdExpand: From<TriangleIdExpand>` is not satisfied
+  --> tests/error/storage_wrong_key.rs:15:49
+   |
+15 | fn area(areas: &Storage<f32, ReadOnly, CellId>, triangle: TriangleId) -> f32 {
+   |                                                 ^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `From<TriangleIdExpand>` is not implemented for `CellIdExpand`
+  --> tests/error/storage_wrong_key.rs:5:10
+   |
+ 5 | #[derive(CubeType, DeviceRepr)]
+   |          ^^^^^^^^
+help: the trait `From<&mut CellIdExpand>` is implemented for `&CellIdExpand`
+  --> tests/error/storage_wrong_key.rs:5:10
+   |
+ 5 | #[derive(CubeType, DeviceRepr)]
+   |          ^^^^^^^^
+   = note: required for `TriangleIdExpand` to implement `Into<CellIdExpand>`
+   = note: this error originates in the derive macro `CubeType` (in Nightly builds, run with -Z macro-backtrace for more info)

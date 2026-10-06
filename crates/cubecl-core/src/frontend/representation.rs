@@ -1,6 +1,6 @@
 use crate::{
     frontend::{clamp, max, min},
-    prelude::{CubePartialOrd, CubePrimitive, CubeType, Scope},
+    prelude::{Cast, CubePartialOrd, CubePrimitive, CubeType, NativeExpand, Scope},
     unexpanded,
 };
 
@@ -94,5 +94,25 @@ pub trait OrderedExpand: Sized {
     fn __expand_clamp_method(self, scope: &Scope, min: Self, max: Self) -> Self {
         let [value, min, max] = [self, min, max].map(Self::Value::expand_into_repr);
         Self::Value::expand_from_repr(clamp::expand(scope, value, min, max))
+    }
+}
+
+/// Addresses the elements of a [`Storage`](crate::prelude::Storage), so a
+/// table can accept only its own ID type. Derived for `u32` and `usize` brands
+/// with `#[device_repr(key)]`.
+pub trait StorageKey: CubeType + 'static {
+    #[doc(hidden)]
+    fn __expand_position(scope: &Scope, key: Self::ExpandType) -> NativeExpand<usize>;
+}
+
+impl StorageKey for usize {
+    fn __expand_position(_: &Scope, key: NativeExpand<usize>) -> NativeExpand<usize> {
+        key
+    }
+}
+
+impl StorageKey for u32 {
+    fn __expand_position(scope: &Scope, key: NativeExpand<u32>) -> NativeExpand<usize> {
+        usize::__expand_cast_from(scope, key)
     }
 }
