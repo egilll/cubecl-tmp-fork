@@ -323,6 +323,42 @@ pub fn test_storage_atomic<R: Runtime>(client: Client) {
     assert_eq!(peaks.read(&client).unwrap(), [Count(31), Count(0)]);
 }
 
+/// A brand over another brand keeps its representation and layout.
+#[repr(transparent)]
+#[derive(CubeType, DeviceRepr, Debug)]
+#[device_repr(copy, ord)]
+struct Measured<Q: CubeType + 'static>(Q);
+
+#[cube(launch)]
+fn kernel_nested(
+    lengths: &Storage<Measured<Distance>, ReadOnly>,
+    points: &mut Storage<Measured<Packed3<Room>>>,
+) {
+    if ABSOLUTE_POS < points.len() {
+        let length = lengths.load(0);
+        let point = points.load(ABSOLUTE_POS).0;
+        let shifted = Packed3::<Room>(point.0 + Vector::new(length.0.0), comptime! { PhantomData });
+        points.store(ABSOLUTE_POS, Measured(shifted));
+    }
+}
+
+pub fn test_storage_nested<R: Runtime>(client: Client) {
+    let lengths = StorageBuffer::create(
+        &client,
+        &[Measured(Distance(2.0)), Measured(Distance(1.0))],
+    );
+    let points = StorageBuffer::<Measured<Packed3<Room>>>::from_elements(&client, &[0.0; 6]);
+    kernel_nested::launch(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(2),
+        (&lengths).into(),
+        (&points).into(),
+    );
+    assert_eq!(lengths.read(&client).unwrap()[1].0, Distance(1.0));
+    assert_eq!(points.read_elements(&client).unwrap(), [2.0; 6]);
+}
+
 #[macro_export]
 macro_rules! testgen_storage {
     () => {
@@ -351,6 +387,11 @@ macro_rules! testgen_storage {
         fn test_storage_atomic() {
             let client = TestRuntime::client(&Default::default());
             cubecl_core::runtime_tests::storage::test_storage_atomic::<TestRuntime>(client);
+        }
+        #[$crate::runtime_tests::test_log::test]
+        fn test_storage_nested() {
+            let client = TestRuntime::client(&Default::default());
+            cubecl_core::runtime_tests::storage::test_storage_nested::<TestRuntime>(client);
         }
     };
 }

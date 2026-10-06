@@ -38,7 +38,7 @@ pub fn generate(input: &DeriveInput) -> syn::Result<TokenStream> {
     {
         return Err(syn::Error::new_spanned(
             input,
-            "DeviceRepr requires one native field and only comptime PhantomData markers",
+            "DeviceRepr requires one runtime field and only comptime PhantomData markers",
         ));
     }
     let field = runtime[0];
@@ -54,20 +54,23 @@ pub fn generate(input: &DeriveInput) -> syn::Result<TokenStream> {
     let expanded = parsed.name_expand.as_ref().unwrap();
     let device_repr = prelude_type("DeviceRepr");
     let cube = prelude_type("CubeType");
-    let primitive = prelude_type("CubePrimitive");
     let transparent = prelude_type("Transparent");
     let (_, type_generics, _) = parsed.generics.split_for_impl();
     let mut generics = parsed.generics.clone();
     generics
         .make_where_clause()
         .predicates
-        .push(parse_quote!(#repr: #primitive));
+        .push(parse_quote!(#repr: #device_repr));
     generics
         .make_where_clause()
         .predicates
         .push(parse_quote!(#name #type_generics: #cube<ExpandType = #expanded #type_generics> + 'static));
     let (impl_generics, ty_generics, clause) = generics.split_for_impl();
-    let layout = prelude_type(if options.packed { "Packed" } else { "Native" });
+    let layout = if options.packed {
+        prelude_type("Packed").to_token_stream()
+    } else {
+        quote![<#repr as #device_repr>::Layout]
+    };
     let with_repr = with_repr(name, repr, &parsed.generics, &generics);
     let forwarded = options.forward(&Forwarded {
         name,
@@ -81,25 +84,39 @@ pub fn generate(input: &DeriveInput) -> syn::Result<TokenStream> {
         #with_repr
 
         impl #impl_generics #device_repr for #name #ty_generics #clause {
-            type Repr = #repr;
+            type Repr = <#repr as #device_repr>::Repr;
             type Layout = #layout;
-            // SAFETY: `#[repr(transparent)]` makes `Repr` the only field
-            // with a size, and `DeviceRepr` requires every `Repr` be valid.
+            // SAFETY: `#[repr(transparent)]` gives `Self` the layout and
+            // validity of its field, which has those of `Repr` when it is
+            // itself transparent.
             const TRANSPARENT: ::core::option::Option<#transparent<Self>> =
-                ::core::option::Option::Some(unsafe { #transparent::new() });
+                match <#repr as #device_repr>::TRANSPARENT {
+                    ::core::option::Option::Some(_) => {
+                        ::core::option::Option::Some(unsafe { #transparent::new() })
+                    }
+                    ::core::option::Option::None => ::core::option::Option::None,
+                };
 
             fn from_repr(value: Self::Repr) -> Self {
-                Self { #member: value, #(#markers: ::core::marker::PhantomData,)* }
+                Self {
+                    #member: <#repr as #device_repr>::from_repr(value),
+                    #(#markers: ::core::marker::PhantomData,)*
+                }
             }
 
-            fn into_repr(self) -> Self::Repr { self.#member }
+            fn into_repr(self) -> Self::Repr {
+                <#repr as #device_repr>::into_repr(self.#member)
+            }
 
             fn expand_from_repr(value: <Self::Repr as #cube>::ExpandType) -> Self::ExpandType {
-                #expanded { #member: value, #(#markers: ::core::marker::PhantomData,)* }
+                #expanded {
+                    #member: <#repr as #device_repr>::expand_from_repr(value),
+                    #(#markers: ::core::marker::PhantomData,)*
+                }
             }
 
             fn expand_into_repr(value: Self::ExpandType) -> <Self::Repr as #cube>::ExpandType {
-                value.#member
+                <#repr as #device_repr>::expand_into_repr(value.#member)
             }
         }
     })
@@ -205,7 +222,8 @@ impl Options {
         };
         let mut tokens = TokenStream::new();
         if self.copy {
-            let (impl_generics, ty_generics, clause) = generics.split_for_impl();
+            let host_generics = bounded(&[parse_quote!(#repr: ::core::marker::Copy)]);
+            let (impl_generics, ty_generics, clause) = host_generics.split_for_impl();
             let expand_generics = bounded(&[
                 parse_quote!(#repr: ::core::marker::Copy),
                 parse_quote!(<#repr as #prelude::CubeType>::ExpandType: ::core::marker::Copy),
@@ -257,8 +275,10 @@ impl Options {
         }
         if self.ord {
             let generics = bounded(&[
-                parse_quote!(#repr: #prelude::CubePartialOrd),
+                parse_quote!(#repr: ::core::cmp::PartialOrd),
+                parse_quote!(<#repr as #prelude::CubeType>::ExpandType: #prelude::PartialEqExpand),
                 parse_quote!(<#repr as #prelude::CubeType>::ExpandType: #prelude::PartialOrdExpand),
+                parse_quote!(<#repr as #prelude::DeviceRepr>::Repr: #prelude::CubePartialOrd),
             ]);
             let (impl_generics, ty_generics, clause) = generics.split_for_impl();
             let ordering = quote![::core::cmp::Ordering];
