@@ -1,5 +1,5 @@
 use proc_macro2::{Span, TokenStream, TokenTree};
-use quote::{format_ident, quote, quote_spanned};
+use quote::{ToTokens, format_ident, quote, quote_spanned};
 use syn::{
     GenericArgument, Ident, Lit, Member, Pat, PatIdent, PatPath, PatStruct, PatTupleStruct, Path,
     PathArguments, parse_quote, spanned::Spanned,
@@ -29,6 +29,14 @@ fn into_expand_at(tokens: TokenStream, span: Span) -> TokenStream {
     let into_expand = prelude_type("IntoExpand");
     let into_expand = respan(quote![#into_expand], at(span));
     quote_spanned![at(span)=> #into_expand::into_expand(#tokens, scope)]
+}
+
+fn read_expand(tokens: TokenStream) -> TokenStream {
+    let frontend = frontend_path();
+    quote! {{
+        use #frontend::{ReadExpanded as _, ReadLiteral as _};
+        (&#frontend::ReadExpand(&#tokens)).read_expand(scope)
+    }}
 }
 
 impl Expression {
@@ -69,7 +77,9 @@ impl Expression {
                 ..
             } if operator.is_assign() => {
                 let op = format_ident!("__expand_{}_method", operator.op_name());
-                let left = into_expand(left.to_tokens(context));
+                let left = left.to_tokens(context);
+                let frontend = frontend_path();
+                let left = quote![(#frontend::MutExpand(&mut #left)).borrow_expand(scope)];
                 let right = into_expand(right.to_tokens(context));
                 let rhs = match operator.is_cmp() {
                     true => quote![&#right],
@@ -83,6 +93,7 @@ impl Expression {
                     }},
                 );
                 quote! {{
+                    use #frontend::{BorrowExpanded as _, BorrowLiteral as _};
                     let _value = #rhs;
                     #expand
                 }}
@@ -95,8 +106,18 @@ impl Expression {
                 ..
             } => {
                 let op = format_ident!("__expand_{}_method", operator.op_name(), span = at(*span));
-                let left = into_expand_at(left.to_tokens(context), *span);
-                let right = into_expand_at(right.to_tokens(context), *span);
+                let operand = |expression: &Expression, context: &mut Context| {
+                    let tokens = expression.to_tokens(context);
+                    if operator.is_cmp()
+                        && matches!(expression, Expression::Variable(var) if !var.is_const)
+                    {
+                        read_expand(tokens)
+                    } else {
+                        into_expand_at(tokens, *span)
+                    }
+                };
+                let left = operand(left, context);
+                let right = operand(right, context);
                 // An operator is called through its trait rather than as a method of the left
                 // operand, so either operand can give the other its type, as with `core::ops`:
                 // an untyped literal on the left takes the type of the right. The call is
@@ -526,43 +547,27 @@ impl Expression {
                     return quote![#expand { #(#fields),* }];
                 }
 
-                let generics = match turbofish {
-                    PathArguments::None => None,
-                    PathArguments::AngleBracketed(params) => {
-                        let params = params.args.iter().map(|p| match p {
-                            GenericArgument::Type(syn::Type::Path(ty)) => {
-                                if let Some(segment) = ty.path.segments.last() {
-                                    GenericArgument::Type(syn::Type::Path(syn::TypePath {
-                                        qself: ty.qself.clone(),
-                                        path: syn::Path::from(segment.clone()),
-                                        attrs: Default::default(),
-                                    }))
-                                } else {
-                                    p.clone()
-                                }
-                            }
-                            _ => p.clone(),
-                        });
-                        Some(quote![<#(#params),*>])
-                    }
-                    args => {
-                        return error!(
-                            args.span(),
-                            "Fn generics not supported when constructing runtime structs"
-                        );
-                    }
-                };
-
                 let mut path_simplified = path.clone();
-                if let PathArguments::AngleBracketed(params) =
+                let mut parameters = Vec::new();
+                if let PathArguments::AngleBracketed(args) =
                     &mut path_simplified.segments.last_mut().unwrap().arguments
                 {
-                    params.args.iter_mut().for_each(|p| {
-                        if let GenericArgument::Type(syn::Type::Path(ty)) = p {
-                            ty.path = syn::Path::from(ty.path.segments.last().unwrap().clone());
+                    for (index, argument) in args.args.iter_mut().enumerate() {
+                        if let GenericArgument::Type(_) = argument {
+                            let name = format_ident!("__CubeType{index}");
+                            parameters.push(quote![#name]);
+                            *argument = parse_quote!(#name);
+                        } else {
+                            parameters.push(argument.to_token_stream());
                         }
-                    });
+                    }
+                } else if !matches!(turbofish, PathArguments::None) {
+                    return error!(
+                        turbofish.span(),
+                        "Fn generics not supported when constructing runtime structs"
+                    );
                 }
+                let generics = (!parameters.is_empty()).then(|| quote![<#(#parameters),*>]);
 
                 quote! {
                     {
@@ -958,9 +963,13 @@ fn map_args(args: &[Expression], context: &mut Context) -> Vec<TokenStream> {
     args.iter()
         .map(|value| {
             let is_closure = is_closure(value);
-            let tokens = value
-                .as_const(context)
-                .unwrap_or_else(|| value.to_tokens(context));
+            let tokens = if matches!(value, Expression::Variable(var) if var.is_mut_owned && !var.is_const) {
+                read_expand(value.to_tokens(context))
+            } else {
+                value
+                    .as_const(context)
+                    .unwrap_or_else(|| value.to_tokens(context))
+            };
             if is_closure {
                 tokens
             } else {

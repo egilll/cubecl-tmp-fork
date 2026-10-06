@@ -46,11 +46,7 @@ impl CubeTypeStruct {
     ) -> TokenStream {
         let vis = &self.vis;
         let generics = &self.generics;
-        if self
-            .fields
-            .first()
-            .is_some_and(|field| field.ident.is_none())
-        {
+        if self.tuple {
             quote![#vis struct #name #generics (#(#fields),*) #where_clause;]
         } else {
             quote![#vis struct #name #generics #where_clause { #(#fields),* }]
@@ -370,7 +366,14 @@ impl CubeTypeStruct {
         let comptime_names: Vec<_> = self
             .fields
             .iter()
-            .filter(|it| it.comptime.is_present())
+            .filter(|it| it.comptime.is_present() && !it.is_marker())
+            .map(TypeField::member)
+            .collect();
+
+        let marker_names: Vec<_> = self
+            .fields
+            .iter()
+            .filter(|it| it.is_marker())
             .map(TypeField::member)
             .collect();
 
@@ -393,6 +396,7 @@ impl CubeTypeStruct {
                 ) -> Self {
                     Self {
                         #(#runtime_names: #call::CallArg::call_from_results(results),)*
+                        #(#marker_names: ::core::marker::PhantomData,)*
                     }
                 }
             },
@@ -408,9 +412,10 @@ impl CubeTypeStruct {
                     true #(&& #call::CallArg::call_slots(&self.#runtime_names, scope, slots))*
                 }
 
-                fn call_key(&self, hasher: &mut dyn ::core::hash::Hasher) -> bool {
+                fn call_key(&self, mut hasher: &mut dyn ::core::hash::Hasher) -> bool {
                     #[allow(unused_imports)]
                     use #call::{HashComptime as _, NoHashComptime as _};
+                    ::core::hash::Hash::hash(&::core::any::type_name::<Self>(), &mut hasher);
                     true
                         #(&& #call::CallArg::call_key(&self.#runtime_names, hasher))*
                         #(&& (&#call::HashProbe(&self.#comptime_names)).hash_comptime(hasher))*
@@ -428,6 +433,7 @@ impl CubeTypeStruct {
                             params,
                         ),)*
                         #(#comptime_names: ::core::clone::Clone::clone(&self.#comptime_names),)*
+                        #(#marker_names: ::core::marker::PhantomData,)*
                     }
                 }
 
@@ -446,7 +452,17 @@ impl CubeTypeStruct {
             .iter()
             .filter(|it| !it.comptime.is_present())
             .cloned();
-        bounded_where_clause(&self.generics, fields, |param| quote![#param: #launch_arg])
+        let mut generics = self.generics.clone();
+        generics.where_clause =
+            bounded_where_clause(&generics, fields, |param| quote![#param: #launch_arg]);
+        bounded_where_clause(
+            &generics,
+            self.fields
+                .iter()
+                .filter(|field| field.is_marker())
+                .cloned(),
+            |param| quote![#param: Send + Sync + 'static],
+        )
     }
 }
 

@@ -106,6 +106,68 @@ pub trait ExpandTypeClone {
     fn clone_unchecked(&self) -> Self;
 }
 
+#[doc(hidden)]
+pub struct ReadExpand<'a, T>(pub &'a T);
+
+#[doc(hidden)]
+pub trait ReadExpanded {
+    type Output;
+    fn read_expand(&self, scope: &Scope) -> Self::Output;
+}
+
+impl<T: ExpandTypeClone + IntoMut> ReadExpanded for ReadExpand<'_, T> {
+    type Output = T;
+
+    fn read_expand(&self, scope: &Scope) -> T {
+        self.0.clone_unchecked().into_mut(scope)
+    }
+}
+
+#[doc(hidden)]
+pub trait ReadLiteral {
+    type Output;
+    fn read_expand(&self, scope: &Scope) -> Self::Output;
+}
+
+impl<T: Copy + IntoExpand> ReadLiteral for &ReadExpand<'_, T> {
+    type Output = T::Expand;
+
+    fn read_expand(&self, scope: &Scope) -> Self::Output {
+        (*self.0).into_expand(scope)
+    }
+}
+
+#[doc(hidden)]
+pub struct MutExpand<'a, T>(pub &'a mut T);
+
+#[doc(hidden)]
+pub trait BorrowExpanded {
+    type Output;
+    fn borrow_expand(self, scope: &Scope) -> Self::Output;
+}
+
+impl<'a, T: IntoExpand<Expand = T>> BorrowExpanded for MutExpand<'a, T> {
+    type Output = &'a mut T;
+
+    fn borrow_expand(self, _: &Scope) -> Self::Output {
+        self.0
+    }
+}
+
+#[doc(hidden)]
+pub trait BorrowLiteral {
+    type Output;
+    fn borrow_expand(&mut self, scope: &Scope) -> Self::Output;
+}
+
+impl<T: Copy + IntoExpand> BorrowLiteral for MutExpand<'_, T> {
+    type Output = T::Expand;
+
+    fn borrow_expand(&mut self, scope: &Scope) -> Self::Output {
+        (*self.0).into_expand(scope)
+    }
+}
+
 impl<T: ExpandTypeClone + ?Sized> ExpandTypeClone for &T {
     fn clone_unchecked(&self) -> Self {
         self

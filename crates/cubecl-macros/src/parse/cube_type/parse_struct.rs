@@ -14,6 +14,8 @@ pub struct CubeTypeStruct {
     data: Data<(), TypeField>,
     #[darling(skip)]
     pub fields: Vec<TypeField>,
+    #[darling(skip)]
+    pub tuple: bool,
     pub generics: Generics,
     pub vis: Visibility,
     pub skip_bounds: Flag,
@@ -45,7 +47,9 @@ impl RuntimeField for TypeField {
 
 fn unwrap_fields(mut ty: CubeTypeStruct) -> CubeTypeStruct {
     // This will be supported inline with the next darling release
-    let fields = ty.data.as_ref().take_struct().unwrap().fields;
+    let structure = ty.data.as_ref().take_struct().unwrap();
+    ty.tuple = matches!(structure.style, darling::ast::Style::Tuple);
+    let fields = structure.fields;
     ty.fields = fields
         .into_iter()
         .cloned()
@@ -79,6 +83,29 @@ impl TypeField {
             Some(ident) => Member::Named(ident.clone()),
             None => Member::Unnamed(Index::from(self.index)),
         }
+    }
+
+    pub fn is_marker(&self) -> bool {
+        if !self.comptime.is_present() {
+            return false;
+        }
+        let Type::Path(ty) = &self.ty else {
+            return false;
+        };
+        let names: Vec<_> = ty
+            .path
+            .segments
+            .iter()
+            .map(|it| it.ident.to_string())
+            .collect();
+        matches!(
+            names
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .as_slice(),
+            ["PhantomData"] | ["core", "marker", "PhantomData"] | ["std", "marker", "PhantomData"]
+        )
     }
 
     pub fn binding(&self) -> Ident {

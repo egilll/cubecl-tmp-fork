@@ -1,0 +1,10 @@
+error[E0308]: mismatched types
+  --> tests/error/phantom_brand_assignment.rs:11:5
+   |
+10 | fn invalid(world: Position<World>) -> Position<Room> {
+   |                                       -------------- expected `Position<Room>` because of return type
+11 |     world
+   |     ^^^^^ expected `Position<Room>`, found `Position<World>`
+   |
+   = note: expected struct `Position<Room>`
+              found struct `Position<World>`

@@ -6,6 +6,9 @@ use cubecl_core as cubecl;
 struct Distance(f32);
 
 #[derive(CubeType, CubeTypeMut, CubeLaunch)]
+struct Empty();
+
+#[derive(CubeType, CubeTypeMut, CubeLaunch)]
 struct Pair<T: CubeType>(T, T);
 
 #[cube]
@@ -34,6 +37,7 @@ fn kernel(value: Distance, pair: Pair<f32>, output: &mut [f32]) {
 }
 
 fn main() {
+    let _ = EmptyLaunch::new();
     let _ = DistanceLaunch::new(2.0);
     let _ = PairLaunch::<f32>::new(1.0, 2.0);
 }

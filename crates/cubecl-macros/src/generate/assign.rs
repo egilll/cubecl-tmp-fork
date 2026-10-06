@@ -80,6 +80,8 @@ impl Assign {
         let fields = struct_.fields.iter().enumerate().map(|(i, field)| {
             let index = Index::from(i);
             match &field.ident {
+                Some(name) if field.comptime.is_present() => quote![#name: self.#name.clone()],
+                None if field.comptime.is_present() => quote![self.#index.clone()],
                 Some(name) => {
                     quote![#name: self.#name.init_mut(scope)]
                 }
