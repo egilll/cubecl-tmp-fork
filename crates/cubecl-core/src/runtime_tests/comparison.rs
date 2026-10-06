@@ -204,6 +204,34 @@ pub fn test_nan_ordering<R: Runtime>(client: Client) {
     }
 }
 
+/// Booleans compare as values: `a == b` and `a != b` of two runtime flags.
+#[cube(launch_unchecked)]
+fn kernel_bool_equality(lhs: &[u32], rhs: &[u32], output: &mut [u32]) {
+    if ABSOLUTE_POS < lhs.len() {
+        let a = lhs[ABSOLUTE_POS] > 0;
+        let b = rhs[ABSOLUTE_POS] > 0;
+        output[ABSOLUTE_POS] = u32::cast_from(a == b) + u32::cast_from(a != b) * 2;
+    }
+}
+
+pub fn test_bool_equality<R: Runtime>(client: Client) {
+    let lhs: &[u32] = &[0, 0, 1, 1];
+    let rhs: &[u32] = &[0, 1, 0, 1];
+    let output_handle = client.empty(lhs.len() * core::mem::size_of::<u32>());
+    unsafe {
+        kernel_bool_equality::launch_unchecked(
+            &client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(lhs.len() as u32),
+            BufferArg::from_raw_parts(client.create_from_slice(u32::as_bytes(lhs)), lhs.len()),
+            BufferArg::from_raw_parts(client.create_from_slice(u32::as_bytes(rhs)), rhs.len()),
+            BufferArg::from_raw_parts(output_handle.clone(), lhs.len()),
+        )
+    };
+    let actual = client.read_one_unchecked(output_handle);
+    assert_eq!(u32::from_bytes(&actual), [1, 2, 2, 1]);
+}
+
 /// Comparing a vector with itself folds at compile time, and the answer is a vector of `true`,
 /// not the one `true` a bare [`BoolAttr`](cubecl_ir::attributes::BoolAttr) can hold. Each of these
 /// picks a different fold: two identical operands, and an operand against its type's extreme.
@@ -375,6 +403,7 @@ macro_rules! testgen_comparison {
             add_test!(test_eq);
             add_test!(test_ne);
             add_test!(test_nan_ordering);
+            add_test!(test_bool_equality);
             add_test!(test_folded_vector);
         }
     };
