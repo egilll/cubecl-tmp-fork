@@ -16,7 +16,7 @@ use objc2_metal::{
     MTLCompileOptions, MTLComputePipelineState, MTLDevice, MTLLanguageVersion, MTLLibrary,
     MTLMathFloatingPointFunctions, MTLMathMode,
 };
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use cubecl_environment::persistence::Store;
 use cubecl_server::compiler::{CompilationCache, compilation_store, store_compiled};
@@ -54,6 +54,10 @@ pub struct MetalContext {
     compiled_kernels: CompilationCache<KernelId, CompiledKernel>,
     /// On-disk MSL source cache for faster recompilation across runs.
     msl_cache: Option<Store<KernelCacheKey, MslCacheEntry>>,
+    /// Pipelines by source with the entrypoint name blanked, so kernels whose
+    /// ids differ only in types that don't change the code, such as unit
+    /// brands, share one driver compilation.
+    pipelines_by_source: HashMap<(String, (u32, u32, u32)), CompiledKernel>,
     build_id: StableHash,
     compilation_options: cubecl_cpp::shared::CompilationOptions,
     msl_compile_options: Retained<MTLCompileOptions>,
@@ -84,6 +88,7 @@ impl MetalContext {
         Self {
             compiled_kernels: CompilationCache::mirroring(&msl_cache),
             msl_cache,
+            pipelines_by_source: HashMap::new(),
             build_id: build_id_hash(),
             device,
             compilation_options,
@@ -193,8 +198,27 @@ impl MetalContext {
         Ok(compiled)
     }
 
-    /// Creates a compute pipeline from MSL source code.
+    /// Creates a compute pipeline from MSL source code, reusing one built
+    /// from the same code under another entrypoint name.
     fn create_pipeline_from_source(
+        &mut self,
+        source: &str,
+        entrypoint_name: &str,
+        cube_dim: CubeDim,
+    ) -> Result<CompiledKernel, cubecl_server::compiler::CompilationError> {
+        let key = (
+            source.replace(entrypoint_name, ""),
+            (cube_dim.x, cube_dim.y, cube_dim.z),
+        );
+        if let Some(compiled) = self.pipelines_by_source.get(&key) {
+            return Ok(compiled.clone());
+        }
+        let compiled = self.build_pipeline(source, entrypoint_name, cube_dim)?;
+        self.pipelines_by_source.insert(key, compiled.clone());
+        Ok(compiled)
+    }
+
+    fn build_pipeline(
         &self,
         source: &str,
         entrypoint_name: &str,
