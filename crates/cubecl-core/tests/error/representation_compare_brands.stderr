@@ -1,0 +1,15 @@
+error[E0308]: mismatched types
+  --> tests/error/representation_compare_brands.rs:16:16
+   |
+16 |     distance < time
+   |     --------   ^^^^ expected `Distance`, found `Time`
+   |     |
+   |     expected because this is `Distance`
+
+error[E0308]: mismatched types
+  --> tests/error/representation_compare_brands.rs:14:1
+   |
+14 | #[cube]
+   | ^^^^^^^ expected `DistanceExpand`, found `TimeExpand`
+   |
+   = note: this error originates in the attribute macro `cube` (in Nightly builds, run with -Z macro-backtrace for more info)

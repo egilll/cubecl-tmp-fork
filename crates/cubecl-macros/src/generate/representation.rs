@@ -1,6 +1,6 @@
 use darling::FromDeriveInput;
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use syn::{DeriveInput, parse_quote};
 
 use crate::{parse::cube_type::CubeTypeStruct, paths::prelude_type};
@@ -23,6 +23,7 @@ pub fn generate(input: &DeriveInput) -> syn::Result<TokenStream> {
             "DeviceRepr requires #[repr(transparent)]",
         ));
     }
+    let options = Options::parse(input)?;
     let parsed = CubeTypeStruct::from_derive_input(input)?;
     let runtime: Vec<_> = parsed
         .fields
@@ -63,9 +64,18 @@ pub fn generate(input: &DeriveInput) -> syn::Result<TokenStream> {
     generics
         .make_where_clause()
         .predicates
-        .push(parse_quote!(Self: #cube<ExpandType = #expanded #type_generics> + 'static));
+        .push(parse_quote!(#name #type_generics: #cube<ExpandType = #expanded #type_generics> + 'static));
     let (impl_generics, ty_generics, clause) = generics.split_for_impl();
+    let comparisons = options.comparisons(&Forwarded {
+        name,
+        expanded,
+        member: &member,
+        repr,
+        generics: &generics,
+    });
     Ok(quote! {
+        #comparisons
+
         impl #impl_generics #device_repr for #name #ty_generics #clause {
             type Repr = #repr;
 
@@ -84,4 +94,156 @@ pub fn generate(input: &DeriveInput) -> syn::Result<TokenStream> {
             }
         }
     })
+}
+
+/// Same-brand traits a `#[device_repr(..)]` attribute forwards to the native
+/// representation, without bounds on phantom markers. Arithmetic stays explicit.
+#[derive(Default)]
+struct Options {
+    copy: bool,
+    eq: bool,
+    ord: bool,
+}
+
+struct Forwarded<'a> {
+    name: &'a syn::Ident,
+    expanded: &'a syn::Ident,
+    member: &'a syn::Member,
+    repr: &'a syn::Type,
+    generics: &'a syn::Generics,
+}
+
+impl Options {
+    fn parse(input: &DeriveInput) -> syn::Result<Self> {
+        let mut options = Self::default();
+        for attr in input.attrs.iter().filter(|attr| attr.path().is_ident("device_repr")) {
+            attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("copy") {
+                    options.copy = true;
+                } else if meta.path.is_ident("eq") {
+                    options.eq = true;
+                } else if meta.path.is_ident("ord") {
+                    options.ord = true;
+                } else {
+                    return Err(meta.error("expected `copy`, `eq` or `ord`"));
+                }
+                Ok(())
+            })?;
+        }
+        options.eq |= options.ord;
+        Ok(options)
+    }
+
+    fn comparisons(&self, value: &Forwarded) -> TokenStream {
+        let Forwarded {
+            name,
+            expanded,
+            member,
+            repr,
+            generics,
+        } = value;
+        let prelude = crate::paths::prelude_path();
+        let bounded = |predicates: [syn::WherePredicate; 2]| {
+            let mut generics = (*generics).clone();
+            generics.make_where_clause().predicates.extend(predicates);
+            generics
+        };
+        let mut tokens = TokenStream::new();
+        if self.copy {
+            let (impl_generics, ty_generics, clause) = generics.split_for_impl();
+            let expand_generics = bounded([
+                parse_quote!(#repr: ::core::marker::Copy),
+                parse_quote!(<#repr as #prelude::CubeType>::ExpandType: ::core::marker::Copy),
+            ]);
+            let expand_clause = &expand_generics.where_clause;
+            tokens.extend(quote! {
+                impl #impl_generics ::core::clone::Clone for #name #ty_generics #clause {
+                    fn clone(&self) -> Self {
+                        *self
+                    }
+                }
+
+                impl #impl_generics ::core::marker::Copy for #name #ty_generics #clause {}
+
+                impl #impl_generics ::core::clone::Clone for #expanded #ty_generics #expand_clause {
+                    fn clone(&self) -> Self {
+                        *self
+                    }
+                }
+
+                impl #impl_generics ::core::marker::Copy for #expanded #ty_generics #expand_clause {}
+            });
+        }
+        if self.eq {
+            let generics = bounded([
+                parse_quote!(#repr: ::core::cmp::PartialEq),
+                parse_quote!(<#repr as #prelude::CubeType>::ExpandType: #prelude::PartialEqExpand),
+            ]);
+            let (impl_generics, ty_generics, clause) = generics.split_for_impl();
+            let methods = ["eq", "ne"].map(|op| {
+                let method = format_ident!("__expand_{op}_method");
+                quote! {
+                    fn #method(&self, scope: &#prelude::Scope, rhs: &Self) -> #prelude::NativeExpand<bool> {
+                        #prelude::PartialEqExpand::#method(&self.#member, scope, &rhs.#member)
+                    }
+                }
+            });
+            tokens.extend(quote! {
+                impl #impl_generics ::core::cmp::PartialEq for #name #ty_generics #clause {
+                    fn eq(&self, other: &Self) -> bool {
+                        self.#member == other.#member
+                    }
+                }
+
+                impl #impl_generics #prelude::PartialEqExpand for #expanded #ty_generics #clause {
+                    #(#methods)*
+                }
+            });
+        }
+        if self.ord {
+            let generics = bounded([
+                parse_quote!(#repr: #prelude::CubePartialOrd),
+                parse_quote!(<#repr as #prelude::CubeType>::ExpandType: #prelude::PartialOrdExpand),
+            ]);
+            let (impl_generics, ty_generics, clause) = generics.split_for_impl();
+            let ordering = quote![::core::cmp::Ordering];
+            let methods = ["lt", "le", "gt", "ge"].map(|op| {
+                let method = format_ident!("__expand_{op}_method");
+                quote! {
+                    fn #method(&self, scope: &#prelude::Scope, rhs: &Self) -> #prelude::NativeExpand<bool> {
+                        #prelude::PartialOrdExpand::#method(&self.#member, scope, &rhs.#member)
+                    }
+                }
+            });
+            tokens.extend(quote! {
+                impl #impl_generics ::core::cmp::PartialOrd for #name #ty_generics #clause {
+                    fn partial_cmp(&self, other: &Self) -> ::core::option::Option<#ordering> {
+                        self.#member.partial_cmp(&other.#member)
+                    }
+                }
+
+                impl #impl_generics #prelude::PartialOrdExpand for #expanded #ty_generics #clause {
+                    fn __expand_partial_cmp_method(
+                        &self,
+                        scope: &#prelude::Scope,
+                        rhs: &Self,
+                    ) -> #prelude::OptionExpand<#ordering> {
+                        #prelude::PartialOrdExpand::__expand_partial_cmp_method(
+                            &self.#member,
+                            scope,
+                            &rhs.#member,
+                        )
+                    }
+                    #(#methods)*
+                }
+
+                impl #impl_generics #prelude::Ordered for #name #ty_generics #clause {}
+
+                impl #impl_generics #prelude::OrderedExpand for #expanded #ty_generics #clause {
+                    type Value = #name #ty_generics;
+                }
+            });
+        }
+        tokens
+    }
 }

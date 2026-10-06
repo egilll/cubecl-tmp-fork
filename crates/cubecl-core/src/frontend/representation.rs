@@ -1,4 +1,8 @@
-use crate::prelude::{CubePrimitive, CubeType, Scope};
+use crate::{
+    frontend::{clamp, max, min},
+    prelude::{CubePartialOrd, CubePrimitive, CubeType, Scope},
+    unexpanded,
+};
 
 /// A value stored on the device as a native primitive, such as a unit or ID
 /// brand over `f32` or `u32`.
@@ -51,5 +55,44 @@ impl<T: CubePrimitive> DeviceRepr for T {
 
     fn expand_into_repr(value: Self::ExpandType) -> Self::ExpandType {
         value
+    }
+}
+
+/// Same-brand ordering of a [`DeviceRepr`] value, computed on its native
+/// representation. Derived with `#[device_repr(ord)]`.
+pub trait Ordered: DeviceRepr<Repr: CubePartialOrd> + PartialOrd
+where
+    Self: CubeType<ExpandType: OrderedExpand>,
+{
+    fn min(self, _other: Self) -> Self {
+        unexpanded!()
+    }
+
+    fn max(self, _other: Self) -> Self {
+        unexpanded!()
+    }
+
+    fn clamp(self, _min: Self, _max: Self) -> Self {
+        unexpanded!()
+    }
+}
+
+#[doc(hidden)]
+pub trait OrderedExpand: Sized {
+    type Value: DeviceRepr<ExpandType = Self, Repr: CubePartialOrd>;
+
+    fn __expand_min_method(self, scope: &Scope, other: Self) -> Self {
+        let [lhs, rhs] = [self, other].map(Self::Value::expand_into_repr);
+        Self::Value::expand_from_repr(min::expand(scope, lhs, rhs))
+    }
+
+    fn __expand_max_method(self, scope: &Scope, other: Self) -> Self {
+        let [lhs, rhs] = [self, other].map(Self::Value::expand_into_repr);
+        Self::Value::expand_from_repr(max::expand(scope, lhs, rhs))
+    }
+
+    fn __expand_clamp_method(self, scope: &Scope, min: Self, max: Self) -> Self {
+        let [value, min, max] = [self, min, max].map(Self::Value::expand_into_repr);
+        Self::Value::expand_from_repr(clamp::expand(scope, value, min, max))
     }
 }

@@ -350,7 +350,7 @@ pub fn derive_assign(input: TokenStream) -> TokenStream {
     }
 }
 
-#[proc_macro_derive(DeviceRepr, attributes(cube, expand))]
+#[proc_macro_derive(DeviceRepr, attributes(cube, expand, device_repr))]
 pub fn derive_device_repr(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     generate::representation::generate(&input)
