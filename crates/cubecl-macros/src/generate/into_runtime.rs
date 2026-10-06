@@ -61,12 +61,12 @@ impl IntoRuntime {
                 Some(name) => {
                     quote![#name: #into_runtime::__expand_runtime_method(self.#name, scope)]
                 }
-                None if field.comptime.is_present() => quote![self.#index],
-                None => quote![#into_runtime::__expand_runtime_method(self.#index, scope)],
+                None if field.comptime.is_present() => quote![#index: self.#index],
+                None => quote![#index: #into_runtime::__expand_runtime_method(self.#index, scope)],
             }
         });
         match struct_.style {
-            Style::Tuple => quote![_Ty(#(#fields,)*)],
+            Style::Tuple => quote![_Ty { #(#fields,)* }],
             Style::Struct => quote![_Ty { #(#fields,)* }],
             Style::Unit => quote![_Ty],
         }

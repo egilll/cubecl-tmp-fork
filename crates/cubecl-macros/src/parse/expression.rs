@@ -128,6 +128,27 @@ impl Expression {
                     Expression::Path { path, .. } if is_intrinsic(&path) => {
                         Expression::CompilerIntrinsic { func: path, args }
                     }
+                    Expression::Path { path, qself: None }
+                        if fn_associated_type(&Expression::Path {
+                            path: path.clone(),
+                            qself: None,
+                        })
+                        .is_none()
+                            && path.segments.last().is_some_and(|segment| {
+                                segment.ident.to_string().starts_with(char::is_uppercase)
+                            }) =>
+                    {
+                        Expression::StructInit {
+                            path,
+                            fields: args
+                                .into_iter()
+                                .enumerate()
+                                .map(|(i, value)| {
+                                    (syn::Member::Unnamed(syn::Index::from(i)), value)
+                                })
+                                .collect(),
+                        }
+                    }
                     func => {
                         let associated_type = fn_associated_type(&func);
                         Expression::FunctionCall {

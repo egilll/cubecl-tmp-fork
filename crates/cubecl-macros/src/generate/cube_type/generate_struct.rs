@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Ident, Type, Visibility, WhereClause};
+use syn::{Ident, Member, Type, Visibility, WhereClause};
 
 use super::generate::reference_impls;
 use crate::{
@@ -38,6 +38,25 @@ impl CubeTypeStruct {
         }
     }
 
+    fn declaration(
+        &self,
+        name: &Ident,
+        fields: Vec<TokenStream>,
+        where_clause: Option<&WhereClause>,
+    ) -> TokenStream {
+        let vis = &self.vis;
+        let generics = &self.generics;
+        if self
+            .fields
+            .first()
+            .is_some_and(|field| field.ident.is_none())
+        {
+            quote![#vis struct #name #generics (#(#fields),*) #where_clause;]
+        } else {
+            quote![#vis struct #name #generics #where_clause { #(#fields),* }]
+        }
+    }
+
     fn expand_ty(&self) -> proc_macro2::TokenStream {
         let expand_derives = match &self.derive {
             Some(derives) => quote![#[#derives]],
@@ -47,14 +66,13 @@ impl CubeTypeStruct {
         let fields = self.fields.iter().map(TypeField::expand_field);
         let name = &self.name_expand;
         let generics = &self.generics;
-        let vis = &self.vis;
 
-        quote! {
-            #expand_derives
-            #vis struct #name #generics {
-                #(#fields),*
-            }
-        }
+        let declaration = self.declaration(
+            name.as_ref().unwrap(),
+            fields.collect(),
+            generics.where_clause.as_ref(),
+        );
+        quote! { #expand_derives #declaration }
     }
 
     fn clone_expand(&self) -> proc_macro2::TokenStream {
@@ -80,20 +98,22 @@ impl CubeTypeStruct {
     fn launch_ty(&self) -> proc_macro2::TokenStream {
         let name = &self.name_launch;
         let fields = self.fields.iter().map(TypeField::launch_field);
-        let generics = self.expanded_generics();
         let where_clause = self.launch_arg_where();
-        let vis = &self.vis;
 
-        quote! {
-            #vis struct #name #generics #where_clause {
-                #(#fields),*
-            }
-        }
+        self.declaration(
+            name.as_ref().unwrap(),
+            fields.collect(),
+            where_clause.as_ref(),
+        )
     }
 
     fn launch_new(&self) -> proc_macro2::TokenStream {
         let args = self.fields.iter().map(TypeField::launch_new_arg);
-        let fields = self.fields.iter().map(|field| &field.ident);
+        let fields = self.fields.iter().map(|field| {
+            let member = field.member();
+            let binding = field.binding();
+            quote![#member: #binding]
+        });
         let name = &self.name_launch;
 
         let generics = self.expanded_generics();
@@ -159,18 +179,14 @@ impl CubeTypeStruct {
     fn compilation_ty(&self, name: &Ident) -> proc_macro2::TokenStream {
         let name_debug = &self.ident;
         let fields = self.fields.iter().map(TypeField::compilation_arg_field);
-        let generics = &self.generics;
         let (type_generics_names, impl_generics, _) = self.generics.split_for_impl();
-        let vis = &self.vis;
         let where_clause = self.launch_arg_where();
 
-        fn generate<'a, F: Fn(&Ident) -> TokenStream>(
+        fn generate<'a, F: Fn(Member) -> TokenStream>(
             fields: impl Iterator<Item = &'a TypeField>,
             func: F,
         ) -> Vec<TokenStream> {
-            fields
-                .map(|field| func(field.ident.as_ref().unwrap()))
-                .collect::<Vec<_>>()
+            fields.map(|field| func(field.member())).collect::<Vec<_>>()
         }
 
         let clone = generate(self.fields.iter(), |name| quote!(#name: self.#name.clone()));
@@ -184,10 +200,9 @@ impl CubeTypeStruct {
             |name| quote!(.field(stringify!(#name), &self.#name)),
         );
 
+        let declaration = self.declaration(name, fields.collect(), where_clause.as_ref());
         quote! {
-            #vis struct #name #generics #where_clause {
-                #(#fields),*
-            }
+            #declaration
 
             impl #type_generics_names Clone for #name #impl_generics #where_clause {
                 fn clone(&self) -> Self {
@@ -350,13 +365,13 @@ impl CubeTypeStruct {
             .fields
             .iter()
             .filter(|it| !it.comptime.is_present())
-            .map(|it| it.ident.as_ref().unwrap())
+            .map(TypeField::member)
             .collect();
         let comptime_names: Vec<_> = self
             .fields
             .iter()
             .filter(|it| it.comptime.is_present())
-            .map(|it| it.ident.as_ref().unwrap())
+            .map(TypeField::member)
             .collect();
 
         // Returned by its runtime fields, in order. A struct with comptime
@@ -439,18 +454,19 @@ impl TypeField {
     pub fn expand_field(&self) -> TokenStream {
         let cube_type = prelude_type("CubeType");
         let vis = &self.vis;
-        let name = self.ident.as_ref().unwrap();
+        let member = self.member();
+        let name = self.ident.as_ref().map(|_| quote![#member:]);
         let ty = &self.ty;
         if self.comptime.is_present() {
-            quote![#vis #name: #ty]
+            quote![#vis #name #ty]
         } else {
-            quote![#vis #name: <#ty as #cube_type>::ExpandType]
+            quote![#vis #name <#ty as #cube_type>::ExpandType]
         }
     }
 
     pub fn clone_field(&self) -> TokenStream {
         let clone = prelude_type("ExpandTypeClone");
-        let name = self.ident.as_ref().unwrap();
+        let name = self.member();
         let is_comptime = self.comptime.is_present();
         if is_comptime {
             quote![#name: self.#name.clone()]
@@ -462,19 +478,20 @@ impl TypeField {
     pub fn launch_field(&self) -> TokenStream {
         let launch_arg = prelude_type("LaunchArg");
         let vis = &self.vis;
-        let name = self.ident.as_ref().unwrap();
+        let member = self.member();
+        let name = self.ident.as_ref().map(|_| quote![#member:]);
         let ty = &self.ty;
 
         if !self.comptime.is_present() {
-            quote![#vis #name: <#ty as #launch_arg>::RuntimeArg]
+            quote![#vis #name <#ty as #launch_arg>::RuntimeArg]
         } else {
-            quote![#vis #name: #ty]
+            quote![#vis #name #ty]
         }
     }
 
     pub fn launch_new_arg(&self) -> TokenStream {
         let launch_arg = prelude_type("LaunchArg");
-        let name = self.ident.as_ref().unwrap();
+        let name = self.binding();
         let ty = &self.ty;
 
         if !self.comptime.is_present() {
@@ -487,20 +504,21 @@ impl TypeField {
     pub fn compilation_arg_field(&self) -> TokenStream {
         let launch_arg = prelude_type("LaunchArg");
         let vis = &self.vis;
-        let name = self.ident.as_ref().unwrap();
+        let member = self.member();
+        let name = self.ident.as_ref().map(|_| quote![#member:]);
         let ty = &self.ty;
 
         if !self.comptime.is_present() {
-            quote![#vis #name: <#ty as #launch_arg>::CompilationArg]
+            quote![#vis #name <#ty as #launch_arg>::CompilationArg]
         } else {
-            quote![#vis #name: #ty]
+            quote![#vis #name #ty]
         }
     }
 
-    pub fn split(&self) -> (&Visibility, &Ident, &Type, bool) {
+    pub fn split(&self) -> (&Visibility, Member, &Type, bool) {
         (
             &self.vis,
-            self.ident.as_ref().unwrap(),
+            self.member(),
             &self.ty,
             self.comptime.is_present(),
         )

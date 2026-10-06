@@ -511,9 +511,20 @@ impl Expression {
             }
             Expression::StructInit { path, fields } => {
                 let cube_type = prelude_type("CubeType");
+                let tuple = fields
+                    .iter()
+                    .all(|(member, _)| matches!(member, syn::Member::Unnamed(_)));
                 let fields = init_fields(fields, context);
                 let path_last = path.segments.last().unwrap();
                 let turbofish = &path_last.arguments;
+                // A tuple constructor names its derived expand struct, so the
+                // struct's generics are inferred from the fields as in Rust.
+                if tuple && matches!(turbofish, PathArguments::None) && path_last.ident != "Self" {
+                    let mut expand = path.clone();
+                    let last = expand.segments.last_mut().unwrap();
+                    last.ident = format_ident!("{}Expand", last.ident);
+                    return quote![#expand { #(#fields),* }];
+                }
 
                 let generics = match turbofish {
                     PathArguments::None => None,

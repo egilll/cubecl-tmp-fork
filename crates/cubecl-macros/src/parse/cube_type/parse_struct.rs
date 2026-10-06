@@ -1,11 +1,11 @@
 use darling::{FromDeriveInput, FromField, ast::Data, uses_type_params, util::Flag};
 use quote::format_ident;
-use syn::{Generics, Ident, Type, Visibility};
+use syn::{Generics, Ident, Index, Member, Type, Visibility};
 
 use crate::generate::RuntimeField;
 
 #[derive(FromDeriveInput, Debug)]
-#[darling(supports(struct_named, struct_unit), attributes(expand, cube, launch), map = unwrap_fields)]
+#[darling(supports(struct_named, struct_tuple, struct_unit), attributes(expand, cube, launch), map = unwrap_fields)]
 pub struct CubeTypeStruct {
     pub ident: Ident,
     pub name_launch: Option<Ident>,
@@ -32,6 +32,8 @@ pub struct TypeField {
     pub ident: Option<Ident>,
     pub ty: Type,
     pub comptime: Flag,
+    #[darling(skip)]
+    pub index: usize,
 }
 
 uses_type_params!(TypeField, ty);
@@ -44,7 +46,15 @@ impl RuntimeField for TypeField {
 fn unwrap_fields(mut ty: CubeTypeStruct) -> CubeTypeStruct {
     // This will be supported inline with the next darling release
     let fields = ty.data.as_ref().take_struct().unwrap().fields;
-    ty.fields = fields.into_iter().cloned().collect();
+    ty.fields = fields
+        .into_iter()
+        .cloned()
+        .enumerate()
+        .map(|(index, mut field)| {
+            field.index = index;
+            field
+        })
+        .collect();
 
     let name = &ty.ident;
     ty.name_expand
@@ -60,5 +70,20 @@ fn unwrap_fields(mut ty: CubeTypeStruct) -> CubeTypeStruct {
 impl CubeTypeStruct {
     pub fn expanded_generics(&self) -> Generics {
         self.generics.clone()
+    }
+}
+
+impl TypeField {
+    pub fn member(&self) -> Member {
+        match &self.ident {
+            Some(ident) => Member::Named(ident.clone()),
+            None => Member::Unnamed(Index::from(self.index)),
+        }
+    }
+
+    pub fn binding(&self) -> Ident {
+        self.ident
+            .clone()
+            .unwrap_or_else(|| format_ident!("field{}", self.index))
     }
 }
