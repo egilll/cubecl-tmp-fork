@@ -51,6 +51,13 @@ where
         self.inner.read(client)
     }
 
+    pub fn read_elements_async(
+        &self,
+        client: &Client,
+    ) -> impl core::future::Future<Output = Result<Vec<StorageElement<Q>>, ServerError>> + use<Q> {
+        self.inner.read_async(client)
+    }
+
     /// Values stored.
     pub fn len(&self) -> usize {
         self.inner.len() / width::<Q>()
