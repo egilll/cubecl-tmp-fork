@@ -2,8 +2,9 @@ use alloc::vec::Vec;
 use core::marker::PhantomData;
 
 use crate::{
+    self as cubecl,
     frontend::{clamp, max, min},
-    prelude::{Cast, CubePartialOrd, CubePrimitive, CubeType, NativeExpand, Scope},
+    prelude::*,
     unexpanded,
 };
 
@@ -16,6 +17,8 @@ use crate::{
 /// instead and is checked where it's constructed.
 pub trait DeviceRepr: CubeType + Sized + 'static {
     type Repr: CubePrimitive;
+    /// How values sit in a buffer: [`Native`], or [`Packed`] lanes.
+    type Layout: StorageLayout<Self::Repr>;
 
     /// Present when `Self` has the layout of `Repr`, so host slices convert
     /// in place instead of being copied.
@@ -47,6 +50,7 @@ pub trait DeviceRepr: CubeType + Sized + 'static {
 
 impl<T: CubePrimitive> DeviceRepr for T {
     type Repr = T;
+    type Layout = Native;
     // SAFETY: a value is its own representation.
     const TRANSPARENT: Option<Transparent<Self>> = Some(unsafe { Transparent::new() });
 
@@ -64,6 +68,76 @@ impl<T: CubePrimitive> DeviceRepr for T {
 
     fn expand_into_repr(value: Self::ExpandType) -> Self::ExpandType {
         value
+    }
+}
+
+/// The element a buffer of `Q` binds.
+pub type StorageElement<Q> =
+    <<Q as DeviceRepr>::Layout as StorageLayout<<Q as DeviceRepr>::Repr>>::Element;
+
+/// Elements per value in a buffer of `Q`.
+pub type StorageWidth<Q> =
+    <<Q as DeviceRepr>::Layout as StorageLayout<<Q as DeviceRepr>::Repr>>::Width;
+
+/// How a representation `R` is laid out in a buffer of [`Self::Element`]s.
+#[cube]
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` can't lay out `{R}` in storage",
+    note = "`Packed` lays out vectors only"
+)]
+pub trait StorageLayout<R: CubePrimitive>: Send + Sync + 'static {
+    type Element: CubePrimitive;
+    /// Elements per value.
+    type Width: Size;
+
+    fn load_from(elements: &[Self::Element], position: usize) -> R;
+    fn store_into(elements: &mut [Self::Element], position: usize, value: R);
+}
+
+/// One element per value: scalars, and vectors at their aligned size.
+pub struct Native;
+
+#[cube]
+impl<R: CubePrimitive> StorageLayout<R> for Native {
+    type Element = R;
+    type Width = Const<1>;
+
+    fn load_from(elements: &[R], position: usize) -> R {
+        elements[position]
+    }
+
+    fn store_into(elements: &mut [R], position: usize, value: R) {
+        elements[position] = value;
+    }
+}
+
+/// Vectors as consecutive scalars, without the padding three-lane vectors
+/// have in storage.
+pub struct Packed;
+
+#[cube]
+impl<E: Scalar, N: Size> StorageLayout<Vector<E, N>> for Packed {
+    type Element = E;
+    type Width = N;
+
+    fn load_from(elements: &[E], position: usize) -> Vector<E, N> {
+        let lanes = N::value();
+        let at = position * lanes;
+        let mut value = Vector::<E, N>::new(elements[at]);
+        #[unroll]
+        for lane in 1..lanes {
+            value.insert(lane, elements[at + lane]);
+        }
+        value
+    }
+
+    fn store_into(elements: &mut [E], position: usize, value: Vector<E, N>) {
+        let lanes = N::value();
+        let at = position * lanes;
+        #[unroll]
+        for lane in 0..lanes {
+            elements[at + lane] = value.extract(lane);
+        }
     }
 }
 
@@ -141,21 +215,24 @@ pub trait OrderedExpand: Sized {
 
 /// Addresses the elements of a [`Storage`](crate::prelude::Storage), so a
 /// table can accept only its own ID type. Derived for `u32` and `usize` brands
-/// with `#[device_repr(key)]`.
+/// with `#[device_repr(key)]`; composite keys implement it with `#[cube]`.
+#[cube]
 pub trait StorageKey: CubeType + 'static {
-    #[doc(hidden)]
-    fn __expand_position(scope: &Scope, key: Self::ExpandType) -> NativeExpand<usize>;
+    /// The position of the value this key addresses.
+    fn position(key: Self) -> usize;
 }
 
+#[cube]
 impl StorageKey for usize {
-    fn __expand_position(_: &Scope, key: NativeExpand<usize>) -> NativeExpand<usize> {
+    fn position(key: usize) -> usize {
         key
     }
 }
 
+#[cube]
 impl StorageKey for u32 {
-    fn __expand_position(scope: &Scope, key: NativeExpand<u32>) -> NativeExpand<usize> {
-        usize::__expand_cast_from(scope, key)
+    fn position(key: u32) -> usize {
+        key as usize
     }
 }
 

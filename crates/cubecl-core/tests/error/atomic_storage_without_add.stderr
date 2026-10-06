@@ -1,0 +1,34 @@
+error[E0599]: the method `fetch_add` exists for reference `&cubecl_core::frontend::AtomicStorage<Label>`, but its trait bounds were not satisfied
+  --> tests/error/atomic_storage_without_add.rs:11:12
+   |
+ 7 | struct Label(u32);
+   | ------------ doesn't satisfy `Label: std::ops::Add`
+...
+11 |     labels.fetch_add(0, Label(1));
+   |            ^^^^^^^^^ method cannot be called on `&cubecl_core::frontend::AtomicStorage<Label>` due to unsatisfied trait bounds
+   |
+   = note: the following trait bounds were not satisfied:
+           `Label: std::ops::Add`
+note: the trait `std::ops::Add` must be implemented
+  --> $RUST/core/src/ops/arith.rs
+   |
+   | pub const trait Add<Rhs = Self> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0599]: the method `__expand_fetch_add_method` exists for reference `&AtomicStorageExpand<Label>`, but its trait bounds were not satisfied
+ --> tests/error/atomic_storage_without_add.rs:9:1
+  |
+7 | struct Label(u32);
+  | ------------ doesn't satisfy `Label: std::ops::Add`
+8 |
+9 | #[cube]
+  | ^^^^^^^
+  |
+  = note: the following trait bounds were not satisfied:
+          `Label: std::ops::Add`
+note: the trait `std::ops::Add` must be implemented
+ --> $RUST/core/src/ops/arith.rs
+  |
+  | pub const trait Add<Rhs = Self> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = note: this error originates in the attribute macro `cube` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -204,6 +204,125 @@ pub fn test_storage_alias_type<R: Runtime>(client: Client) {
     assert!(refused.is_err());
 }
 
+#[repr(transparent)]
+#[derive(CubeType, CubeTypeMut, DeviceRepr)]
+#[device_repr(copy, packed)]
+struct Packed3<F: 'static>(Vector<f32, Const<3>>, #[cube(comptime)] PhantomData<F>);
+
+#[repr(transparent)]
+#[derive(CubeType, DeviceRepr)]
+#[device_repr(copy, key)]
+struct Source(u32);
+
+/// Cell-major interleaving of per-source values.
+#[derive(CubeType)]
+struct CellSource {
+    cell: Cell,
+    source: Source,
+    sources: u32,
+}
+
+#[cube]
+impl StorageKey for CellSource {
+    fn position(key: CellSource) -> usize {
+        Cell::position(key.cell) * key.sources as usize + Source::position(key.source)
+    }
+}
+
+/// Typed tables as members of a launched struct.
+#[derive(CubeType, CubeLaunch)]
+struct Field {
+    points: Storage<Packed3<Room>, ReadOnly, Cell>,
+    values: Storage<Distance, ReadWrite, CellSource>,
+    sources: u32,
+}
+
+#[cube(launch)]
+fn kernel_packed(field: &mut Field, output: &mut Storage<Packed3<Room>, ReadWrite, Cell>) {
+    let cell = ABSOLUTE_POS as u32;
+    if (cell as usize) < output.len() {
+        let point = field.points.load(Cell(cell));
+        let lift = Vector::new(10.0);
+        output.store(Cell(cell), Packed3::<Room>(point.0 + lift, comptime! { PhantomData }));
+        let mut scratch = LocalStorage::<Packed3<Room>, Source>::new(2usize);
+        scratch.store(Source(1), point);
+        let mut source = 0u32;
+        while source < field.sources {
+            let key = CellSource {
+                cell: Cell(cell),
+                source: Source(source),
+                sources: field.sources,
+            };
+            field
+                .values
+                .store(key, Distance(scratch.load(Source(1)).0.extract(0usize) + source as f32));
+            source += 1;
+        }
+    }
+}
+
+pub fn test_storage_packed<R: Runtime>(client: Client) {
+    let points: Vec<f32> = (0..12).map(|i| i as f32).collect();
+    let points = StorageBuffer::<Packed3<Room>>::from_elements(&client, &points);
+    assert_eq!(points.len(), 4);
+    let output = StorageBuffer::<Packed3<Room>>::empty(&client, 4);
+    let values = StorageBuffer::<Distance>::empty(&client, 8);
+    kernel_packed::launch(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(4),
+        FieldLaunch::new((&points).into(), (&values).into(), 2),
+        (&output).into(),
+    );
+    let lifted = output.read_elements(&client).unwrap();
+    let expected: Vec<f32> = (0..12).map(|i| i as f32 + 10.0).collect();
+    assert_eq!(lifted, expected);
+    assert_eq!(
+        output.slice(1..3).read_elements(&client).unwrap(),
+        expected[3..9]
+    );
+    let values = values.read(&client).unwrap();
+    let expected: Vec<_> = (0..4)
+        .flat_map(|cell| [0.0, 1.0].map(|source| Distance(cell as f32 * 3.0 + source)))
+        .collect();
+    assert_eq!(values, expected);
+}
+
+#[repr(transparent)]
+#[derive(CubeType, DeviceRepr, Debug)]
+#[device_repr(copy, ord)]
+struct Count(u32);
+
+#[cube]
+impl core::ops::Add for Count {
+    type Output = Count;
+    fn add(self, rhs: Count) -> Count {
+        Count(self.0 + rhs.0)
+    }
+}
+
+#[cube(launch)]
+fn kernel_atomic(counts: &AtomicStorage<Count, Cell>, peaks: &AtomicStorage<Count>) {
+    let cell = Cell(ABSOLUTE_POS as u32 % 2);
+    counts.fetch_add(cell, Count(1));
+    peaks.fetch_max(0usize, Count(ABSOLUTE_POS as u32));
+    peaks.fetch_min(1usize, Count(ABSOLUTE_POS as u32));
+}
+
+pub fn test_storage_atomic<R: Runtime>(client: Client) {
+    let counts = StorageBuffer::create(&client, &[Count(0), Count(5)]);
+    let peaks = StorageBuffer::create(&client, &[Count(0), Count(u32::MAX)]);
+    kernel_atomic::launch(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(32),
+        (&counts).into(),
+        (&peaks).into(),
+    );
+    assert_eq!(counts.read(&client).unwrap(), [Count(16), Count(21)]);
+    assert_eq!(peaks.read(&client).unwrap(), [Count(31), Count(0)]);
+}
+
 #[macro_export]
 macro_rules! testgen_storage {
     () => {
@@ -222,6 +341,16 @@ macro_rules! testgen_storage {
         fn test_storage_alias_type() {
             let client = TestRuntime::client(&Default::default());
             cubecl_core::runtime_tests::storage::test_storage_alias_type::<TestRuntime>(client);
+        }
+        #[$crate::runtime_tests::test_log::test]
+        fn test_storage_packed() {
+            let client = TestRuntime::client(&Default::default());
+            cubecl_core::runtime_tests::storage::test_storage_packed::<TestRuntime>(client);
+        }
+        #[$crate::runtime_tests::test_log::test]
+        fn test_storage_atomic() {
+            let client = TestRuntime::client(&Default::default());
+            cubecl_core::runtime_tests::storage::test_storage_atomic::<TestRuntime>(client);
         }
     };
 }

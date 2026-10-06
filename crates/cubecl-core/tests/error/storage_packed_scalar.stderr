@@ -1,0 +1,36 @@
+error[E0277]: `Packed` can't lay out `f32` in storage
+ --> tests/error/storage_packed_scalar.rs:5:20
+  |
+5 | #[derive(CubeType, DeviceRepr)]
+  |                    ^^^^^^^^^^ the trait `StorageLayout<f32>` is not implemented for `Packed`
+  |
+  = note: `Packed` lays out vectors only
+help: the trait `StorageLayout<f32>` is not implemented for `Packed`
+      but trait `StorageLayout<cubecl_core::frontend::Vector<_, _>>` is implemented for it
+ --> src/frontend/representation.rs
+  |
+  | #[cube]
+  | ^^^^^^^
+  = help: for that trait implementation, expected `cubecl_core::frontend::Vector<_, _>`, found `f32`
+note: required by a bound in `cubecl_core::frontend::DeviceRepr::Layout`
+ --> src/frontend/representation.rs
+  |
+  |     type Layout: StorageLayout<Self::Repr>;
+  |                  ^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `DeviceRepr::Layout`
+  = note: this error originates in the derive macro `DeviceRepr` which comes from the expansion of the attribute macro `cube` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `Packed` can't lay out `f32` in storage
+ --> tests/error/storage_packed_scalar.rs:9:1
+  |
+9 | #[cube]
+  | ^^^^^^^ the trait `StorageLayout<f32>` is not implemented for `Packed`
+  |
+  = note: `Packed` lays out vectors only
+help: the trait `StorageLayout<f32>` is not implemented for `Packed`
+      but trait `StorageLayout<cubecl_core::frontend::Vector<_, _>>` is implemented for it
+ --> src/frontend/representation.rs
+  |
+  | #[cube]
+  | ^^^^^^^
+  = help: for that trait implementation, expected `cubecl_core::frontend::Vector<_, _>`, found `f32`
+  = note: this error originates in the attribute macro `cube` (in Nightly builds, run with -Z macro-backtrace for more info)

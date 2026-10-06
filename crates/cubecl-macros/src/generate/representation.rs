@@ -67,6 +67,7 @@ pub fn generate(input: &DeriveInput) -> syn::Result<TokenStream> {
         .predicates
         .push(parse_quote!(#name #type_generics: #cube<ExpandType = #expanded #type_generics> + 'static));
     let (impl_generics, ty_generics, clause) = generics.split_for_impl();
+    let layout = prelude_type(if options.packed { "Packed" } else { "Native" });
     let with_repr = with_repr(name, repr, &parsed.generics, &generics);
     let forwarded = options.forward(&Forwarded {
         name,
@@ -81,6 +82,7 @@ pub fn generate(input: &DeriveInput) -> syn::Result<TokenStream> {
 
         impl #impl_generics #device_repr for #name #ty_generics #clause {
             type Repr = #repr;
+            type Layout = #layout;
             // SAFETY: `#[repr(transparent)]` makes `Repr` the only field
             // with a size, and `DeviceRepr` requires every `Repr` be valid.
             const TRANSPARENT: ::core::option::Option<#transparent<Self>> =
@@ -151,6 +153,7 @@ struct Options {
     eq: bool,
     key: bool,
     ord: bool,
+    packed: bool,
 }
 
 struct Forwarded<'a> {
@@ -174,8 +177,10 @@ impl Options {
                     options.key = true;
                 } else if meta.path.is_ident("ord") {
                     options.ord = true;
+                } else if meta.path.is_ident("packed") {
+                    options.packed = true;
                 } else {
-                    return Err(meta.error("expected `copy`, `eq`, `key` or `ord`"));
+                    return Err(meta.error("expected `copy`, `eq`, `key`, `ord` or `packed`"));
                 }
                 Ok(())
             })?;
@@ -299,6 +304,10 @@ impl Options {
             let (impl_generics, ty_generics, clause) = generics.split_for_impl();
             tokens.extend(quote! {
                 impl #impl_generics #prelude::StorageKey for #name #ty_generics #clause {
+                    fn position(key: Self) -> usize {
+                        <#repr as #prelude::StorageKey>::position(key.#member)
+                    }
+
                     fn __expand_position(
                         scope: &#prelude::Scope,
                         key: <Self as #prelude::CubeType>::ExpandType,

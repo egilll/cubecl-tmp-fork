@@ -4,12 +4,19 @@ use core::{marker::PhantomData, ops::Range};
 use crate::prelude::*;
 use cubecl_runtime::server::ServerError;
 
-pub struct StorageBuffer<Q: DeviceRepr<Repr: CubeElement>> {
-    inner: Buffer<Q::Repr>,
+/// A device buffer of `Q` values in their storage layout.
+pub struct StorageBuffer<Q: DeviceRepr>
+where
+    StorageElement<Q>: CubeElement,
+{
+    inner: Buffer<StorageElement<Q>>,
     marker: PhantomData<Q>,
 }
 
-impl<Q: DeviceRepr<Repr: CubeElement>> Clone for StorageBuffer<Q> {
+impl<Q: DeviceRepr> Clone for StorageBuffer<Q>
+where
+    StorageElement<Q>: CubeElement,
+{
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -18,34 +25,66 @@ impl<Q: DeviceRepr<Repr: CubeElement>> Clone for StorageBuffer<Q> {
     }
 }
 
-impl<Q: DeviceRepr<Repr: CubeElement>> StorageBuffer<Q> {
-    pub fn create(client: &Client, values: &[Q]) -> Self
-    where
-        Q: Clone,
-    {
-        Self::from_native(Buffer::create(client, &reprs(values)))
-    }
-
+impl<Q: DeviceRepr> StorageBuffer<Q>
+where
+    StorageElement<Q>: CubeElement,
+{
     pub fn empty(client: &Client, len: usize) -> Self {
-        Self {
-            inner: Buffer::empty(client, len),
-            marker: PhantomData,
-        }
+        Self::from_native(Buffer::empty(client, len * width::<Q>()))
     }
 
+    /// Values from their elements in storage layout, such as three floats per
+    /// packed point.
+    ///
+    /// # Panics
+    ///
+    /// When `elements` isn't a whole number of values.
+    pub fn from_elements(client: &Client, elements: &[StorageElement<Q>]) -> Self {
+        Self::from_native(Buffer::create(client, whole::<Q>(elements)))
+    }
+
+    pub fn write_elements(&self, client: &Client, elements: &[StorageElement<Q>]) {
+        self.inner.write(client, whole::<Q>(elements));
+    }
+
+    pub fn read_elements(&self, client: &Client) -> Result<Vec<StorageElement<Q>>, ServerError> {
+        self.inner.read(client)
+    }
+
+    /// Values stored.
     pub fn len(&self) -> usize {
-        self.inner.len()
+        self.inner.len() / width::<Q>()
     }
 
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
 
+    /// The values in `range`.
     pub fn slice(&self, range: Range<usize>) -> Self {
+        let width = width::<Q>();
+        Self::from_native(self.inner.slice(range.start * width..range.end * width))
+    }
+
+    /// The buffer of storage elements.
+    pub fn as_native(&self) -> &Buffer<StorageElement<Q>> {
+        &self.inner
+    }
+
+    pub fn from_native(inner: Buffer<StorageElement<Q>>) -> Self {
         Self {
-            inner: self.inner.slice(range),
+            inner,
             marker: PhantomData,
         }
+    }
+}
+
+impl<Q: DeviceRepr<Layout = Native, Repr: CubeElement>> StorageBuffer<Q> {
+    pub fn create(client: &Client, values: &[Q]) -> Self
+    where
+        Q: Clone,
+    {
+        Self::from_native(Buffer::create(client, &reprs(values)))
     }
 
     pub fn write(&self, client: &Client, values: &[Q])
@@ -92,17 +131,20 @@ impl<Q: DeviceRepr<Repr: CubeElement>> StorageBuffer<Q> {
         );
         TypedBufferArg::from_arg(self.as_native().into())
     }
+}
 
-    pub fn as_native(&self) -> &Buffer<Q::Repr> {
-        &self.inner
-    }
+fn width<Q: DeviceRepr>() -> usize {
+    StorageWidth::<Q>::value()
+}
 
-    pub fn from_native(inner: Buffer<Q::Repr>) -> Self {
-        Self {
-            inner,
-            marker: PhantomData,
-        }
-    }
+fn whole<Q: DeviceRepr>(elements: &[StorageElement<Q>]) -> &[StorageElement<Q>] {
+    let width = width::<Q>();
+    assert!(
+        elements.len() % width == 0,
+        "{} elements aren't whole values of {width}",
+        elements.len()
+    );
+    elements
 }
 
 fn reprs<Q: DeviceRepr + Clone>(values: &[Q]) -> Cow<'_, [Q::Repr]> {
@@ -119,7 +161,10 @@ fn values<Q: DeviceRepr>(reprs: Vec<Q::Repr>) -> Vec<Q> {
     }
 }
 
-impl<Q: DeviceRepr<Repr: CubeElement>> From<&StorageBuffer<Q>> for TypedBufferArg<Q> {
+impl<Q: DeviceRepr> From<&StorageBuffer<Q>> for TypedBufferArg<Q>
+where
+    StorageElement<Q>: CubeElement,
+{
     fn from(value: &StorageBuffer<Q>) -> Self {
         Self::from_native(&value.inner)
     }
