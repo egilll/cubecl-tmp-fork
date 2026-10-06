@@ -10,7 +10,7 @@
 use cubecl::prelude::*;
 use cubecl_core as cubecl;
 
-/// A real number a formula can be generic over: `f32`, or [`Dual`].
+/// A real number a formula can be generic over: `f32`, `f32` lanes, or [`Dual`].
 ///
 /// Inside a `#[cube]` function generic over `R: Real`, use the operators and
 /// the path form of the functions (`R::exp(x)`, `R::constant(0.5)`). The
@@ -90,6 +90,28 @@ impl Real for f32 {
     }
     fn __expand_sqrt(scope: &Scope, x: NativeExpand<f32>) -> NativeExpand<f32> {
         <f32 as Sqrt>::__expand_sqrt(scope, x)
+    }
+}
+
+/// Lane-wise: a formula over [`Real`] evaluates `N` independent values.
+impl<N: Size> Real for Vector<f32, N> {
+    fn __expand_constant(scope: &Scope, x: NativeExpand<f32>) -> Self::ExpandType {
+        Vector::__expand_new(scope, x)
+    }
+    fn __expand_exp(scope: &Scope, x: Self::ExpandType) -> Self::ExpandType {
+        <Self as Exp>::__expand_exp(scope, x)
+    }
+    fn __expand_ln(scope: &Scope, x: Self::ExpandType) -> Self::ExpandType {
+        <Self as Log>::__expand_ln(scope, x)
+    }
+    fn __expand_sin(scope: &Scope, x: Self::ExpandType) -> Self::ExpandType {
+        <Self as Sin>::__expand_sin(scope, x)
+    }
+    fn __expand_cos(scope: &Scope, x: Self::ExpandType) -> Self::ExpandType {
+        <Self as Cos>::__expand_cos(scope, x)
+    }
+    fn __expand_sqrt(scope: &Scope, x: Self::ExpandType) -> Self::ExpandType {
+        <Self as Sqrt>::__expand_sqrt(scope, x)
     }
 }
 
