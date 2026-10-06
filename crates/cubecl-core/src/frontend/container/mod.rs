@@ -6,6 +6,7 @@ mod registry;
 mod sequence;
 mod shared_memory;
 pub mod slice;
+mod storage;
 mod tensor;
 mod vector;
 
@@ -16,5 +17,6 @@ pub use registry::*;
 pub use sequence::*;
 pub use shared_memory::*;
 pub use slice::*;
+pub use storage::*;
 pub use tensor::*;
 pub use vector::*;

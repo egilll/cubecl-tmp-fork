@@ -22,6 +22,7 @@ pub struct KernelLauncher {
     /// What the caller declared each resource is for, indexed like
     /// `resources` — see [`declare_io`](Self::declare_io).
     declared_io: Vec<BufferIOAttr>,
+    storage_types: Vec<Option<core::any::TypeId>>,
     /// The declaration the next registered resources fall under.
     declaring: BufferIOAttr,
     address_type: AddressType,
@@ -183,6 +184,24 @@ impl KernelLauncher {
         Some(tensor.handle)
     }
 
+    pub(crate) fn register_storage_type<Q: crate::prelude::DeviceRepr>(&mut self, arg: &BufferArg) {
+        let type_id = core::any::TypeId::of::<Q>();
+        match arg {
+            BufferArg::Handle { .. } => {
+                self.storage_types.resize(self.resources.len() + 1, None);
+                self.storage_types[self.resources.len()] = Some(type_id);
+            }
+            BufferArg::Alias { input_pos, .. } => {
+                assert_eq!(
+                    self.storage_types.get(*input_pos).copied().flatten(),
+                    Some(type_id),
+                    "a typed storage alias must refer to an input of the same semantic type ({})",
+                    core::any::type_name::<Q>()
+                );
+            }
+        }
+    }
+
     /// Push a new input array to the state.
     pub fn register_buffer(&mut self, array: BufferArg, elem_size: usize) {
         if let Some(tensor) = self.process_buffer(array, elem_size) {
@@ -227,6 +246,7 @@ impl KernelLauncher {
             settings,
             resources: Vec::new(),
             declared_io: Vec::new(),
+            storage_types: Vec::new(),
             declaring: BufferIOAttr::ReadWrite,
             #[cfg(not(feature = "std"))]
             info: InfoBuilder::default(),
