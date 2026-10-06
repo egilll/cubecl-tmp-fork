@@ -302,7 +302,8 @@ impl CubeImpl {
         attrs.retain(|attr| !attr.path().is_ident("cube"));
 
         let unsafety = item_impl.unsafety;
-        let generics = item_impl.generics;
+        let mut generics = item_impl.generics;
+        super::algebra::add_expand_bounds(&mut generics);
 
         Ok(Self {
             unsafety,

@@ -177,3 +177,29 @@ where
 fn velocity(length: Quantity<Metre>, duration: Quantity<Second>) -> Quantity<MetrePerSecond> {
     length / duration
 }
+
+#[derive(CubeType)]
+struct Wrapped<R: CubeType>(R);
+
+#[cube]
+impl<R: CubeType + core::ops::Add<Output = R>> core::ops::Add for Wrapped<R> {
+    type Output = Wrapped<R>;
+    fn add(self, rhs: Wrapped<R>) -> Wrapped<R> {
+        Wrapped::<R>(self.0 + rhs.0)
+    }
+}
+
+#[cube]
+impl<R: CubeType> Wrapped<R>
+where
+    R: core::ops::Mul<Output = R>,
+{
+    fn times(self, rhs: Wrapped<R>) -> R {
+        self.0 * rhs.0
+    }
+}
+
+#[cube]
+fn wrapped(a: f32, b: f32) -> f32 {
+    (Wrapped::<f32>(a) + Wrapped::<f32>(b)).times(Wrapped::<f32>(a))
+}
