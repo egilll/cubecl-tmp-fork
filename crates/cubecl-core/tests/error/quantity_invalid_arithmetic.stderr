@@ -31,10 +31,21 @@ help: the trait `AddExpand<_>` is not implemented for `MetersExpand`
    |
  4 | #[derive(CubeType)]
    |          ^^^^^^^^
-   = help: the following other types implement trait `AddExpand<Rhs>`:
-             `&NativeExpand<T>` implements `AddExpand<&NativeExpand<T>>`
-             `&NativeExpand<T>` implements `AddExpand<NativeExpand<T>>`
-             `NativeExpand<T>` implements `AddExpand<&NativeExpand<T>>`
-             `NativeExpand<T>` implements `AddExpand`
-             `cubecl_core::runtime_tests::user_ops::PairExpand` implements `AddExpand`
-   = note: this error originates in the attribute macro `cube` which comes from the expansion of the derive macro `CubeType` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: the following other types implement trait `AddExpand<Rhs>`
+  --> src/frontend/operation/binary.rs
+   |
+   |         impl<T: $bound> $trait<&NativeExpand<T>> for NativeExpand<T> {
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `NativeExpand<T>` implements `AddExpand<&NativeExpand<T>>`
+...
+   |         impl<T: $bound> $trait<NativeExpand<T>> for &NativeExpand<T> {
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&NativeExpand<T>` implements `AddExpand<NativeExpand<T>>`
+...
+   |         impl<T: $bound> $trait<&NativeExpand<T>> for &NativeExpand<T> {
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&NativeExpand<T>` implements `AddExpand<&NativeExpand<T>>`
+...
+   |             impl<T: [<Cube $trait>]> [<$trait Expand>] for NativeExpand<T> {
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `NativeExpand<T>` implements `AddExpand`
+...
+   | define_core_binop!(Add, add);
+   | ---------------------------- in this macro invocation
+   = note: this error originates in the attribute macro `cube` which comes from the expansion of the macro `define_core_binop` (in Nightly builds, run with -Z macro-backtrace for more info)

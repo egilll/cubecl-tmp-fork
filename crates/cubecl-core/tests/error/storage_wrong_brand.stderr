@@ -8,7 +8,9 @@ help: the trait `From<&cubecl_core::compute::StorageBuffer<Time>>` is not implem
       but trait `From<&cubecl_core::compute::StorageBuffer<Distance>>` is implemented for it
   --> src/compute/storage.rs
    |
-   | impl<Q: DeviceRepr<Repr: CubeElement>> From<&StorageBuffer<Q>> for TypedBufferArg<Q> {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   | / impl<Q: DeviceRepr> From<&StorageBuffer<Q>> for TypedBufferArg<Q>
+   | | where
+   | |     StorageElement<Q>: CubeElement,
+   | |___________________________________^
    = help: for that trait implementation, expected `Distance`, found `Time`
    = note: required for `&cubecl_core::compute::StorageBuffer<Time>` to implement `Into<cubecl_core::frontend::TypedBufferArg<Distance>>`

@@ -32,8 +32,8 @@ fn kernel(value: Distance, pair: Pair<f32>, output: &mut [f32]) {
     let other = Distance(2.0);
     distance = distance + other;
     let pair = Pair::<f32>(distance.0, pair.1);
-    let inferred = Pair(pair.1, pair.0);
-    output[0] = pair.0 + pair.1 + inferred.0;
+    let swapped = Pair::<f32>(pair.1, pair.0);
+    output[0] = pair.0 + pair.1 + swapped.0;
 }
 
 fn main() {
