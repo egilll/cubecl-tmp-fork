@@ -76,6 +76,7 @@ pub fn generate(input: &DeriveInput) -> syn::Result<TokenStream> {
         name,
         expanded,
         member: &member,
+        markers: &markers,
         repr,
         generics: &generics,
     });
@@ -169,6 +170,7 @@ struct Options {
     copy: bool,
     eq: bool,
     key: bool,
+    launch: bool,
     ord: bool,
     packed: bool,
 }
@@ -177,6 +179,7 @@ struct Forwarded<'a> {
     name: &'a syn::Ident,
     expanded: &'a syn::Ident,
     member: &'a syn::Member,
+    markers: &'a [syn::Member],
     repr: &'a syn::Type,
     generics: &'a syn::Generics,
 }
@@ -192,12 +195,16 @@ impl Options {
                     options.eq = true;
                 } else if meta.path.is_ident("key") {
                     options.key = true;
+                } else if meta.path.is_ident("launch") {
+                    options.launch = true;
                 } else if meta.path.is_ident("ord") {
                     options.ord = true;
                 } else if meta.path.is_ident("packed") {
                     options.packed = true;
                 } else {
-                    return Err(meta.error("expected `copy`, `eq`, `key`, `ord` or `packed`"));
+                    return Err(meta.error(
+                        "expected `copy`, `eq`, `key`, `launch`, `ord` or `packed`",
+                    ));
                 }
                 Ok(())
             })?;
@@ -213,6 +220,7 @@ impl Options {
             member,
             repr,
             generics,
+            ..
         } = value;
         let prelude = crate::paths::prelude_path();
         let bounded = |predicates: &[syn::WherePredicate]| {
@@ -324,6 +332,40 @@ impl Options {
 
                 impl #impl_generics #prelude::OrderedExpand for #expanded #ty_generics #clause {
                     type Value = #name #ty_generics;
+                }
+            });
+        }
+        if self.launch {
+            // A scalar kernel argument: the host passes the brand itself, and
+            // the kernel receives its expansion over the field's.
+            let markers = value.markers;
+            let generics = bounded(&[
+                parse_quote!(#repr: #prelude::LaunchArg<RuntimeArg = #repr>),
+                parse_quote!(Self: ::core::marker::Send + ::core::marker::Sync),
+            ]);
+            let (impl_generics, ty_generics, clause) = generics.split_for_impl();
+            tokens.extend(quote! {
+                #[automatically_derived]
+                impl #impl_generics #prelude::LaunchArg for #name #ty_generics #clause {
+                    type RuntimeArg = Self;
+                    type CompilationArg = <#repr as #prelude::LaunchArg>::CompilationArg;
+
+                    fn register(
+                        arg: Self,
+                        launcher: &mut #prelude::KernelLauncher,
+                    ) -> Self::CompilationArg {
+                        <#repr as #prelude::LaunchArg>::register(arg.#member, launcher)
+                    }
+
+                    fn expand(
+                        arg: &Self::CompilationArg,
+                        builder: &mut #prelude::KernelBuilder,
+                    ) -> <Self as #prelude::CubeType>::ExpandType {
+                        #expanded {
+                            #member: <#repr as #prelude::LaunchArg>::expand(arg, builder),
+                            #(#markers: ::core::marker::PhantomData,)*
+                        }
+                    }
                 }
             });
         }

@@ -10,6 +10,7 @@ struct Distance(f32);
 
 #[repr(transparent)]
 #[derive(CubeType, DeviceRepr, Clone, Copy)]
+#[device_repr(launch)]
 struct Time(f32);
 
 #[repr(transparent)]
@@ -367,6 +368,30 @@ pub fn test_storage_nested<R: Runtime>(client: Client) {
     assert_eq!(points.read_elements(&client).unwrap(), [2.0; 6]);
 }
 
+
+/// A brand as a scalar kernel argument: the host passes `Time`, the kernel
+/// receives `Time`.
+#[cube(launch)]
+fn kernel_scalar_brand(input: &Storage<Distance, ReadOnly>, time: Time, output: &mut Storage<Speed>) {
+    if ABSOLUTE_POS < output.len() {
+        output.store(ABSOLUTE_POS, speed::<Distance>(input.load(ABSOLUTE_POS), time));
+    }
+}
+
+pub fn test_storage_scalar_brand<R: Runtime>(client: Client) {
+    let input = StorageBuffer::create(&client, &[Distance(6.0), Distance(9.0)]);
+    let output = StorageBuffer::<Speed>::empty(&client, 2);
+    kernel_scalar_brand::launch(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(2),
+        (&input).into(),
+        Time(3.0),
+        (&output).into(),
+    );
+    assert_eq!(output.read(&client).unwrap(), [Speed(2.0), Speed(3.0)]);
+}
+
 #[macro_export]
 macro_rules! testgen_storage {
     () => {
@@ -390,6 +415,11 @@ macro_rules! testgen_storage {
         fn test_storage_packed() {
             let client = TestRuntime::client(&Default::default());
             cubecl_core::runtime_tests::storage::test_storage_packed::<TestRuntime>(client);
+        }
+        #[$crate::runtime_tests::test_log::test]
+        fn test_storage_scalar_brand() {
+            let client = TestRuntime::client(&Default::default());
+            cubecl_core::runtime_tests::storage::test_storage_scalar_brand::<TestRuntime>(client);
         }
         #[$crate::runtime_tests::test_log::test]
         fn test_storage_atomic() {
