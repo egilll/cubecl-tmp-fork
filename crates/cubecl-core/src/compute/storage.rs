@@ -1,4 +1,4 @@
-use alloc::vec::Vec;
+use alloc::{borrow::Cow, vec::Vec};
 use core::{marker::PhantomData, ops::Range};
 
 use crate::prelude::*;
@@ -23,11 +23,7 @@ impl<Q: DeviceRepr<Repr: CubeElement>> StorageBuffer<Q> {
     where
         Q: Clone,
     {
-        let values: Vec<_> = values.iter().cloned().map(Q::into_repr).collect();
-        Self {
-            inner: Buffer::create(client, &values),
-            marker: PhantomData,
-        }
+        Self::from_native(Buffer::create(client, &reprs(values)))
     }
 
     pub fn empty(client: &Client, len: usize) -> Self {
@@ -56,14 +52,11 @@ impl<Q: DeviceRepr<Repr: CubeElement>> StorageBuffer<Q> {
     where
         Q: Clone,
     {
-        let values: Vec<_> = values.iter().cloned().map(Q::into_repr).collect();
-        self.inner.write(client, &values);
+        self.inner.write(client, &reprs(values));
     }
 
     pub fn read(&self, client: &Client) -> Result<Vec<Q>, ServerError> {
-        self.inner
-            .read(client)
-            .map(|values| values.into_iter().map(Q::from_repr).collect())
+        self.inner.read(client).map(values)
     }
 
     pub fn read_async(
@@ -71,10 +64,7 @@ impl<Q: DeviceRepr<Repr: CubeElement>> StorageBuffer<Q> {
         client: &Client,
     ) -> impl core::future::Future<Output = Result<Vec<Q>, ServerError>> + use<Q> {
         let read = self.inner.read_async(client);
-        async move {
-            read.await
-                .map(|values| values.into_iter().map(Q::from_repr).collect())
-        }
+        async move { read.await.map(values) }
     }
 
     /// Binds these values to a kernel storage of `N`-lane vectors with the
@@ -112,6 +102,20 @@ impl<Q: DeviceRepr<Repr: CubeElement>> StorageBuffer<Q> {
             inner,
             marker: PhantomData,
         }
+    }
+}
+
+fn reprs<Q: DeviceRepr + Clone>(values: &[Q]) -> Cow<'_, [Q::Repr]> {
+    match Q::TRANSPARENT {
+        Some(proof) => Cow::Borrowed(proof.reprs(values)),
+        None => Cow::Owned(values.iter().cloned().map(Q::into_repr).collect()),
+    }
+}
+
+fn values<Q: DeviceRepr>(reprs: Vec<Q::Repr>) -> Vec<Q> {
+    match Q::TRANSPARENT {
+        Some(proof) => proof.values(reprs),
+        None => reprs.into_iter().map(Q::from_repr).collect(),
     }
 }
 

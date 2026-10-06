@@ -1,3 +1,6 @@
+use alloc::vec::Vec;
+use core::marker::PhantomData;
+
 use crate::{
     frontend::{clamp, max, min},
     prelude::{Cast, CubePartialOrd, CubePrimitive, CubeType, NativeExpand, Scope},
@@ -13,6 +16,10 @@ use crate::{
 /// instead and is checked where it's constructed.
 pub trait DeviceRepr: CubeType + Sized + 'static {
     type Repr: CubePrimitive;
+
+    /// Present when `Self` has the layout of `Repr`, so host slices convert
+    /// in place instead of being copied.
+    const TRANSPARENT: Option<Transparent<Self>> = None;
 
     fn from_repr(value: Self::Repr) -> Self;
     fn into_repr(self) -> Self::Repr;
@@ -40,6 +47,8 @@ pub trait DeviceRepr: CubeType + Sized + 'static {
 
 impl<T: CubePrimitive> DeviceRepr for T {
     type Repr = T;
+    // SAFETY: a value is its own representation.
+    const TRANSPARENT: Option<Transparent<Self>> = Some(unsafe { Transparent::new() });
 
     fn from_repr(value: T) -> Self {
         value
@@ -55,6 +64,39 @@ impl<T: CubePrimitive> DeviceRepr for T {
 
     fn expand_into_repr(value: Self::ExpandType) -> Self::ExpandType {
         value
+    }
+}
+
+/// Proof that `Q` has the size, alignment and validity of `Q::Repr`.
+pub struct Transparent<Q>(PhantomData<Q>);
+
+impl<Q> Clone for Transparent<Q> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<Q> Copy for Transparent<Q> {}
+
+impl<Q: DeviceRepr> Transparent<Q> {
+    /// # Safety
+    ///
+    /// `Q` must be `Q::Repr` or `#[repr(transparent)]` over it, and every
+    /// `Q::Repr` value must be a valid `Q`.
+    pub const unsafe fn new() -> Self {
+        Self(PhantomData)
+    }
+
+    pub fn reprs(self, values: &[Q]) -> &[Q::Repr] {
+        // SAFETY: the layouts match, as `new` requires.
+        unsafe { core::slice::from_raw_parts(values.as_ptr().cast(), values.len()) }
+    }
+
+    pub fn values(self, reprs: Vec<Q::Repr>) -> Vec<Q> {
+        let mut reprs = core::mem::ManuallyDrop::new(reprs);
+        // SAFETY: the layouts match and every representation is a valid `Q`,
+        // as `new` requires, so the allocation is reused as is.
+        unsafe { Vec::from_raw_parts(reprs.as_mut_ptr().cast(), reprs.len(), reprs.capacity()) }
     }
 }
 

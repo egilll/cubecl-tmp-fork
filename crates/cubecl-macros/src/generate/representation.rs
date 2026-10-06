@@ -55,6 +55,7 @@ pub fn generate(input: &DeriveInput) -> syn::Result<TokenStream> {
     let device_repr = prelude_type("DeviceRepr");
     let cube = prelude_type("CubeType");
     let primitive = prelude_type("CubePrimitive");
+    let transparent = prelude_type("Transparent");
     let (_, type_generics, _) = parsed.generics.split_for_impl();
     let mut generics = parsed.generics.clone();
     generics
@@ -80,6 +81,10 @@ pub fn generate(input: &DeriveInput) -> syn::Result<TokenStream> {
 
         impl #impl_generics #device_repr for #name #ty_generics #clause {
             type Repr = #repr;
+            // SAFETY: `#[repr(transparent)]` makes `Repr` the only field
+            // with a size, and `DeviceRepr` requires every `Repr` be valid.
+            const TRANSPARENT: ::core::option::Option<#transparent<Self>> =
+                ::core::option::Option::Some(unsafe { #transparent::new() });
 
             fn from_repr(value: Self::Repr) -> Self {
                 Self { #member: value, #(#markers: ::core::marker::PhantomData,)* }
