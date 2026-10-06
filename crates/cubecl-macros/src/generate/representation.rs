@@ -312,6 +312,8 @@ impl Options {
                     #(#methods)*
                 }
 
+                impl #impl_generics #prelude::OrderedRepr for #name #ty_generics #clause {}
+
                 impl #impl_generics #prelude::Ordered for #name #ty_generics #clause {}
 
                 impl #impl_generics #prelude::OrderedExpand for #expanded #ty_generics #clause {

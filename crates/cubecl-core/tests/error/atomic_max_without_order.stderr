@@ -1,0 +1,48 @@
+error[E0599]: the method `fetch_max` exists for reference `&cubecl_core::frontend::AtomicStorage<Reversed>`, but its trait bounds were not satisfied
+  --> tests/error/atomic_max_without_order.rs:18:12
+   |
+ 8 | struct Reversed(u32);
+   | --------------- doesn't satisfy `Reversed: CubePrimitive` or `Reversed: OrderedRepr`
+...
+18 |     values.fetch_max(0, Reversed(1));
+   |            ^^^^^^^^^ method cannot be called on `&cubecl_core::frontend::AtomicStorage<Reversed>` due to unsatisfied trait bounds
+   |
+   = note: the following trait bounds were not satisfied:
+           `Reversed: CubePrimitive`
+           which is required by `Reversed: OrderedRepr`
+note: the trait `CubePrimitive` must be implemented
+  --> src/frontend/element/cube_elem.rs
+   |
+   | / pub trait CubePrimitive:
+   | |     CubeType<ExpandType = NativeExpand<Self>>
+   | |     + NativeAssign
+   | |     + CanReadValue
+...  |
+   | |     + Clone
+   | |     + Copy
+   | |__________^
+
+error[E0599]: the method `__expand_fetch_max_method` exists for reference `&AtomicStorageExpand<Reversed>`, but its trait bounds were not satisfied
+  --> tests/error/atomic_max_without_order.rs:16:1
+   |
+ 8 | struct Reversed(u32);
+   | --------------- doesn't satisfy `Reversed: CubePrimitive` or `Reversed: OrderedRepr`
+...
+16 | #[cube]
+   | ^^^^^^^
+   |
+   = note: the following trait bounds were not satisfied:
+           `Reversed: CubePrimitive`
+           which is required by `Reversed: OrderedRepr`
+note: the trait `CubePrimitive` must be implemented
+  --> src/frontend/element/cube_elem.rs
+   |
+   | / pub trait CubePrimitive:
+   | |     CubeType<ExpandType = NativeExpand<Self>>
+   | |     + NativeAssign
+   | |     + CanReadValue
+...  |
+   | |     + Clone
+   | |     + Copy
+   | |__________^
+   = note: this error originates in the attribute macro `cube` (in Nightly builds, run with -Z macro-backtrace for more info)

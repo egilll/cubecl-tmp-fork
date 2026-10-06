@@ -174,9 +174,17 @@ impl<Q: DeviceRepr> Transparent<Q> {
     }
 }
 
-/// Same-brand ordering of a [`DeviceRepr`] value, computed on its native
-/// representation. Derived with `#[device_repr(ord)]`.
-pub trait Ordered: DeviceRepr<Repr: CubePartialOrd> + PartialOrd
+/// Values of `Self` order as their representations do, so device code may
+/// compare them, or keep an atomic minimum or maximum, natively. Holds for
+/// every ordered primitive; derived for brands with `#[device_repr(ord)]`.
+pub trait OrderedRepr: DeviceRepr<Repr: CubePartialOrd> + PartialOrd {}
+
+impl<T: CubePartialOrd> OrderedRepr for T {}
+
+/// Same-brand `min`, `max` and `clamp` of an [`OrderedRepr`] brand,
+/// computed on its representation. Derived with `#[device_repr(ord)]`;
+/// primitives have their own.
+pub trait Ordered: OrderedRepr
 where
     Self: CubeType<ExpandType: OrderedExpand>,
 {

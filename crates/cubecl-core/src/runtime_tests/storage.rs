@@ -302,23 +302,31 @@ impl core::ops::Add for Count {
 }
 
 #[cube(launch)]
-fn kernel_atomic(counts: &AtomicStorage<Count, Cell>, peaks: &AtomicStorage<Count>) {
+fn kernel_atomic(
+    counts: &AtomicStorage<Count, Cell>,
+    peaks: &AtomicStorage<Count>,
+    deepest: &AtomicStorage<u32>,
+) {
     let cell = Cell(ABSOLUTE_POS as u32 % 2);
     counts.fetch_add(cell, Count(1));
     peaks.fetch_max(0usize, Count(ABSOLUTE_POS as u32));
     peaks.fetch_min(1usize, Count(ABSOLUTE_POS as u32));
+    deepest.fetch_max(0usize, ABSOLUTE_POS as u32 * 2);
 }
 
 pub fn test_storage_atomic<R: Runtime>(client: Client) {
     let counts = StorageBuffer::create(&client, &[Count(0), Count(5)]);
     let peaks = StorageBuffer::create(&client, &[Count(0), Count(u32::MAX)]);
+    let deepest = StorageBuffer::create(&client, &[0u32]);
     kernel_atomic::launch(
         &client,
         CubeCount::Static(1, 1, 1),
         CubeDim::new_1d(32),
         (&counts).into(),
         (&peaks).into(),
+        (&deepest).into(),
     );
+    assert_eq!(deepest.read(&client).unwrap(), [62]);
     assert_eq!(counts.read(&client).unwrap(), [Count(16), Count(21)]);
     assert_eq!(peaks.read(&client).unwrap(), [Count(31), Count(0)]);
 }
