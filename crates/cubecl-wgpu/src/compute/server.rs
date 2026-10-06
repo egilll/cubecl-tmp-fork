@@ -89,6 +89,10 @@ pub struct WgpuServer<C: WgpuCompiler> {
     /// The pipelines built so far, in front of the SPIR-V store when there is
     /// one.
     pipelines: CompilationCache<KernelId, PipelineEntry>,
+    /// Pipelines by text source with the entrypoint name blanked, so kernels
+    /// whose ids differ only in types that don't change the code, such as
+    /// unit brands, share one driver compilation.
+    pipelines_by_source: HashMap<(String, (u32, u32, u32)), PipelineEntry>,
     scheduler: SchedulerMultiStream<ScheduledWgpuBackend>,
     #[cfg(feature = "spirv")]
     pub(crate) spirv_cache: Option<Store<(u64, KernelCacheKey), cubecl_spirv::SpirvCacheEntry>>,
@@ -177,6 +181,7 @@ impl<C: WgpuCompiler> WgpuServer<C> {
             streams_pool: Vec::new(),
             device,
             pipelines,
+            pipelines_by_source: HashMap::new(),
             scheduler: SchedulerMultiStream::new(
                 utilities.logger.clone(),
                 backend_scheduler,
@@ -303,17 +308,41 @@ impl<C: WgpuCompiler> WgpuServer<C> {
         //     }
         // }
 
+        let source = ModuleSource::resolve(repr, compiler.lang_tag(), &compiled.source)?;
+        let shared_key = match source {
+            ModuleSource::Wgsl(text) => Some(text),
+            #[cfg(all(feature = "msl", target_os = "macos"))]
+            ModuleSource::Msl(text) => Some(text),
+            #[cfg(feature = "spirv")]
+            ModuleSource::SpirV(_) => None,
+        }
+        .map(|text| {
+            let dim = kernel_id.cube_dim;
+            (
+                text.replace(compiled.entrypoint_name.as_str(), ""),
+                (dim.x, dim.y, dim.z),
+            )
+        });
+        if let Some(shared) = shared_key.as_ref().and_then(|key| self.pipelines_by_source.get(key))
+        {
+            let shared = shared.clone();
+            self.pipelines.insert(kernel_id.clone(), shared.clone());
+            recording.source(&compiled.source);
+            recording.compiled(false);
+            return Ok(shared);
+        }
         let module = self.create_module(
             &compiled.entrypoint_name,
             kernel_id.cube_dim.into(),
-            ModuleSource::resolve(repr, compiler.lang_tag(), &compiled.source)?,
+            source,
             mode,
         )?;
         let pipeline = self.create_pipeline(&compiled.entrypoint_name, repr, module, bindings)?;
-        self.pipelines.insert(
-            kernel_id.clone(),
-            (pipeline.clone(), compiler_info, io.clone()),
-        );
+        let entry = (pipeline, compiler_info, io);
+        if let Some(key) = shared_key {
+            self.pipelines_by_source.insert(key, entry.clone());
+        }
+        self.pipelines.insert(kernel_id.clone(), entry.clone());
 
         recording.source(&compiled.source);
 
@@ -333,7 +362,7 @@ impl<C: WgpuCompiler> WgpuServer<C> {
         };
         recording.compiled(stored);
 
-        Ok((pipeline, compiler_info, io))
+        Ok(entry)
     }
 }
 
