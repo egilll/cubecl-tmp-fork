@@ -1,6 +1,6 @@
 use darling::FromDeriveInput;
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
+use quote::{ToTokens, format_ident, quote};
 use syn::{DeriveInput, parse_quote};
 
 use crate::{parse::cube_type::CubeTypeStruct, paths::prelude_type};
@@ -66,7 +66,8 @@ pub fn generate(input: &DeriveInput) -> syn::Result<TokenStream> {
         .predicates
         .push(parse_quote!(#name #type_generics: #cube<ExpandType = #expanded #type_generics> + 'static));
     let (impl_generics, ty_generics, clause) = generics.split_for_impl();
-    let comparisons = options.comparisons(&Forwarded {
+    let with_repr = with_repr(name, repr, &parsed.generics, &generics);
+    let forwarded = options.forward(&Forwarded {
         name,
         expanded,
         member: &member,
@@ -74,7 +75,8 @@ pub fn generate(input: &DeriveInput) -> syn::Result<TokenStream> {
         generics: &generics,
     });
     Ok(quote! {
-        #comparisons
+        #forwarded
+        #with_repr
 
         impl #impl_generics #device_repr for #name #ty_generics #clause {
             type Repr = #repr;
@@ -94,6 +96,46 @@ pub fn generate(input: &DeriveInput) -> syn::Result<TokenStream> {
             }
         }
     })
+}
+
+/// `WithRepr` for a wrapper generic over its representation, rebranding by
+/// substituting that parameter.
+fn with_repr(
+    name: &syn::Ident,
+    repr: &syn::Type,
+    declared: &syn::Generics,
+    generics: &syn::Generics,
+) -> TokenStream {
+    let syn::Type::Path(path) = repr else {
+        return TokenStream::new();
+    };
+    let Some(param) = path.path.get_ident() else {
+        return TokenStream::new();
+    };
+    if !declared.type_params().any(|p| &p.ident == param) {
+        return TokenStream::new();
+    }
+    let prelude = crate::paths::prelude_path();
+    let args = declared.params.iter().map(|p| match p {
+        syn::GenericParam::Type(t) if &t.ident == param => quote![__Repr],
+        syn::GenericParam::Type(t) => t.ident.to_token_stream(),
+        syn::GenericParam::Lifetime(l) => l.lifetime.to_token_stream(),
+        syn::GenericParam::Const(c) => c.ident.to_token_stream(),
+    });
+    let rebranded = quote![#name<#(#args),*>];
+    let mut generics = generics.clone();
+    generics.params.push(parse_quote!(__Repr: #prelude::CubePrimitive));
+    generics
+        .make_where_clause()
+        .predicates
+        .push(parse_quote!(#rebranded: #prelude::DeviceRepr<Repr = __Repr>));
+    let (impl_generics, _, clause) = generics.split_for_impl();
+    let (_, ty_generics, _) = declared.split_for_impl();
+    quote! {
+        impl #impl_generics #prelude::WithRepr<__Repr> for #name #ty_generics #clause {
+            type Output = #rebranded;
+        }
+    }
 }
 
 /// Same-brand traits a `#[device_repr(..)]` attribute forwards to the native
@@ -137,7 +179,7 @@ impl Options {
         Ok(options)
     }
 
-    fn comparisons(&self, value: &Forwarded) -> TokenStream {
+    fn forward(&self, value: &Forwarded) -> TokenStream {
         let Forwarded {
             name,
             expanded,

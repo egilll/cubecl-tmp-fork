@@ -116,3 +116,9 @@ impl StorageKey for u32 {
         usize::__expand_cast_from(scope, key)
     }
 }
+
+/// The same brand over another native representation, such as vectors of its
+/// scalar. Derived when the wrapped field's type is a type parameter.
+pub trait WithRepr<R: CubePrimitive>: DeviceRepr {
+    type Output: DeviceRepr<Repr = R>;
+}

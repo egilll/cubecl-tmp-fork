@@ -77,6 +77,32 @@ impl<Q: DeviceRepr<Repr: CubeElement>> StorageBuffer<Q> {
         }
     }
 
+    /// Binds these values to a kernel storage of `N`-lane vectors with the
+    /// same brand, such as `Quantity<Tag, Vector<f32, Const<4>>>` for a buffer
+    /// of `Quantity<Tag, f32>`.
+    ///
+    /// # Panics
+    ///
+    /// When `N` isn't a power of two, or the buffer's length or offset isn't
+    /// a whole number of vectors.
+    pub fn vectors<const N: usize>(
+        &self,
+    ) -> TypedBufferArg<<Q as WithRepr<Vector<<Q as DeviceRepr>::Repr, Const<N>>>>::Output>
+    where
+        Q: WithRepr<Vector<<Q as DeviceRepr>::Repr, Const<N>>>,
+        <Q as DeviceRepr>::Repr: Scalar,
+    {
+        let vector = N * size_of::<Q::Repr>();
+        let offset = self.inner.handle().offset_start.unwrap_or(0) as usize;
+        assert!(N.is_power_of_two(), "{N}-lane vectors are padded in storage");
+        assert!(
+            self.len() % N == 0 && offset % vector == 0,
+            "{} values at byte {offset} aren't whole {N}-lane vectors",
+            self.len()
+        );
+        TypedBufferArg::from_arg(self.as_native().into())
+    }
+
     pub fn as_native(&self) -> &Buffer<Q::Repr> {
         &self.inner
     }

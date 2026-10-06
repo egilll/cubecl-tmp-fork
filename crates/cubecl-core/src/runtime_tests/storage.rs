@@ -27,6 +27,11 @@ struct Room;
 #[device_repr(copy, key)]
 struct Cell(u32);
 
+#[repr(transparent)]
+#[derive(CubeType, DeviceRepr)]
+#[device_repr(copy)]
+struct Pressure<R: CubePrimitive>(R);
+
 #[cube]
 impl core::ops::Div<Time> for Distance {
     type Output = Speed;
@@ -159,6 +164,29 @@ pub fn test_storage_round_trip<R: Runtime>(client: Client) {
     );
 }
 
+#[cube(launch)]
+fn kernel_double(values: &mut Storage<Pressure<Vector<f32, Const<4>>>>) {
+    if ABSOLUTE_POS < values.len() {
+        let value = values.load(ABSOLUTE_POS);
+        values.store(ABSOLUTE_POS, Pressure(value.0 + value.0));
+    }
+}
+
+pub fn test_storage_vectors<R: Runtime>(client: Client) {
+    let values: Vec<_> = (0..8).map(|i| Pressure(i as f32)).collect();
+    let pressures = StorageBuffer::create(&client, &values);
+    kernel_double::launch(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(2),
+        pressures.vectors::<4>(),
+    );
+    let doubled: Vec<_> = pressures.read(&client).unwrap().iter().map(|p| p.0).collect();
+    assert_eq!(doubled, [0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0]);
+    let misaligned = std::panic::catch_unwind(|| pressures.slice(1..5).vectors::<4>());
+    assert!(misaligned.is_err());
+}
+
 pub fn test_storage_alias_type<R: Runtime>(client: Client) {
     let input = StorageBuffer::create(&client, &[Distance(4.0)]);
     let times = StorageBuffer::create(&client, &[Time(2.0)]);
@@ -184,6 +212,11 @@ macro_rules! testgen_storage {
         fn test_storage_round_trip() {
             let client = TestRuntime::client(&Default::default());
             cubecl_core::runtime_tests::storage::test_storage_round_trip::<TestRuntime>(client);
+        }
+        #[$crate::runtime_tests::test_log::test]
+        fn test_storage_vectors() {
+            let client = TestRuntime::client(&Default::default());
+            cubecl_core::runtime_tests::storage::test_storage_vectors::<TestRuntime>(client);
         }
         #[$crate::runtime_tests::test_log::test]
         fn test_storage_alias_type() {

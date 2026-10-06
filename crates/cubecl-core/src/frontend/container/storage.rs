@@ -86,8 +86,12 @@ impl<Q: DeviceRepr> TypedBufferArg<Q> {
     where
         Q::Repr: CubeElement,
     {
+        Self::from_arg(buffer.into())
+    }
+
+    pub(crate) fn from_arg(inner: BufferArg) -> Self {
         Self {
-            inner: buffer.into(),
+            inner,
             marker: PhantomData,
         }
     }
