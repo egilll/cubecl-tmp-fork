@@ -37,6 +37,7 @@ pub mod saturating;
 pub mod sequence;
 pub mod short_circuit;
 pub mod slice;
+pub mod storage;
 pub mod stream;
 pub mod stream_errors;
 pub mod synchronization;
@@ -154,6 +155,7 @@ macro_rules! testgen_untyped {
     () => {
         cubecl_core::testgen_launch_untyped!();
         cubecl_core::testgen_typed_buffer!();
+        cubecl_core::testgen_storage!();
         cubecl_core::testgen_user_ops!();
         cubecl_core::testgen_cmma!();
         cubecl_core::testgen_cmma2!();

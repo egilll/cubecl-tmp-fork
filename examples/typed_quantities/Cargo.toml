@@ -1,0 +1,17 @@
+[package]
+name = "typed_quantities"
+publish = false
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[features]
+default = ["wgpu"]
+wgpu = ["cubecl/wgpu"]
+metal-native = ["cubecl/metal-native"]
+cuda = ["cubecl/cuda"]
+hip = ["cubecl/hip"]
+cpu = ["cubecl/cpu"]
+
+[dependencies]
+cubecl = { path = "../../crates/cubecl", version = "=0.11.0-pre.4", default-features = false, features = ["std"] }
