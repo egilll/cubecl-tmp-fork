@@ -155,6 +155,7 @@ impl KernelSignature {
             .chain(sig_params)
             .collect::<Vec<_>>();
 
+        super::algebra::add_expand_bounds(&mut generics);
         RemoveHelpers.visit_generics_mut(&mut generics);
 
         Ok(KernelSignature {

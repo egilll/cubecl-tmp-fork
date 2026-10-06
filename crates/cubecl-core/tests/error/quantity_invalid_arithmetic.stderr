@@ -1,0 +1,40 @@
+error[E0369]: cannot add `Seconds` to `Meters`
+  --> tests/error/quantity_invalid_arithmetic.rs:11:14
+   |
+11 |     distance + duration
+   |     -------- ^ -------- Seconds
+   |     |
+   |     Meters
+   |
+note: an implementation of `std::ops::Add<Seconds>` might be missing for `Meters`
+  --> tests/error/quantity_invalid_arithmetic.rs:5:1
+   |
+ 5 | struct Meters(f32);
+   | ^^^^^^^^^^^^^ must implement `std::ops::Add<Seconds>`
+note: the trait `std::ops::Add` must be implemented
+  --> $RUST/core/src/ops/arith.rs
+   |
+   | pub const trait Add<Rhs = Self> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0277]: the trait bound `MetersExpand: AddExpand<_>` is not satisfied
+  --> tests/error/quantity_invalid_arithmetic.rs:11:5
+   |
+ 9 | #[cube]
+   | ------- in this attribute macro expansion
+10 | fn invalid(distance: Meters, duration: Seconds) -> Meters {
+11 |     distance + duration
+   |     ^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `AddExpand<_>` is not implemented for `MetersExpand`
+  --> tests/error/quantity_invalid_arithmetic.rs:4:10
+   |
+ 4 | #[derive(CubeType)]
+   |          ^^^^^^^^
+   = help: the following other types implement trait `AddExpand<Rhs>`:
+             `&NativeExpand<T>` implements `AddExpand<&NativeExpand<T>>`
+             `&NativeExpand<T>` implements `AddExpand<NativeExpand<T>>`
+             `NativeExpand<T>` implements `AddExpand<&NativeExpand<T>>`
+             `NativeExpand<T>` implements `AddExpand`
+             `cubecl_core::runtime_tests::user_ops::PairExpand` implements `AddExpand`
+   = note: this error originates in the attribute macro `cube` which comes from the expansion of the derive macro `CubeType` (in Nightly builds, run with -Z macro-backtrace for more info)

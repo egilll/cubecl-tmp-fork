@@ -22,6 +22,8 @@ pub struct CubeTrait {
     pub name: Ident,
     pub generics: Generics,
     pub items: Vec<CubeTraitItem>,
+    pub defaults: Vec<KernelFn>,
+    pub default_methods: bool,
     pub original_trait: ItemTrait,
     pub expand_supertraits: Punctuated<TypeParamBound, Token![+]>,
 }
@@ -33,6 +35,7 @@ pub struct CubeTraitImpl {
     pub generics: Generics,
     pub items: Vec<CubeTraitImplItem>,
     pub original_items: Vec<ImplItem>,
+    pub default_methods: bool,
 }
 
 pub enum CubeTraitItem {
@@ -201,6 +204,32 @@ impl CubeTrait {
         let mut generics = item.generics;
         StripDefault.visit_generics_mut(&mut generics);
 
+        let mut defaults = Vec::new();
+        for trait_item in &item.items {
+            if args.default_methods.is_present()
+                && let TraitItem::Fn(func) = trait_item
+                && let Some(body) = &func.default
+            {
+                let mut default_args = args.clone();
+                default_args.inline = Some(super::kernel::InlineHint::Always);
+                let mut function = KernelFn::from_sig_and_block(
+                    func.attrs.clone(),
+                    syn::Visibility::Inherited,
+                    func.sig.clone(),
+                    body.clone(),
+                    format!("{}::{}", name, func.sig.ident),
+                    &default_args,
+                )?;
+                function.sig.name = if has_receiver(&func.sig) {
+                    function.sig.plain_self();
+                    format_ident!("__expand_{}_method", func.sig.ident)
+                } else {
+                    format_ident!("__expand_{}", func.sig.ident)
+                };
+                defaults.push(function);
+            }
+        }
+
         let items = item
             .items
             .clone()
@@ -222,6 +251,8 @@ impl CubeTrait {
             name,
             generics,
             items,
+            defaults,
+            default_methods: args.default_methods.is_present(),
             original_trait,
             expand_supertraits,
         })
@@ -274,6 +305,7 @@ impl CubeTraitImpl {
             generics,
             items,
             original_items: item_impl.items,
+            default_methods: args.default_methods.is_present(),
         })
     }
 }

@@ -1,3 +1,4 @@
+pub mod algebra;
 use syn::{GenericParam, TypeParam, visit_mut::VisitMut};
 
 pub mod asm;

@@ -442,8 +442,8 @@ macro_rules! define_core_assign_binop {
                 }
             }
 
-            pub trait [<$trait Expand>] {
-                fn [<__expand_ $method _method>](&mut self, scope: &Scope, rhs: Self);
+            pub trait [<$trait Expand>]<Rhs = Self> {
+                fn [<__expand_ $method _method>](&mut self, scope: &Scope, rhs: Rhs);
             }
 
             impl<T: $trait + [<Cube $base_trait>]> [<Cube $trait>] for T {}

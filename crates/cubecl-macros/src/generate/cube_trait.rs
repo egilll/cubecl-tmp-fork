@@ -14,22 +14,48 @@ impl ToTokens for CubeTrait {
         let original_body = &self.original_trait.items;
         let mut colon = self.original_trait.colon_token;
         let mut base_traits = self.original_trait.supertraits.clone();
-        let where_clause = self.original_trait.generics.where_clause.clone();
+        let mut algebra_generics = self.original_trait.generics.clone();
+        crate::parse::algebra::add_expand_bounds(&mut algebra_generics);
+        let where_clause = algebra_generics.where_clause.clone();
+        let cube_type = prelude_type("CubeType");
+        for bound in &self.original_trait.supertraits {
+            for expanded in
+                crate::parse::algebra::expanded_bounds(bound, &parse_quote!(Self), false)
+            {
+                base_traits.push(parse_quote!(#cube_type<ExpandType: #expanded>));
+                colon = Some(Token![:](tokens.span()));
+            }
+        }
         let attrs = &self.attrs;
         let vis = &self.vis;
         let unsafety = &self.unsafety;
         let name = &self.name;
         let generics = &self.generics;
-        let assoc_fns = self.items.iter().filter_map(CubeTraitItem::func);
+        let assoc_fns = self
+            .items
+            .iter()
+            .filter_map(CubeTraitItem::func)
+            .map(|sig| {
+                if let Some(default) = self
+                    .defaults
+                    .iter()
+                    .find(|function| function.sig.name == sig.name)
+                {
+                    default.clone().to_tokens_mut()
+                } else {
+                    quote![#sig;]
+                }
+            });
         let assoc_methods = self
             .items
             .iter()
             .filter_map(CubeTraitItem::associated_method);
 
-        let has_expand = self
-            .items
-            .iter()
-            .any(|it| matches!(it, CubeTraitItem::Method(_)));
+        let has_expand = self.default_methods
+            || self
+                .items
+                .iter()
+                .any(|it| matches!(it, CubeTraitItem::Method(_)));
 
         if has_expand {
             let cube_type = prelude_type("CubeType");
@@ -69,7 +95,7 @@ impl ToTokens for CubeTrait {
 
                 #(
                     #[allow(clippy::too_many_arguments)]
-                    #assoc_fns;
+                    #assoc_fns
                 )*
 
                 #(
@@ -92,7 +118,8 @@ impl CubeTrait {
         let vis = &self.vis;
         let unsafety = &self.unsafety;
         let name = format_ident!("{}Expand", self.name);
-        let generics = &self.generics;
+        let generics = crate::parse::algebra::expanded_generics(&self.generics);
+        let where_clause = &generics.where_clause;
         let others = self.items.iter().filter_map(CubeTraitItem::other);
         let methods = self
             .items
@@ -101,20 +128,39 @@ impl CubeTrait {
             .cloned()
             .map(|mut method| {
                 method.plain_self();
-                method
+                if let Some(default) = self
+                    .defaults
+                    .iter()
+                    .find(|function| function.sig.name == method.name)
+                {
+                    default.clone().to_tokens_mut()
+                } else {
+                    quote![#method;]
+                }
             });
-        let supertraits = &self.expand_supertraits;
+        let mut supertraits = self.expand_supertraits.clone();
+        if !self.defaults.is_empty() {
+            let into_expand = prelude_type("IntoExpand");
+            supertraits.push(parse_quote!(Sized));
+            supertraits.push(parse_quote!(#into_expand<Expand = Self>));
+        }
+        for bound in &self.original_trait.supertraits {
+            for expanded in crate::parse::algebra::expanded_bounds(bound, &parse_quote!(Self), true)
+            {
+                supertraits.push(expanded);
+            }
+        }
         let colon = (!supertraits.is_empty()).then(|| quote![:]);
 
         quote! {
             #(#attrs)*
             #[allow(clippy::too_many_arguments)]
-            #vis #unsafety trait #name #generics #colon #supertraits {
+            #vis #unsafety trait #name #generics #colon #supertraits #where_clause {
                 #(#others)*
 
                 #(
                     #[allow(clippy::too_many_arguments)]
-                    #methods;
+                    #methods
                 )*
             }
         }
@@ -123,10 +169,11 @@ impl CubeTrait {
 
 impl CubeTraitImpl {
     pub fn to_tokens_mut(&mut self) -> TokenStream {
-        let has_expand = self
-            .items
-            .iter()
-            .any(|it| matches!(it, CubeTraitImplItem::Method(_)));
+        let has_expand = self.default_methods
+            || self
+                .items
+                .iter()
+                .any(|it| matches!(it, CubeTraitImplItem::Method(_)));
 
         let expand = if has_expand {
             self.generate_expand()
@@ -175,13 +222,10 @@ impl CubeTraitImpl {
             .collect::<Vec<_>>();
         let unsafety = &self.unsafety;
 
-        let struct_name = path_of_type(&self.struct_name);
-        let mut struct_name = match struct_name {
+        let struct_name = match expand_type_of(&self.struct_name, &self.generics, true) {
             Ok(name) => name,
             Err(err) => return err.into_compile_error(),
         };
-        let struct_ident = struct_name.path.segments.last_mut().unwrap();
-        struct_ident.ident = format_ident!("{}Expand", struct_ident.ident);
 
         let mut trait_name = self.trait_name.clone();
         let operator = operator_trait(&trait_name);
@@ -195,7 +239,10 @@ impl CubeTraitImpl {
             Some(op) => {
                 let mut path = frontend_path();
                 let mut last = trait_ident.clone();
-                last.arguments = expand_type_args(&last.arguments);
+                last.arguments = match expand_type_args(&last.arguments, &self.generics) {
+                    Ok(args) => args,
+                    Err(err) => return err.into_compile_error(),
+                };
                 path.segments.push(last);
                 trait_name = path;
                 others
@@ -256,18 +303,55 @@ fn operator_trait(path: &syn::Path) -> Option<&'static str> {
         .filter(|_| prefix_is_ops)
 }
 
-/// `<A, B>` with every type `T` replaced by `<T as CubeType>::ExpandType`.
-fn expand_type_args(args: &syn::PathArguments) -> syn::PathArguments {
-    let cube_type = prelude_type("CubeType");
+/// `<A, B>` with every type replaced by its expand type.
+fn expand_type_args(
+    args: &syn::PathArguments,
+    generics: &syn::Generics,
+) -> syn::Result<syn::PathArguments> {
     let mut args = args.clone();
     if let syn::PathArguments::AngleBracketed(angle) = &mut args {
         for arg in angle.args.iter_mut() {
             if let GenericArgument::Type(ty) = arg {
-                *ty = parse_quote!(<#ty as #cube_type>::ExpandType);
+                let expanded = expand_type_of(ty, generics, false)?;
+                *ty = parse_quote!(#expanded);
             }
         }
     }
-    args
+    Ok(args)
+}
+
+/// The expand type of `ty` in an impl over `generics`. It's named directly
+/// where a projection would leave the impl's parameters unconstrained (and
+/// always for the self type): primitives and vectors expand to `NativeExpand`,
+/// other structs to their derived `{Name}Expand`.
+fn expand_type_of(ty: &Type, generics: &syn::Generics, named: bool) -> syn::Result<TokenStream> {
+    const NATIVE: &[&str] = &[
+        "f16", "bf16", "f32", "f64", "bool", "u8", "u16", "u32", "u64", "usize", "i8", "i16",
+        "i32", "i64", "isize", "Vector",
+    ];
+    let mut path = path_of_type(ty)?;
+    let name = path.path.segments.last().unwrap().ident.clone();
+    if NATIVE.contains(&name.to_string().as_str()) {
+        let native = prelude_type("NativeExpand");
+        return Ok(quote![#native<#path>]);
+    }
+    let is_param = path.qself.is_none()
+        && path.path.segments.len() == 1
+        && generics.type_params().any(|param| param.ident == name);
+    if !named && (is_param || !mentions_params(ty.to_token_stream(), generics)) {
+        let cube_type = prelude_type("CubeType");
+        return Ok(quote![<#ty as #cube_type>::ExpandType]);
+    }
+    path.path.segments.last_mut().unwrap().ident = format_ident!("{name}Expand");
+    Ok(quote![#path])
+}
+
+fn mentions_params(tokens: TokenStream, generics: &syn::Generics) -> bool {
+    tokens.into_iter().any(|token| match token {
+        proc_macro2::TokenTree::Ident(ident) => generics.type_params().any(|p| p.ident == ident),
+        proc_macro2::TokenTree::Group(group) => mentions_params(group.stream(), generics),
+        _ => false,
+    })
 }
 
 /// An operator impl's item in the expand impl: `type Output = T` becomes the
