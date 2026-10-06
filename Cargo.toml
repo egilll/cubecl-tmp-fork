@@ -222,11 +222,9 @@ ash = "0.38"
 tracel-ash = "0.39.5"
 # tracel-ash = { path = "../tracel-ash/crates/ash" }
 
-# wgpu = { git = "https://github.com/gfx-rs/wgpu.git", rev = "bde709122f8320571ab1733ab055dcb54415a483" }
-# Our wgpu fork (trunk plus local fixes, e.g. a failed Metal command buffer loses the device).
-wgpu = { path = "../wgpu/wgpu" }
-wgpu-hal = { path = "../wgpu/wgpu-hal" }
-# wgpu-hal = { git = "https://github.com/gfx-rs/wgpu.git", rev = "bde709122f8320571ab1733ab055dcb54415a483" }
+# Compute and renderer interop use the same wgpu fork.
+wgpu = { git = "https://github.com/egilll/wgpu-tmp-fork.git", branch = "fork" }
+wgpu-hal = { git = "https://github.com/egilll/wgpu-tmp-fork.git", branch = "fork" }
 
 renderdoc = "0.12"
 

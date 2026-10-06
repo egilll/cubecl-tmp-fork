@@ -3156,6 +3156,7 @@ checksum = "bc0287524726960e07b119cebd01678f852f147742ae0d925e6a520dca956126"
 [[package]]
 name = "naga"
 version = "30.0.0"
+source = "git+https://github.com/egilll/wgpu-tmp-fork.git?branch=fork#96a4372b3b1b6fd258cfbb1b00ced6442a256050"
 dependencies = [
  "arrayvec",
  "bit-set",
@@ -3180,6 +3181,7 @@ dependencies = [
 [[package]]
 name = "naga-types"
 version = "30.0.0"
+source = "git+https://github.com/egilll/wgpu-tmp-fork.git?branch=fork#96a4372b3b1b6fd258cfbb1b00ced6442a256050"
 dependencies = [
  "hashbrown 0.17.1",
  "indexmap",
@@ -5960,6 +5962,7 @@ dependencies = [
 [[package]]
 name = "wgpu"
 version = "30.0.0"
+source = "git+https://github.com/egilll/wgpu-tmp-fork.git?branch=fork#96a4372b3b1b6fd258cfbb1b00ced6442a256050"
 dependencies = [
  "arrayvec",
  "bitflags 2.13.1",
@@ -5987,6 +5990,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core"
 version = "30.0.0"
+source = "git+https://github.com/egilll/wgpu-tmp-fork.git?branch=fork#96a4372b3b1b6fd258cfbb1b00ced6442a256050"
 dependencies = [
  "arrayvec",
  "bit-set",
@@ -6020,6 +6024,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-apple"
 version = "30.0.0"
+source = "git+https://github.com/egilll/wgpu-tmp-fork.git?branch=fork#96a4372b3b1b6fd258cfbb1b00ced6442a256050"
 dependencies = [
  "wgpu-hal",
 ]
@@ -6027,6 +6032,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-emscripten"
 version = "30.0.0"
+source = "git+https://github.com/egilll/wgpu-tmp-fork.git?branch=fork#96a4372b3b1b6fd258cfbb1b00ced6442a256050"
 dependencies = [
  "wgpu-hal",
 ]
@@ -6034,6 +6040,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-linux-android-bsd"
 version = "30.0.0"
+source = "git+https://github.com/egilll/wgpu-tmp-fork.git?branch=fork#96a4372b3b1b6fd258cfbb1b00ced6442a256050"
 dependencies = [
  "wgpu-hal",
 ]
@@ -6041,6 +6048,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-windows"
 version = "30.0.0"
+source = "git+https://github.com/egilll/wgpu-tmp-fork.git?branch=fork#96a4372b3b1b6fd258cfbb1b00ced6442a256050"
 dependencies = [
  "wgpu-hal",
 ]
@@ -6048,6 +6056,7 @@ dependencies = [
 [[package]]
 name = "wgpu-hal"
 version = "30.0.0"
+source = "git+https://github.com/egilll/wgpu-tmp-fork.git?branch=fork#96a4372b3b1b6fd258cfbb1b00ced6442a256050"
 dependencies = [
  "android_system_properties",
  "arrayvec",
@@ -6099,6 +6108,7 @@ dependencies = [
 [[package]]
 name = "wgpu-naga-bridge"
 version = "30.0.0"
+source = "git+https://github.com/egilll/wgpu-tmp-fork.git?branch=fork#96a4372b3b1b6fd258cfbb1b00ced6442a256050"
 dependencies = [
  "naga",
  "wgpu-types",
@@ -6107,6 +6117,7 @@ dependencies = [
 [[package]]
 name = "wgpu-sync"
 version = "30.0.0"
+source = "git+https://github.com/egilll/wgpu-tmp-fork.git?branch=fork#96a4372b3b1b6fd258cfbb1b00ced6442a256050"
 dependencies = [
  "cfg-if",
  "lock_api",
@@ -6119,6 +6130,7 @@ dependencies = [
 [[package]]
 name = "wgpu-types"
 version = "30.0.0"
+source = "git+https://github.com/egilll/wgpu-tmp-fork.git?branch=fork#96a4372b3b1b6fd258cfbb1b00ced6442a256050"
 dependencies = [
  "bitflags 2.13.1",
  "bytemuck",
