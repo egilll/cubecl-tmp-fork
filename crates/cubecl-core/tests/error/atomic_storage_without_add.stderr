@@ -1,6 +1,9 @@
 error[E0599]: the method `fetch_add` exists for reference `&cubecl_core::frontend::AtomicStorage<Label>`, but its trait bounds were not satisfied
   --> tests/error/atomic_storage_without_add.rs:11:12
    |
+ 5 | #[derive(CubeType, DeviceRepr)]
+   |          -------- doesn't satisfy `LabelExpand: AddExpand`
+ 6 | #[device_repr(copy)]
  7 | struct Label(u32);
    | ------------ doesn't satisfy `Label: std::ops::Add`
 ...
@@ -9,15 +12,28 @@ error[E0599]: the method `fetch_add` exists for reference `&cubecl_core::fronten
    |
    = note: the following trait bounds were not satisfied:
            `Label: std::ops::Add`
-note: the trait `std::ops::Add` must be implemented
-  --> $RUST/core/src/ops/arith.rs
+           `LabelExpand: AddExpand`
+note: the traits `AddExpand` and `std::ops::Add` must be implemented
+  --> src/frontend/operation/binary.rs
+   |
+   |             pub trait [<$trait Expand>]<Rhs = Self> {
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+   | define_core_binop!(Add, add);
+   | ---------------------------- in this macro invocation
+   |
+  ::: $RUST/core/src/ops/arith.rs
    |
    | pub const trait Add<Rhs = Self> {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: this error originates in the macro `define_core_binop` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0599]: the method `__expand_fetch_add_method` exists for reference `&AtomicStorageExpand<Label>`, but its trait bounds were not satisfied
  --> tests/error/atomic_storage_without_add.rs:9:1
   |
+5 | #[derive(CubeType, DeviceRepr)]
+  |          -------- doesn't satisfy `LabelExpand: AddExpand`
+6 | #[device_repr(copy)]
 7 | struct Label(u32);
   | ------------ doesn't satisfy `Label: std::ops::Add`
 8 |
@@ -26,9 +42,18 @@ error[E0599]: the method `__expand_fetch_add_method` exists for reference `&Atom
   |
   = note: the following trait bounds were not satisfied:
           `Label: std::ops::Add`
-note: the trait `std::ops::Add` must be implemented
- --> $RUST/core/src/ops/arith.rs
+          `LabelExpand: AddExpand`
+note: the traits `AddExpand` and `std::ops::Add` must be implemented
+ --> src/frontend/operation/binary.rs
+  |
+  |             pub trait [<$trait Expand>]<Rhs = Self> {
+  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+  | define_core_binop!(Add, add);
+  | ---------------------------- in this macro invocation
+  |
+ ::: $RUST/core/src/ops/arith.rs
   |
   | pub const trait Add<Rhs = Self> {
   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  = note: this error originates in the attribute macro `cube` (in Nightly builds, run with -Z macro-backtrace for more info)
+  = note: this error originates in the attribute macro `cube` which comes from the expansion of the macro `define_core_binop` (in Nightly builds, run with -Z macro-backtrace for more info)

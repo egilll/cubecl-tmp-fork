@@ -27,6 +27,7 @@ impl CubeTypeStruct {
             let cube_type_impl = self.cube_type_impl();
             let expand_type_impl = self.expand_type_impl();
             let call_arg_impl = self.call_arg_impl();
+            let tuple_constructor = self.tuple_constructor();
 
             quote! {
                 #expand_ty
@@ -34,6 +35,41 @@ impl CubeTypeStruct {
                 #cube_type_impl
                 #expand_type_impl
                 #call_arg_impl
+                #tuple_constructor
+            }
+        }
+    }
+
+    /// The expanded tuple constructor, reachable through the struct's own
+    /// path, so `Name(a, b)` in a kernel needs no import of the expand type
+    /// and infers generics the fields determine.
+    fn tuple_constructor(&self) -> TokenStream {
+        if !self.tuple {
+            return TokenStream::new();
+        }
+        let name = &self.ident;
+        let expand = self.name_expand.as_ref().unwrap();
+        let vis = &self.vis;
+        let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
+        let cube_type = prelude_type("CubeType");
+        let params: Vec<_> = (0..self.fields.len())
+            .map(|index| quote::format_ident!("field_{index}"))
+            .collect();
+        let types = self.fields.iter().map(|field| {
+            let ty = &field.ty;
+            if field.comptime.is_present() {
+                quote![#ty]
+            } else {
+                quote![<#ty as #cube_type>::ExpandType]
+            }
+        });
+        quote! {
+            impl #impl_generics #name #ty_generics #where_clause {
+                #[doc(hidden)]
+                #[allow(clippy::too_many_arguments)]
+                #vis fn __expand_tuple_constructor(#(#params: #types),*) -> #expand #ty_generics {
+                    #expand(#(#params),*)
+                }
             }
         }
     }
