@@ -101,3 +101,20 @@ fn main() {
     let _ = MetersLaunch::new(1.0);
     let _ = RoomToWorldLaunch::new(2.5);
 }
+
+/// Mutable structs over frame-generic brands.
+#[derive(CubeType, CubeTypeMut)]
+struct Segment<F: 'static> {
+    start: Point<F>,
+    step: Displacement<F>,
+}
+
+#[cube]
+fn advance<F: 'static>(segment: Segment<F>) -> Segment<F> {
+    let mut segment = segment;
+    segment = Segment::<F> {
+        start: segment.start + segment.step,
+        step: segment.step,
+    };
+    segment
+}
