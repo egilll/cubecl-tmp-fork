@@ -62,6 +62,27 @@ impl<T: CubeElement> Buffer<T> {
         }
     }
 
+    /// The first `len` elements of an allocation made elsewhere, such as one
+    /// in a persistent or dedicated memory window.
+    ///
+    /// # Panics
+    ///
+    /// When the handle holds fewer than `len` elements of `T`.
+    pub fn from_handle(handle: Handle, len: usize) -> Self {
+        let bytes = (len * size_of::<T>()) as u64;
+        assert!(
+            bytes <= handle.size_in_used(),
+            "{len} elements need {bytes} bytes; the handle holds {}",
+            handle.size_in_used()
+        );
+        let tail = handle.size_in_used() - bytes;
+        Self {
+            handle: handle.offset_end(tail),
+            len,
+            _element: PhantomData,
+        }
+    }
+
     /// The number of elements.
     pub fn len(&self) -> usize {
         self.len
