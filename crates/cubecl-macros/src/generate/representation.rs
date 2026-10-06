@@ -230,20 +230,24 @@ impl Options {
             ]);
             let expand_clause = &expand_generics.where_clause;
             tokens.extend(quote! {
+                #[automatically_derived]
                 impl #impl_generics ::core::clone::Clone for #name #ty_generics #clause {
                     fn clone(&self) -> Self {
                         *self
                     }
                 }
 
+                #[automatically_derived]
                 impl #impl_generics ::core::marker::Copy for #name #ty_generics #clause {}
 
+                #[automatically_derived]
                 impl #impl_generics ::core::clone::Clone for #expanded #ty_generics #expand_clause {
                     fn clone(&self) -> Self {
                         *self
                     }
                 }
 
+                #[automatically_derived]
                 impl #impl_generics ::core::marker::Copy for #expanded #ty_generics #expand_clause {}
             });
         }
@@ -262,6 +266,7 @@ impl Options {
                 }
             });
             tokens.extend(quote! {
+                #[automatically_derived]
                 impl #impl_generics ::core::cmp::PartialEq for #name #ty_generics #clause {
                     fn eq(&self, other: &Self) -> bool {
                         self.#member == other.#member
@@ -291,6 +296,7 @@ impl Options {
                 }
             });
             tokens.extend(quote! {
+                #[automatically_derived]
                 impl #impl_generics ::core::cmp::PartialOrd for #name #ty_generics #clause {
                     fn partial_cmp(&self, other: &Self) -> ::core::option::Option<#ordering> {
                         self.#member.partial_cmp(&other.#member)
