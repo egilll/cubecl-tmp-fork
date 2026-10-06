@@ -140,11 +140,20 @@ impl CubeTypeStruct {
     }
 
     fn launch_new(&self) -> proc_macro2::TokenStream {
-        let args = self.fields.iter().map(TypeField::launch_new_arg);
+        // Phantom markers carry no value, so a launch takes no argument for them.
+        let args = self
+            .fields
+            .iter()
+            .filter(|field| !field.is_marker())
+            .map(TypeField::launch_new_arg);
         let fields = self.fields.iter().map(|field| {
             let member = field.member();
-            let binding = field.binding();
-            quote![#member: #binding]
+            if field.is_marker() {
+                quote![#member: ::core::marker::PhantomData]
+            } else {
+                let binding = field.binding();
+                quote![#member: #binding]
+            }
         });
         let name = &self.name_launch;
 

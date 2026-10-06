@@ -21,6 +21,6 @@ fn kernel(room: Position<Room>, world: Position<World>, output: &mut [f32]) {
 }
 
 fn main() {
-    let _ = PositionLaunch::<Room>::new(1.0, PhantomData);
-    let _ = PositionLaunch::<World>::new(2.0, PhantomData);
+    let _ = PositionLaunch::<Room>::new(1.0);
+    let _ = PositionLaunch::<World>::new(2.0);
 }
