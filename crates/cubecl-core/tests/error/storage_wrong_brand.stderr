@@ -1,0 +1,14 @@
+error[E0277]: the trait bound `cubecl_core::frontend::TypedBufferArg<Distance>: From<&cubecl_core::compute::StorageBuffer<Time>>` is not satisfied
+  --> tests/error/storage_wrong_brand.rs:13:12
+   |
+13 |     buffer.into()
+   |            ^^^^ the trait `From<&cubecl_core::compute::StorageBuffer<Time>>` is not implemented for `cubecl_core::frontend::TypedBufferArg<Distance>`
+   |
+help: the trait `From<&cubecl_core::compute::StorageBuffer<Time>>` is not implemented for `cubecl_core::frontend::TypedBufferArg<Distance>`
+      but trait `From<&cubecl_core::compute::StorageBuffer<Distance>>` is implemented for it
+  --> src/compute/storage.rs
+   |
+   | impl<Q: DeviceRepr<Repr: CubeElement>> From<&StorageBuffer<Q>> for TypedBufferArg<Q> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `Distance`, found `Time`
+   = note: required for `&cubecl_core::compute::StorageBuffer<Time>` to implement `Into<cubecl_core::frontend::TypedBufferArg<Distance>>`

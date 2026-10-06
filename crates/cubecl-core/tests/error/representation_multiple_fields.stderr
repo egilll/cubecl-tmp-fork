@@ -1,0 +1,7 @@
+error: DeviceRepr requires one native field and only comptime PhantomData markers
+ --> tests/error/representation_multiple_fields.rs:4:1
+  |
+4 | / #[repr(transparent)]
+5 | | #[derive(CubeType, DeviceRepr)]
+6 | | struct Invalid(f32, ());
+  | |________________________^

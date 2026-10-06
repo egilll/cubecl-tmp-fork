@@ -1,0 +1,5 @@
+error: DeviceRepr requires #[repr(transparent)]
+ --> tests/error/representation_missing_transparent.rs:5:1
+  |
+5 | struct Invalid(f32);
+  | ^^^^^^^^^^^^^^^^^^^^

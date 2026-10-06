@@ -349,3 +349,11 @@ pub fn derive_assign(input: TokenStream) -> TokenStream {
         Err(e) => e.into_compile_error().into(),
     }
 }
+
+#[proc_macro_derive(DeviceRepr, attributes(cube, expand))]
+pub fn derive_device_repr(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    generate::representation::generate(&input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}

@@ -1,0 +1,13 @@
+error[E0599]: no method named `store` found for mutable reference `&mut cubecl_core::frontend::Storage<f32, cubecl_core::frontend::ReadOnly>` in the current scope
+ --> tests/error/storage_read_only.rs:6:13
+  |
+6 |     storage.store(0usize, 1.0);
+  |             ^^^^^ method not found in `&mut cubecl_core::frontend::Storage<f32, cubecl_core::frontend::ReadOnly>`
+
+error[E0599]: no method named `__expand_store_method` found for mutable reference `&mut StorageExpand<f32, cubecl_core::frontend::ReadOnly>` in the current scope
+ --> tests/error/storage_read_only.rs:4:1
+  |
+4 | #[cube]
+  | ^^^^^^^
+  |
+  = note: this error originates in the attribute macro `cube` (in Nightly builds, run with -Z macro-backtrace for more info)
