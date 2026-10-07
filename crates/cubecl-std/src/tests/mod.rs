@@ -1,6 +1,7 @@
 /// Re-export for testgen macros.
 pub use test_log;
 
+pub mod collective;
 pub mod dual;
 pub mod erased;
 pub mod event;
@@ -26,6 +27,7 @@ macro_rules! testgen {
             cubecl_std::testgen_fp4!();
             cubecl_std::testgen_erased!();
             cubecl_std::testgen_dual!();
+            cubecl_std::testgen_collective!();
         }
     };
 }
