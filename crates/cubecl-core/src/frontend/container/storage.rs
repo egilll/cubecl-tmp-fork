@@ -264,3 +264,42 @@ impl<Q: DeviceRepr, K: StorageKey> LocalStorage<Q, K> {
         Q::Layout::store_into(self.inner.as_mut_slice(), K::position(key), Q::into_repr(value));
     }
 }
+
+/// Values of `Q` in a cube's shared memory, addressed by `K`: a typed,
+/// keyed [`Shared`] slice, so a cube's scratch keeps the brands it holds.
+///
+/// Shared memory is uninitialized until written, and a unit sees another
+/// unit's writes only after a `sync_cube`.
+#[derive(CubeType)]
+pub struct SharedStorage<Q: DeviceRepr, K: StorageKey = usize> {
+    inner: Shared<[StorageElement<Q>]>,
+    #[cube(comptime)]
+    marker: PhantomData<(Q, K)>,
+}
+
+#[cube]
+impl<Q: DeviceRepr, K: StorageKey> SharedStorage<Q, K> {
+    /// Room for `len` values.
+    pub fn new(#[comptime] len: usize) -> Self {
+        intrinsic!(|scope| {
+            let width = StorageWidth::<Q>::__expand_value(scope);
+            SharedStorageExpand {
+                inner: Shared::<[StorageElement<Q>]>::__expand_new_slice(scope, len * width),
+                marker: PhantomData,
+            }
+        })
+    }
+
+    #[cube(inline)]
+    pub fn len(&self) -> usize {
+        self.inner.len() / StorageWidth::<Q>::value()
+    }
+
+    pub fn load(&self, key: K) -> Q {
+        Q::from_repr(Q::Layout::load_from(&self.inner, K::position(key)))
+    }
+
+    pub fn store(&mut self, key: K, value: Q) {
+        Q::Layout::store_into(&mut self.inner, K::position(key), Q::into_repr(value));
+    }
+}

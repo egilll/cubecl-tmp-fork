@@ -392,6 +392,22 @@ pub fn test_storage_scalar_brand<R: Runtime>(client: Client) {
     assert_eq!(output.read(&client).unwrap(), [Speed(2.0), Speed(3.0)]);
 }
 
+#[cube(launch)]
+fn kernel_shared(input: &Storage<Distance, ReadOnly, Cell>, output: &mut Storage<Distance, ReadWrite, Cell>) {
+    let unit = UNIT_POS;
+    let mut scratch = SharedStorage::<Distance, Cell>::new(4usize);
+    scratch.store(Cell(unit), input.load(Cell(unit)));
+    sync_cube();
+    output.store(Cell(unit), scratch.load(Cell(3 - unit)));
+}
+
+pub fn test_storage_shared<R: Runtime>(client: Client) {
+    let input = StorageBuffer::create(&client, &[Distance(1.0), Distance(2.0), Distance(3.0), Distance(4.0)]);
+    let output = StorageBuffer::<Distance>::empty(&client, 4);
+    kernel_shared::launch(&client, CubeCount::Static(1, 1, 1), CubeDim::new_1d(4), (&input).into(), (&output).into());
+    assert_eq!(output.read(&client).unwrap(), [Distance(4.0), Distance(3.0), Distance(2.0), Distance(1.0)]);
+}
+
 #[macro_export]
 macro_rules! testgen_storage {
     () => {
@@ -425,6 +441,11 @@ macro_rules! testgen_storage {
         fn test_storage_atomic() {
             let client = TestRuntime::client(&Default::default());
             cubecl_core::runtime_tests::storage::test_storage_atomic::<TestRuntime>(client);
+        }
+        #[$crate::runtime_tests::test_log::test]
+        fn test_storage_shared() {
+            let client = TestRuntime::client(&Default::default());
+            cubecl_core::runtime_tests::storage::test_storage_shared::<TestRuntime>(client);
         }
         #[$crate::runtime_tests::test_log::test]
         fn test_storage_nested() {
