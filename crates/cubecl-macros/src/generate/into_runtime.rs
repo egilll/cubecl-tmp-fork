@@ -9,13 +9,14 @@ use syn::{DeriveInput, Index, WhereClause};
 use crate::{
     generate::bounded_where_clause,
     parse::into_runtime::{IntoRuntime, IntoRuntimeVariant},
-    paths::{core_type, prelude_type},
+    paths::{core_type, frontend_type, prelude_type},
 };
 
 impl ToTokens for IntoRuntime {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let into_expand = prelude_type("IntoExpand");
         let into_runtime = core_type("IntoRuntime");
+        let into_constant = frontend_type("IntoConstant");
         let cube_type = prelude_type("CubeType");
         let scope = prelude_type("Scope");
 
@@ -44,11 +45,60 @@ impl ToTokens for IntoRuntime {
                     self.__expand_runtime_method(scope)
                 }
             }
+
+            impl #generics #into_constant for #name #generic_names #where_clause {
+                fn __expand_constant(self, scope: &#scope) -> Self::ExpandType {
+                    self.__expand_runtime_method(scope)
+                }
+            }
         });
+        tokens.extend(self.from_constant());
     }
 }
 
 impl IntoRuntime {
+    /// A struct constant converts to its expansion like a scalar does, so it
+    /// can be passed where a device function takes the struct.
+    fn from_constant(&self) -> TokenStream {
+        let Data::Struct(struct_) = &self.data else {
+            return TokenStream::new();
+        };
+        let cube_type = prelude_type("CubeType");
+        let name = &self.ident;
+        let (generics, generic_names, where_clause) = self.generics.split_for_impl();
+        let mut bounds: Vec<TokenStream> = where_clause
+            .map(|clause| clause.predicates.iter().map(|it| quote![#it]).collect())
+            .unwrap_or_default();
+        let fields = struct_.fields.iter().enumerate().map(|(i, field)| {
+            let member = field
+                .ident
+                .as_ref()
+                .map(|name| quote![#name])
+                .unwrap_or_else(|| {
+                    let index = Index::from(i);
+                    quote![#index]
+                });
+            if field.comptime.is_present() {
+                quote![#member: value.#member]
+            } else {
+                let ty = &field.ty;
+                bounds.push(quote![#ty: Into<<#ty as #cube_type>::ExpandType>]);
+                quote![#member: value.#member.into()]
+            }
+        });
+        let fields: Vec<_> = fields.collect();
+        quote! {
+            impl #generics From<#name #generic_names> for <#name #generic_names as #cube_type>::ExpandType
+            where #(#bounds,)*
+            {
+                fn from(value: #name #generic_names) -> Self {
+                    type _Ty #generic_names = <#name #generic_names as #cube_type>::ExpandType;
+                    _Ty { #(#fields,)* }
+                }
+            }
+        }
+    }
+
     fn init_struct(&self) -> TokenStream {
         let into_runtime = core_type("IntoRuntime");
 

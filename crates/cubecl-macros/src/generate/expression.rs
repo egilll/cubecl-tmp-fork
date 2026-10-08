@@ -182,8 +182,8 @@ impl Expression {
             Expression::Variable(var) => {
                 if var.is_const {
                     let name = &var.name;
-                    let expand_elem = frontend_type("NativeExpand");
-                    quote![#expand_elem::from_lit(scope, #name)]
+                    let into_constant = frontend_type("IntoConstant");
+                    quote![#into_constant::__expand_constant(#name, scope)]
                 } else {
                     let name = &var.name;
                     quote![#name]
@@ -551,9 +551,12 @@ impl Expression {
                 let fields = init_fields(fields, context);
                 let path_last = path.segments.last().unwrap();
                 let turbofish = &path_last.arguments;
-                // A tuple constructor calls the derived constructor, so the
-                // struct's generics are inferred from the fields as in Rust.
-                if tuple && matches!(turbofish, PathArguments::None) && path_last.ident != "Self" {
+                // A tuple constructor calls the expanded constructor on the
+                // path's type, with its generics given or inferred from the
+                // fields as in Rust. A function named after a type whose
+                // generics it shares, such as one behind an alias, expands
+                // the same way.
+                if tuple && path_last.ident != "Self" {
                     return quote![#path::__expand_tuple_constructor(#(#values),*)];
                 }
 

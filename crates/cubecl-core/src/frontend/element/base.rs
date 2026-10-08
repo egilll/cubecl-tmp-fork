@@ -387,6 +387,19 @@ impl<T: Clone> CloneExpand for T {
     }
 }
 
+/// A comptime value used where a kernel expects a runtime one, such as a
+/// `const` of a typed wrapper around a scalar. Scalars become literals of
+/// the scope's element type; derived runtime types lift field by field.
+pub trait IntoConstant: CubeType {
+    fn __expand_constant(self, scope: &Scope) -> Self::ExpandType;
+}
+
+impl<T: Scalar + Into<ConstantValue>> IntoConstant for T {
+    fn __expand_constant(self, scope: &Scope) -> Self::ExpandType {
+        NativeExpand::from_lit(scope, self)
+    }
+}
+
 /// Trait useful to convert a comptime value into runtime value.
 pub trait IntoRuntime:
     IntoExpand<Expand = <Self as CubeType>::ExpandType> + CubeType + Sized
