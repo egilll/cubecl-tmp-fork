@@ -1305,7 +1305,7 @@ pub fn kernel_manual_ldmatrix<AB: Numeric, CD: Numeric, N: Size>(
     let registers_a = def.load_matrix::<_, NA>(slice_a, MatrixIdent::A, vector_count_a, false);
 
     // B frags are only 2 registers, so top 16 threads do nothing
-    let col_b = 0;
+    let col_b = 0usize;
     let start_b = row * size_n + col_b;
     let slice_b = &stage_b[start_b..start_b + width];
     let vector_count_b = def.vectors_per_lane(MatrixIdent::B);

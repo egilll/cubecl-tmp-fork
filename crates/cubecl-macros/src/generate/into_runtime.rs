@@ -87,13 +87,14 @@ impl IntoRuntime {
             }
         });
         let fields: Vec<_> = fields.collect();
+        // The concrete expansion, so the impl cannot overlap a blanket one.
+        let name_expand = quote::format_ident!("{}Expand", name);
         quote! {
-            impl #generics From<#name #generic_names> for <#name #generic_names as #cube_type>::ExpandType
+            impl #generics From<#name #generic_names> for #name_expand #generic_names
             where #(#bounds,)*
             {
                 fn from(value: #name #generic_names) -> Self {
-                    type _Ty #generic_names = <#name #generic_names as #cube_type>::ExpandType;
-                    _Ty { #(#fields,)* }
+                    Self { #(#fields,)* }
                 }
             }
         }

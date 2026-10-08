@@ -491,11 +491,34 @@ impl Expression {
                 }
             }
 
-            Expression::Array { span, .. } => {
+            Expression::Array { elements, .. } => {
                 if let Some(constant) = self.as_const(context) {
                     constant
                 } else {
-                    error!(*span, "Array expressions can't be used at runtime")
+                    // A local array of the literal's length, filled element by element.
+                    let array = frontend_type("Array");
+                    let index_type = frontend_type("NativeExpand");
+                    let assign = prelude_type("__expand_assign");
+                    let length = elements.len();
+                    let stores = elements.iter().enumerate().map(|(index, element)| {
+                        let value = into_expand(element.to_tokens(context));
+                        quote! {{
+                            let _value = #value;
+                            #assign(
+                                scope,
+                                _array.__expand_index_mut_method(
+                                    scope,
+                                    #index_type::from_lit(scope, #index),
+                                ),
+                                _value,
+                            );
+                        }}
+                    });
+                    quote! {{
+                        let mut _array = #array::__expand_new(scope, #length);
+                        #(#stores)*
+                        _array
+                    }}
                 }
             }
             Expression::Tuple { elements, .. } => {

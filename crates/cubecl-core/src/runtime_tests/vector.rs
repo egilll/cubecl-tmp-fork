@@ -11,7 +11,7 @@ pub fn kernel_vector_index<F: Float, N: Size>(output: &mut [F]) {
     if UNIT_POS == 0 {
         let vector = Vector::<F, N>::new(F::new(5f32));
         #[unroll]
-        for i in 0..4 {
+        for i in 0..4usize {
             output[i] = vector.extract(i);
         }
     }
@@ -37,7 +37,7 @@ pub fn test_vector_index<R: Runtime, F: Float + CubeElement>(client: Client) {
         let actual = F::from_bytes(&actual);
 
         let mut expected = vec![F::new(0.0); vector_size];
-        for i in 0..4 {
+        for i in 0..4usize {
             expected[i] = F::new(5.0);
         }
 
@@ -358,13 +358,13 @@ pub fn kernel_vector_cross<F: Float>(input: &[F], output: &mut [F]) {
         let mut a = Vector::<F, Const<3>>::new(F::new(0.0f32));
         let mut b = Vector::<F, Const<3>>::new(F::new(0.0f32));
         #[unroll]
-        for i in 0..3 {
+        for i in 0..3usize {
             a.insert(i, input[i]);
             b.insert(i, input[i + 3]);
         }
         let c = a.cross(&b);
         #[unroll]
-        for i in 0..3 {
+        for i in 0..3usize {
             output[i] = c.extract(i);
         }
     }
@@ -403,7 +403,7 @@ pub fn kernel_vector_three_lane_function<F: Float>(input: &[F], output: &mut [F]
     if UNIT_POS == 0 {
         let c = three_lanes::<F>(input, 0usize).cross(&three_lanes::<F>(input, 3usize));
         #[unroll]
-        for i in 0..3 {
+        for i in 0..3usize {
             output[i] = c.extract(i);
         }
     }

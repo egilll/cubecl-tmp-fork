@@ -45,6 +45,18 @@ fn destructurable_kernel(orders: &mut [u32]) {
     }
 }
 
+#[cube(launch)]
+fn literal_kernel(values: &mut [u32]) {
+    if UNIT_POS == 0 {
+        // Runtime elements, so the literal is a local array rather than a constant.
+        let order = [values[0], values[1] + 1, values[2] * 2];
+        for i in 0..3usize {
+            // A dynamic index into the literal.
+            values[ABSOLUTE_POS + i + 3] = order[(i + values[3] as usize) % 3];
+        }
+    }
+}
+
 // Regression test for invalid `CopyTransform`
 pub fn test_kernel_shuffle<R: Runtime>(client: Client) {
     let handle = client.empty(4 * size_of::<u32>());
@@ -80,6 +92,24 @@ pub fn test_kernel_destructurable<R: Runtime>(client: Client) {
     assert_eq!(actual, [1, 2, 3, 4, 5, 6, 11, 12]);
 }
 
+// Array literals with runtime elements, read at runtime indices
+pub fn test_kernel_literal<R: Runtime>(client: Client) {
+    let data = vec![4, 5, 6, 1, 0, 0];
+    let handle = client.create_from_slice(u32::as_bytes(&data));
+
+    literal_kernel::launch(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(1),
+        unsafe { BufferArg::from_raw_parts(handle.clone(), 6) },
+    );
+
+    let actual = client.read_one_unchecked(handle);
+    let actual = u32::from_bytes(&actual);
+
+    assert_eq!(actual, [4, 5, 6, 6, 12, 4]);
+}
+
 #[allow(missing_docs)]
 #[macro_export]
 macro_rules! testgen_index {
@@ -90,6 +120,12 @@ macro_rules! testgen_index {
         fn test_shuffle() {
             let client = TestRuntime::client(&Default::default());
             cubecl_core::runtime_tests::index::test_kernel_shuffle::<TestRuntime>(client);
+        }
+
+        #[$crate::runtime_tests::test_log::test]
+        fn test_literal() {
+            let client = TestRuntime::client(&Default::default());
+            cubecl_core::runtime_tests::index::test_kernel_literal::<TestRuntime>(client);
         }
 
         #[$crate::runtime_tests::test_log::test]
