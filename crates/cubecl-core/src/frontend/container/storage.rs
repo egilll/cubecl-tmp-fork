@@ -19,7 +19,9 @@ impl<Q: DeviceRepr, V: SliceVisibility, K: StorageKey> Storage<Q, V, K> {
     }
 
     pub fn load(&self, key: K) -> Q {
-        intrinsic!(|scope| { self.__expand_load_at_method(scope, K::__expand_position(scope, key)) })
+        intrinsic!(|scope| {
+            self.__expand_load_at_method(scope, K::__expand_position(scope, key))
+        })
     }
 
     fn load_at(&self, position: usize) -> Q {
@@ -257,11 +259,18 @@ impl<Q: DeviceRepr, K: StorageKey> LocalStorage<Q, K> {
     }
 
     pub fn load(&self, key: K) -> Q {
-        Q::from_repr(Q::Layout::load_from(self.inner.as_slice(), K::position(key)))
+        Q::from_repr(Q::Layout::load_from(
+            self.inner.as_slice(),
+            K::position(key),
+        ))
     }
 
     pub fn store(&mut self, key: K, value: Q) {
-        Q::Layout::store_into(self.inner.as_mut_slice(), K::position(key), Q::into_repr(value));
+        Q::Layout::store_into(
+            self.inner.as_mut_slice(),
+            K::position(key),
+            Q::into_repr(value),
+        );
     }
 }
 

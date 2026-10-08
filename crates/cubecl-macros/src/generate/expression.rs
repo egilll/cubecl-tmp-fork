@@ -536,7 +536,9 @@ impl Expression {
                     && fields
                         .iter()
                         .all(|(member, _)| matches!(member, syn::Member::Unnamed(_)));
-                let values = tuple.then(|| tuple_values(fields, context)).unwrap_or_default();
+                let values = tuple
+                    .then(|| tuple_values(fields, context))
+                    .unwrap_or_default();
                 let fields = init_fields(fields, context);
                 let path_last = path.segments.last().unwrap();
                 let turbofish = &path_last.arguments;

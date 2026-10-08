@@ -182,7 +182,12 @@ pub fn test_storage_vectors<R: Runtime>(client: Client) {
         CubeDim::new_1d(2),
         pressures.vectors::<4>(),
     );
-    let doubled: Vec<_> = pressures.read(&client).unwrap().iter().map(|p| p.0).collect();
+    let doubled: Vec<_> = pressures
+        .read(&client)
+        .unwrap()
+        .iter()
+        .map(|p| p.0)
+        .collect();
     assert_eq!(doubled, [0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0]);
     let misaligned = std::panic::catch_unwind(|| pressures.slice(1..5).vectors::<4>());
     assert!(misaligned.is_err());
@@ -244,7 +249,10 @@ fn kernel_packed(field: &mut Field, output: &mut Storage<Packed3<Room>, ReadWrit
     if (cell as usize) < output.len() {
         let point = field.points.load(Cell(cell));
         let lift = Vector::new(10.0);
-        output.store(Cell(cell), Packed3::<Room>(point.0 + lift, comptime! { PhantomData }));
+        output.store(
+            Cell(cell),
+            Packed3::<Room>(point.0 + lift, comptime! { PhantomData }),
+        );
         let mut scratch = LocalStorage::<Packed3<Room>, Source>::new(2usize);
         scratch.store(Source(1), point);
         let mut source = 0u32;
@@ -254,9 +262,10 @@ fn kernel_packed(field: &mut Field, output: &mut Storage<Packed3<Room>, ReadWrit
                 source: Source(source),
                 sources: field.sources,
             };
-            field
-                .values
-                .store(key, Distance(scratch.load(Source(1)).0.extract(0usize) + source as f32));
+            field.values.store(
+                key,
+                Distance(scratch.load(Source(1)).0.extract(0usize) + source as f32),
+            );
             source += 1;
         }
     }
@@ -352,10 +361,8 @@ fn kernel_nested(
 }
 
 pub fn test_storage_nested<R: Runtime>(client: Client) {
-    let lengths = StorageBuffer::create(
-        &client,
-        &[Measured(Distance(2.0)), Measured(Distance(1.0))],
-    );
+    let lengths =
+        StorageBuffer::create(&client, &[Measured(Distance(2.0)), Measured(Distance(1.0))]);
     let points = StorageBuffer::<Measured<Packed3<Room>>>::from_elements(&client, &[0.0; 6]);
     kernel_nested::launch(
         &client,
@@ -368,13 +375,19 @@ pub fn test_storage_nested<R: Runtime>(client: Client) {
     assert_eq!(points.read_elements(&client).unwrap(), [2.0; 6]);
 }
 
-
 /// A brand as a scalar kernel argument: the host passes `Time`, the kernel
 /// receives `Time`.
 #[cube(launch)]
-fn kernel_scalar_brand(input: &Storage<Distance, ReadOnly>, time: Time, output: &mut Storage<Speed>) {
+fn kernel_scalar_brand(
+    input: &Storage<Distance, ReadOnly>,
+    time: Time,
+    output: &mut Storage<Speed>,
+) {
     if ABSOLUTE_POS < output.len() {
-        output.store(ABSOLUTE_POS, speed::<Distance>(input.load(ABSOLUTE_POS), time));
+        output.store(
+            ABSOLUTE_POS,
+            speed::<Distance>(input.load(ABSOLUTE_POS), time),
+        );
     }
 }
 
@@ -393,7 +406,10 @@ pub fn test_storage_scalar_brand<R: Runtime>(client: Client) {
 }
 
 #[cube(launch)]
-fn kernel_shared(input: &Storage<Distance, ReadOnly, Cell>, output: &mut Storage<Distance, ReadWrite, Cell>) {
+fn kernel_shared(
+    input: &Storage<Distance, ReadOnly, Cell>,
+    output: &mut Storage<Distance, ReadWrite, Cell>,
+) {
     let unit = UNIT_POS;
     let mut scratch = SharedStorage::<Distance, Cell>::new(4usize);
     scratch.store(Cell(unit), input.load(Cell(unit)));
@@ -402,10 +418,97 @@ fn kernel_shared(input: &Storage<Distance, ReadOnly, Cell>, output: &mut Storage
 }
 
 pub fn test_storage_shared<R: Runtime>(client: Client) {
-    let input = StorageBuffer::create(&client, &[Distance(1.0), Distance(2.0), Distance(3.0), Distance(4.0)]);
+    let input = StorageBuffer::create(
+        &client,
+        &[Distance(1.0), Distance(2.0), Distance(3.0), Distance(4.0)],
+    );
     let output = StorageBuffer::<Distance>::empty(&client, 4);
-    kernel_shared::launch(&client, CubeCount::Static(1, 1, 1), CubeDim::new_1d(4), (&input).into(), (&output).into());
-    assert_eq!(output.read(&client).unwrap(), [Distance(4.0), Distance(3.0), Distance(2.0), Distance(1.0)]);
+    kernel_shared::launch(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(4),
+        (&input).into(),
+        (&output).into(),
+    );
+    assert_eq!(
+        output.read(&client).unwrap(),
+        [Distance(4.0), Distance(3.0), Distance(2.0), Distance(1.0)]
+    );
+}
+
+/// A brand over any representation, as a dimensioned quantity is.
+#[repr(transparent)]
+#[derive(CubeType, DeviceRepr)]
+#[device_repr(copy)]
+struct Amplitude<R: CubeType>(R);
+
+/// A complex number whose fields are the lanes of its storage.
+#[derive(CubeType, DeviceRepr, Clone, Copy, Debug, PartialEq)]
+#[expand(derive(Clone, Copy))]
+#[device_repr(lanes)]
+struct Complex<R: Scalar> {
+    re: R,
+    im: R,
+}
+
+#[cube]
+impl<R: Float> core::ops::Mul for Complex<R> {
+    type Output = Complex<R>;
+    fn mul(self, rhs: Complex<R>) -> Complex<R> {
+        Complex::<R> {
+            re: self.re * rhs.re - self.im * rhs.im,
+            im: self.re * rhs.im + self.im * rhs.re,
+        }
+    }
+}
+
+#[cube(launch)]
+fn kernel_lanes(
+    input: &Storage<Complex<f32>, ReadOnly>,
+    branded: &Storage<Amplitude<Complex<f32>>, ReadOnly>,
+    output: &mut Storage<Amplitude<Complex<f32>>>,
+) {
+    if ABSOLUTE_POS < output.len() {
+        let product = input.load(ABSOLUTE_POS) * branded.load(ABSOLUTE_POS).0;
+        output.store(ABSOLUTE_POS, Amplitude::<Complex<f32>>(product));
+    }
+}
+
+pub fn test_storage_lanes<R: Runtime>(client: Client) {
+    let input = StorageBuffer::from_values(
+        &client,
+        &[Complex { re: 1.0, im: 2.0 }, Complex { re: 0.5, im: -1.0 }],
+    );
+    let branded = StorageBuffer::from_values(
+        &client,
+        &[
+            Amplitude(Complex { re: 3.0, im: 0.0 }),
+            Amplitude(Complex { re: 0.0, im: 2.0 }),
+        ],
+    );
+    assert_eq!(input.read_elements(&client).unwrap(), [1.0, 2.0, 0.5, -1.0]);
+    let output = StorageBuffer::<Amplitude<Complex<f32>>>::empty(&client, 2);
+    kernel_lanes::launch(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(2),
+        (&input).into(),
+        (&branded).into(),
+        (&output).into(),
+    );
+    let output: Vec<Complex<f32>> = output
+        .read_values(&client)
+        .unwrap()
+        .into_iter()
+        .map(|amplitude| amplitude.0)
+        .collect();
+    assert_eq!(
+        output,
+        [Complex { re: 3.0, im: 6.0 }, Complex { re: 2.0, im: 1.0 }]
+    );
+    // The arithmetic is plain Rust on the host, in any precision.
+    let host = Complex::<f64> { re: 1.0, im: 2.0 } * Complex { re: 0.5, im: -1.0 };
+    assert_eq!(host, Complex { re: 2.5, im: 0.0 });
 }
 
 #[macro_export]
@@ -446,6 +549,11 @@ macro_rules! testgen_storage {
         fn test_storage_shared() {
             let client = TestRuntime::client(&Default::default());
             cubecl_core::runtime_tests::storage::test_storage_shared::<TestRuntime>(client);
+        }
+        #[$crate::runtime_tests::test_log::test]
+        fn test_storage_lanes() {
+            let client = TestRuntime::client(&Default::default());
+            cubecl_core::runtime_tests::storage::test_storage_lanes::<TestRuntime>(client);
         }
         #[$crate::runtime_tests::test_log::test]
         fn test_storage_nested() {

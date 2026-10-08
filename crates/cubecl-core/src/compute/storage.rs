@@ -54,7 +54,8 @@ where
     pub fn read_elements_async(
         &self,
         client: &Client,
-    ) -> impl core::future::Future<Output = Result<Vec<StorageElement<Q>>, ServerError>> + use<Q> {
+    ) -> impl core::future::Future<Output = Result<Vec<StorageElement<Q>>, ServerError>> + use<Q>
+    {
         self.inner.read_async(client)
     }
 
@@ -130,7 +131,10 @@ impl<Q: DeviceRepr<Layout = Native, Repr: CubeElement>> StorageBuffer<Q> {
     {
         let vector = N * size_of::<Q::Repr>();
         let offset = self.inner.handle().offset_start.unwrap_or(0) as usize;
-        assert!(N.is_power_of_two(), "{N}-lane vectors are padded in storage");
+        assert!(
+            N.is_power_of_two(),
+            "{N}-lane vectors are padded in storage"
+        );
         assert!(
             self.len() % N == 0 && offset % vector == 0,
             "{} values at byte {offset} aren't whole {N}-lane vectors",
@@ -138,6 +142,44 @@ impl<Q: DeviceRepr<Layout = Native, Repr: CubeElement>> StorageBuffer<Q> {
         );
         TypedBufferArg::from_arg(self.as_native().into())
     }
+}
+
+/// Host values of lane structs ([`LaneRepr`]), converted lane by lane.
+impl<Q: LaneRepr> StorageBuffer<Q>
+where
+    Q::Lane: CubeElement,
+{
+    pub fn from_values(client: &Client, values: &[Q]) -> Self {
+        Self::from_elements(client, &lanes(values))
+    }
+
+    pub fn write_values(&self, client: &Client, values: &[Q]) {
+        self.write_elements(client, &lanes(values));
+    }
+
+    pub fn read_values(&self, client: &Client) -> Result<Vec<Q>, ServerError> {
+        self.read_elements(client)
+            .map(|elements| from_lanes(&elements))
+    }
+
+    pub fn read_values_async(
+        &self,
+        client: &Client,
+    ) -> impl core::future::Future<Output = Result<Vec<Q>, ServerError>> + use<Q> {
+        let read = self.read_elements_async(client);
+        async move { read.await.map(|elements| from_lanes(&elements)) }
+    }
+}
+
+fn lanes<Q: LaneRepr>(values: &[Q]) -> Vec<Q::Lane> {
+    values.iter().flat_map(LaneRepr::lanes).collect()
+}
+
+fn from_lanes<Q: LaneRepr>(lanes: &[Q::Lane]) -> Vec<Q> {
+    lanes
+        .chunks_exact(Q::Width::value())
+        .map(Q::from_lanes)
+        .collect()
 }
 
 fn width<Q: DeviceRepr>() -> usize {

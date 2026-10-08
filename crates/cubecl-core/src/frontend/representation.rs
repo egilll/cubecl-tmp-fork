@@ -141,6 +141,23 @@ impl<E: Scalar, N: Size> StorageLayout<Vector<E, N>> for Packed {
     }
 }
 
+/// A struct whose fields are the lanes of a packed vector, such as a complex
+/// number's real and imaginary parts. It is stored as consecutive scalars;
+/// kernels convert it through the vector, and the host converts it lane by
+/// lane, since a host vector holds no lanes. Derived with
+/// `#[device_repr(lanes)]` for a struct whose fields all have one scalar type.
+pub trait LaneRepr: DeviceRepr<Layout = Packed, Repr = Vector<Self::Lane, Self::Width>> {
+    type Lane: Scalar;
+    /// Lanes per value.
+    type Width: Size;
+
+    /// The value's lanes, in field order.
+    fn lanes(&self) -> impl Iterator<Item = Self::Lane>;
+
+    /// The value whose lanes, in field order, are `lanes`.
+    fn from_lanes(lanes: &[Self::Lane]) -> Self;
+}
+
 /// Proof that `Q` has the size, alignment and validity of `Q::Repr`.
 pub struct Transparent<Q>(PhantomData<Q>);
 
@@ -206,18 +223,19 @@ pub trait OrderedExpand: Sized {
     type Value: DeviceRepr<ExpandType = Self, Repr: CubePartialOrd>;
 
     fn __expand_min_method(self, scope: &Scope, other: Self) -> Self {
-        let [lhs, rhs] = [self, other].map(Self::Value::expand_into_repr);
-        Self::Value::expand_from_repr(min::expand(scope, lhs, rhs))
+        let [lhs, rhs] = [self, other].map(|value| Self::Value::__expand_into_repr(scope, value));
+        Self::Value::__expand_from_repr(scope, min::expand(scope, lhs, rhs))
     }
 
     fn __expand_max_method(self, scope: &Scope, other: Self) -> Self {
-        let [lhs, rhs] = [self, other].map(Self::Value::expand_into_repr);
-        Self::Value::expand_from_repr(max::expand(scope, lhs, rhs))
+        let [lhs, rhs] = [self, other].map(|value| Self::Value::__expand_into_repr(scope, value));
+        Self::Value::__expand_from_repr(scope, max::expand(scope, lhs, rhs))
     }
 
     fn __expand_clamp_method(self, scope: &Scope, min: Self, max: Self) -> Self {
-        let [value, min, max] = [self, min, max].map(Self::Value::expand_into_repr);
-        Self::Value::expand_from_repr(clamp::expand(scope, value, min, max))
+        let [value, min, max] =
+            [self, min, max].map(|value| Self::Value::__expand_into_repr(scope, value));
+        Self::Value::__expand_from_repr(scope, clamp::expand(scope, value, min, max))
     }
 }
 

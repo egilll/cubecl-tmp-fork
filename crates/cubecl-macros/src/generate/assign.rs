@@ -249,7 +249,11 @@ impl Assign {
         // Only a field that is itself a type parameter needs a bound: a
         // generic struct's own impls carry theirs, and a redundant bound on
         // its expand type would shadow them and stop normalization.
-        let params: Vec<_> = self.generics.type_params().map(|it| it.ident.clone()).collect();
+        let params: Vec<_> = self
+            .generics
+            .type_params()
+            .map(|it| it.ident.clone())
+            .collect();
         let fields = fields.into_iter().filter(|field| {
             matches!(&field.ty, syn::Type::Path(path)
                 if path.qself.is_none() && path.path.get_ident().is_some_and(|ident| params.contains(ident)))

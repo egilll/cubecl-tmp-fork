@@ -6,6 +6,9 @@ use syn::{DeriveInput, parse_quote};
 use crate::{parse::cube_type::CubeTypeStruct, paths::prelude_type};
 
 pub fn generate(input: &DeriveInput) -> syn::Result<TokenStream> {
+    if Options::parse(input)?.lanes {
+        return generate_lanes(input);
+    }
     let mut transparent = false;
     for attr in &input.attrs {
         if attr.path().is_ident("repr") {
@@ -61,10 +64,9 @@ pub fn generate(input: &DeriveInput) -> syn::Result<TokenStream> {
         .make_where_clause()
         .predicates
         .push(parse_quote!(#repr: #device_repr));
-    generics
-        .make_where_clause()
-        .predicates
-        .push(parse_quote!(#name #type_generics: #cube<ExpandType = #expanded #type_generics> + 'static));
+    generics.make_where_clause().predicates.push(
+        parse_quote!(#name #type_generics: #cube<ExpandType = #expanded #type_generics> + 'static),
+    );
     let (impl_generics, ty_generics, clause) = generics.split_for_impl();
     let layout = if options.packed {
         prelude_type("Packed").to_token_stream()
@@ -72,6 +74,8 @@ pub fn generate(input: &DeriveInput) -> syn::Result<TokenStream> {
         quote![<#repr as #device_repr>::Layout]
     };
     let with_repr = with_repr(name, repr, &parsed.generics, &generics);
+    let scope = prelude_type("Scope");
+    let lanes = forward_lanes(name, &member, &markers, repr, &parsed.generics);
     let forwarded = options.forward(&Forwarded {
         name,
         expanded,
@@ -119,6 +123,183 @@ pub fn generate(input: &DeriveInput) -> syn::Result<TokenStream> {
             fn expand_into_repr(value: Self::ExpandType) -> <Self::Repr as #cube>::ExpandType {
                 <#repr as #device_repr>::expand_into_repr(value.#member)
             }
+
+            fn __expand_from_repr(
+                scope: &#scope,
+                value: <Self::Repr as #cube>::ExpandType,
+            ) -> Self::ExpandType {
+                #expanded {
+                    #member: <#repr as #device_repr>::__expand_from_repr(scope, value),
+                    #(#markers: ::core::marker::PhantomData,)*
+                }
+            }
+
+            fn __expand_into_repr(
+                scope: &#scope,
+                value: Self::ExpandType,
+            ) -> <Self::Repr as #cube>::ExpandType {
+                <#repr as #device_repr>::__expand_into_repr(scope, value.#member)
+            }
+        }
+
+        #lanes
+    })
+}
+
+/// A brand generic over its representation is a lane struct whenever that
+/// representation is one: it forwards the host conversions.
+fn forward_lanes(
+    name: &syn::Ident,
+    member: &syn::Member,
+    markers: &[syn::Member],
+    repr: &syn::Type,
+    generics: &syn::Generics,
+) -> TokenStream {
+    let syn::Type::Path(path) = repr else {
+        return TokenStream::new();
+    };
+    let generic = path
+        .path
+        .get_ident()
+        .is_some_and(|ident| generics.type_params().any(|param| &param.ident == ident));
+    if !generic {
+        return TokenStream::new();
+    }
+    let lane_repr = prelude_type("LaneRepr");
+    let mut generics = generics.clone();
+    generics
+        .make_where_clause()
+        .predicates
+        .push(parse_quote!(#repr: #lane_repr));
+    let (impl_generics, ty_generics, clause) = generics.split_for_impl();
+    quote! {
+        impl #impl_generics #lane_repr for #name #ty_generics #clause {
+            type Lane = <#repr as #lane_repr>::Lane;
+            type Width = <#repr as #lane_repr>::Width;
+
+            fn lanes(&self) -> impl ::core::iter::Iterator<Item = Self::Lane> {
+                <#repr as #lane_repr>::lanes(&self.#member)
+            }
+
+            fn from_lanes(lanes: &[Self::Lane]) -> Self {
+                Self {
+                    #member: <#repr as #lane_repr>::from_lanes(lanes),
+                    #(#markers: ::core::marker::PhantomData,)*
+                }
+            }
+        }
+    }
+}
+
+/// `#[device_repr(lanes)]`: a struct whose fields, all of one scalar type,
+/// are the lanes of a packed vector. Kernels convert it through the vector;
+/// the host converts it field by field through [`LaneRepr`].
+fn generate_lanes(input: &DeriveInput) -> syn::Result<TokenStream> {
+    let parsed = CubeTypeStruct::from_derive_input(input)?;
+    if parsed
+        .fields
+        .iter()
+        .any(|field| field.comptime.is_present())
+    {
+        return Err(syn::Error::new_spanned(
+            input,
+            "#[device_repr(lanes)] requires runtime fields only",
+        ));
+    }
+    let Some(first) = parsed.fields.first() else {
+        return Err(syn::Error::new_spanned(
+            input,
+            "#[device_repr(lanes)] requires at least one field",
+        ));
+    };
+    let lane = &first.ty;
+    if parsed
+        .fields
+        .iter()
+        .any(|field| field.ty.to_token_stream().to_string() != lane.to_token_stream().to_string())
+    {
+        return Err(syn::Error::new_spanned(
+            input,
+            "#[device_repr(lanes)] requires every field to have the same scalar type",
+        ));
+    }
+    let members: Vec<_> = parsed.fields.iter().map(|field| field.member()).collect();
+    let first = &members[0];
+    let indices: Vec<_> = (0..members.len()).collect();
+    let rest = &members[1..];
+    let rest_indices = &indices[1..];
+    let width = members.len();
+    let name = &parsed.ident;
+    let expanded = parsed.name_expand.as_ref().unwrap();
+    let prelude = crate::paths::prelude_path();
+    let device_repr = prelude_type("DeviceRepr");
+    let lane_repr = prelude_type("LaneRepr");
+    let cube = prelude_type("CubeType");
+    let scope = prelude_type("Scope");
+    let mut generics = parsed.generics.clone();
+    let (_, type_generics, _) = parsed.generics.split_for_impl();
+    generics
+        .make_where_clause()
+        .predicates
+        .push(parse_quote!(#lane: #prelude::Scalar));
+    generics.make_where_clause().predicates.push(
+        parse_quote!(#name #type_generics: #cube<ExpandType = #expanded #type_generics> + 'static),
+    );
+    let (impl_generics, ty_generics, clause) = generics.split_for_impl();
+    let vector = quote![#prelude::Vector<#lane, #prelude::Const<#width>>];
+    Ok(quote! {
+        impl #impl_generics #device_repr for #name #ty_generics #clause {
+            type Repr = #vector;
+            type Layout = #prelude::Packed;
+
+            fn from_repr(_value: Self::Repr) -> Self {
+                ::core::panic!("a host vector holds no lanes: convert lane structs with `LaneRepr`")
+            }
+
+            fn into_repr(self) -> Self::Repr {
+                ::core::panic!("a host vector holds no lanes: convert lane structs with `LaneRepr`")
+            }
+
+            fn expand_from_repr(_value: <Self::Repr as #cube>::ExpandType) -> Self::ExpandType {
+                ::core::panic!("lane structs convert within a scope")
+            }
+
+            fn expand_into_repr(_value: Self::ExpandType) -> <Self::Repr as #cube>::ExpandType {
+                ::core::panic!("lane structs convert within a scope")
+            }
+
+            fn __expand_from_repr(
+                scope: &#scope,
+                value: <Self::Repr as #cube>::ExpandType,
+            ) -> Self::ExpandType {
+                #expanded {
+                    #(#members: value.clone().__expand_extract_method(scope, #indices),)*
+                }
+            }
+
+            fn __expand_into_repr(
+                scope: &#scope,
+                value: Self::ExpandType,
+            ) -> <Self::Repr as #cube>::ExpandType {
+                let mut lanes = #prelude::IntoMut::into_mut(<#vector>::__expand_new(scope, value.#first), scope);
+                #(lanes.__expand_insert_method(scope, #rest_indices, value.#rest);)*
+                lanes
+            }
+        }
+
+        impl #impl_generics #lane_repr for #name #ty_generics #clause {
+            type Lane = #lane;
+            type Width = #prelude::Const<#width>;
+
+            fn lanes(&self) -> impl ::core::iter::Iterator<Item = #lane> {
+                [#(self.#members),*].into_iter()
+            }
+
+            fn from_lanes(lanes: &[#lane]) -> Self {
+                Self {
+                    #(#members: lanes[#indices],)*
+                }
+            }
         }
     })
 }
@@ -149,7 +330,9 @@ fn with_repr(
     });
     let rebranded = quote![#name<#(#args),*>];
     let mut generics = generics.clone();
-    generics.params.push(parse_quote!(__Repr: #prelude::CubePrimitive));
+    generics
+        .params
+        .push(parse_quote!(__Repr: #prelude::CubePrimitive));
     generics
         .make_where_clause()
         .predicates
@@ -173,6 +356,7 @@ struct Options {
     launch: bool,
     ord: bool,
     packed: bool,
+    lanes: bool,
 }
 
 struct Forwarded<'a> {
@@ -187,7 +371,11 @@ struct Forwarded<'a> {
 impl Options {
     fn parse(input: &DeriveInput) -> syn::Result<Self> {
         let mut options = Self::default();
-        for attr in input.attrs.iter().filter(|attr| attr.path().is_ident("device_repr")) {
+        for attr in input
+            .attrs
+            .iter()
+            .filter(|attr| attr.path().is_ident("device_repr"))
+        {
             attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("copy") {
                     options.copy = true;
@@ -201,9 +389,11 @@ impl Options {
                     options.ord = true;
                 } else if meta.path.is_ident("packed") {
                     options.packed = true;
+                } else if meta.path.is_ident("lanes") {
+                    options.lanes = true;
                 } else {
                     return Err(meta.error(
-                        "expected `copy`, `eq`, `key`, `launch`, `ord` or `packed`",
+                        "expected `copy`, `eq`, `key`, `launch`, `lanes`, `ord` or `packed`",
                     ));
                 }
                 Ok(())
@@ -225,7 +415,10 @@ impl Options {
         let prelude = crate::paths::prelude_path();
         let bounded = |predicates: &[syn::WherePredicate]| {
             let mut generics = (*generics).clone();
-            generics.make_where_clause().predicates.extend(predicates.iter().cloned());
+            generics
+                .make_where_clause()
+                .predicates
+                .extend(predicates.iter().cloned());
             generics
         };
         let mut tokens = TokenStream::new();
