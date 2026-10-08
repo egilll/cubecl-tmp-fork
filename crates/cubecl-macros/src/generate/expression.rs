@@ -536,8 +536,17 @@ impl Expression {
                     && fields
                         .iter()
                         .all(|(member, _)| matches!(member, syn::Member::Unnamed(_)));
+                // A tuple constructor takes no marker, so one written in its
+                // place is dropped.
                 let values = tuple
-                    .then(|| tuple_values(fields, context))
+                    .then(|| {
+                        let valued: Vec<_> = fields
+                            .iter()
+                            .filter(|(_, value)| !value.is_phantom_marker())
+                            .cloned()
+                            .collect();
+                        tuple_values(&valued, context)
+                    })
                     .unwrap_or_default();
                 let fields = init_fields(fields, context);
                 let path_last = path.segments.last().unwrap();

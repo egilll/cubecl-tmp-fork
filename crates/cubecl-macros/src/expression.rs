@@ -208,6 +208,25 @@ pub struct Block {
 }
 
 impl Expression {
+    /// Whether this is a `PhantomData` marker value, written plainly or as
+    /// `comptime! { PhantomData }`. Markers carry nothing to trace.
+    pub fn is_phantom_marker(&self) -> bool {
+        let tokens = match self {
+            Expression::Path { path, .. } => quote::quote![#path],
+            Expression::Verbatim { tokens } | Expression::VerbatimTerminated { tokens } => {
+                tokens.clone()
+            }
+            Expression::RawMacro { args, .. } => args.clone(),
+            _ => return false,
+        };
+        let text: String = tokens
+            .to_string()
+            .chars()
+            .filter(|ch| !ch.is_whitespace() && !matches!(ch, '{' | '}'))
+            .collect();
+        text == "PhantomData" || text.ends_with("::PhantomData")
+    }
+
     pub fn is_const(&self) -> bool {
         match self {
             Expression::Literal { .. } => true,

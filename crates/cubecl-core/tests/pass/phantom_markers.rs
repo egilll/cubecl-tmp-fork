@@ -13,11 +13,21 @@ fn translate<F: 'static>(point: Position<F>) -> Position<F> {
     Position::<F>(point.0 + 1.0, comptime! { PhantomData })
 }
 
+/// A constructor function named after an alias, as for a tuple struct.
+type WorldPosition = Position<World>;
+
+#[allow(non_snake_case)]
+const fn WorldPosition(value: f32) -> WorldPosition {
+    Position(value, PhantomData)
+}
+
 #[cube(launch)]
 fn kernel(room: Position<Room>, world: Position<World>, output: &mut [f32]) {
     let mut point = translate(room);
     point = translate(point);
-    output[0] = point.0 + translate(world).0;
+    let origin = WorldPosition(0.5);
+    let written: Position<World> = Position(origin.0, PhantomData);
+    output[0] = point.0 + translate(world).0 + written.0;
 }
 
 fn main() {

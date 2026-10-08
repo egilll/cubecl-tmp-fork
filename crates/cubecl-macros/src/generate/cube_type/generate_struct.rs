@@ -52,23 +52,32 @@ impl CubeTypeStruct {
         let vis = &self.vis;
         let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
         let cube_type = prelude_type("CubeType");
-        let params: Vec<_> = (0..self.fields.len())
-            .map(|index| quote::format_ident!("field_{index}"))
-            .collect();
-        let types = self.fields.iter().map(|field| {
+        // Phantom markers carry no value, so the constructor takes none for
+        // them: a marker-free function named after the type, such as one
+        // behind a type alias, expands through it too.
+        let mut params = Vec::new();
+        let mut types = Vec::new();
+        let values = self.fields.iter().enumerate().map(|(index, field)| {
+            if field.is_marker() {
+                return quote![::core::marker::PhantomData];
+            }
+            let param = quote::format_ident!("field_{index}");
             let ty = &field.ty;
-            if field.comptime.is_present() {
+            types.push(if field.comptime.is_present() {
                 quote![#ty]
             } else {
                 quote![<#ty as #cube_type>::ExpandType]
-            }
+            });
+            params.push(param.clone());
+            quote![#param]
         });
+        let values: Vec<_> = values.collect();
         quote! {
             impl #impl_generics #name #ty_generics #where_clause {
                 #[doc(hidden)]
                 #[allow(clippy::too_many_arguments)]
                 #vis fn __expand_tuple_constructor(#(#params: #types),*) -> #expand #ty_generics {
-                    #expand(#(#params),*)
+                    #expand(#(#values),*)
                 }
             }
         }
