@@ -73,6 +73,25 @@ pub trait Real:
 }
 
 impl Real for f32 {
+    fn constant(x: f32) -> Self {
+        x
+    }
+    fn exp(x: Self) -> Self {
+        x.exp()
+    }
+    fn ln(x: Self) -> Self {
+        x.ln()
+    }
+    fn sin(x: Self) -> Self {
+        x.sin()
+    }
+    fn cos(x: Self) -> Self {
+        x.cos()
+    }
+    fn sqrt(x: Self) -> Self {
+        x.sqrt()
+    }
+
     fn __expand_constant(_scope: &Scope, x: NativeExpand<f32>) -> NativeExpand<f32> {
         x
     }
@@ -90,6 +109,48 @@ impl Real for f32 {
     }
     fn __expand_sqrt(scope: &Scope, x: NativeExpand<f32>) -> NativeExpand<f32> {
         <f32 as Sqrt>::__expand_sqrt(scope, x)
+    }
+}
+
+/// Double precision: kernels on devices with `f64`, and host evaluation of
+/// the same formulas.
+impl Real for f64 {
+    fn constant(x: f32) -> Self {
+        f64::from(x)
+    }
+    fn exp(x: Self) -> Self {
+        x.exp()
+    }
+    fn ln(x: Self) -> Self {
+        x.ln()
+    }
+    fn sin(x: Self) -> Self {
+        x.sin()
+    }
+    fn cos(x: Self) -> Self {
+        x.cos()
+    }
+    fn sqrt(x: Self) -> Self {
+        x.sqrt()
+    }
+
+    fn __expand_constant(scope: &Scope, x: NativeExpand<f32>) -> NativeExpand<f64> {
+        <f64 as Cast>::__expand_cast_from(scope, x)
+    }
+    fn __expand_exp(scope: &Scope, x: NativeExpand<f64>) -> NativeExpand<f64> {
+        <f64 as Exp>::__expand_exp(scope, x)
+    }
+    fn __expand_ln(scope: &Scope, x: NativeExpand<f64>) -> NativeExpand<f64> {
+        <f64 as Log>::__expand_ln(scope, x)
+    }
+    fn __expand_sin(scope: &Scope, x: NativeExpand<f64>) -> NativeExpand<f64> {
+        <f64 as Sin>::__expand_sin(scope, x)
+    }
+    fn __expand_cos(scope: &Scope, x: NativeExpand<f64>) -> NativeExpand<f64> {
+        <f64 as Cos>::__expand_cos(scope, x)
+    }
+    fn __expand_sqrt(scope: &Scope, x: NativeExpand<f64>) -> NativeExpand<f64> {
+        <f64 as Sqrt>::__expand_sqrt(scope, x)
     }
 }
 
@@ -269,5 +330,22 @@ impl<N: Size> Real for Dual<N> {
     }
     fn __expand_sqrt(scope: &Scope, x: DualExpand<N>) -> DualExpand<N> {
         dual_sqrt::expand::<N>(scope, x)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Real;
+
+    /// A formula generic over `Real` evaluates on the host for scalar floats.
+    fn hypotenuse<R: Real>(a: R, b: R) -> R {
+        R::sqrt(a * a + b * b)
+    }
+
+    #[test]
+    fn scalar_formulas_evaluate_on_the_host() {
+        assert_eq!(hypotenuse(3.0f32, 4.0), 5.0);
+        assert_eq!(hypotenuse(3.0f64, 4.0), 5.0);
+        assert_eq!(<f64 as Real>::constant(0.5), 0.5);
     }
 }
