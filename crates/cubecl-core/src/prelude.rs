@@ -2,7 +2,9 @@ pub use crate::{
     CubeLaunch, CubeType, RuntimeArg,
     codegen::{KernelExpansion, KernelIntegrator},
     comment, comptime, comptime_type,
-    compute::{Buffer, KernelBuilder, KernelLauncher, StorageBuffer},
+    compute::{
+        Bind, Buffer, KernelBuilder, KernelLauncher, ResidentBytes, ResidentGrid, StorageBuffer,
+    },
     cube, derive_cube_comptime,
     frontend::*,
     pod::CubeElement,

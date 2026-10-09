@@ -350,6 +350,16 @@ pub fn derive_assign(input: TokenStream) -> TokenStream {
     }
 }
 
+/// The owned host mirror of a launchable struct: `SResident`, with its
+/// kernel argument, the device memory it holds and a `Bind` as `S`.
+#[proc_macro_derive(Resident, attributes(resident))]
+pub fn derive_resident(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    generate::resident::generate(&input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
 #[proc_macro_derive(DeviceRepr, attributes(cube, expand, device_repr))]
 pub fn derive_device_repr(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);

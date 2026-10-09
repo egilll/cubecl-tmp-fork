@@ -15,6 +15,7 @@ pub mod into_runtime;
 pub mod kernel;
 pub mod launch;
 pub mod representation;
+pub mod resident;
 pub mod signature;
 pub mod statement;
 
