@@ -116,6 +116,26 @@ mod components {
             })
         }
 
+        /// Lane 0, as `.x` in shading languages.
+        pub fn x(self) -> P {
+            self.extract(0usize)
+        }
+
+        /// Lane 1, as `.y` in shading languages.
+        pub fn y(self) -> P {
+            self.extract(1usize)
+        }
+
+        /// Lane 2, as `.z` in shading languages.
+        pub fn z(self) -> P {
+            self.extract(2usize)
+        }
+
+        /// Lane 3, as `.w` in shading languages.
+        pub fn w(self) -> P {
+            self.extract(3usize)
+        }
+
         /// Dynamically extract a value from the vector.
         /// **This is extremely slow and should only be used when there is no other option**
         pub fn extract_dynamic(self, index: usize) -> P {
