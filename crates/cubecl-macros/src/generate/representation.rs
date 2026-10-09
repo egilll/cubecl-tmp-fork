@@ -199,22 +199,28 @@ fn generate_lanes(input: &DeriveInput) -> syn::Result<TokenStream> {
     if parsed
         .fields
         .iter()
-        .any(|field| field.comptime.is_present())
+        .any(|field| field.comptime.is_present() && !field.is_marker())
     {
         return Err(syn::Error::new_spanned(
             input,
-            "#[device_repr(lanes)] requires runtime fields only",
+            "#[device_repr(lanes)] requires runtime fields and only comptime PhantomData markers",
         ));
     }
-    let Some(first) = parsed.fields.first() else {
+    let fields: Vec<_> = parsed.fields.iter().filter(|field| !field.is_marker()).collect();
+    let markers: Vec<_> = parsed
+        .fields
+        .iter()
+        .filter(|field| field.is_marker())
+        .map(|field| field.member())
+        .collect();
+    let Some(first) = fields.first() else {
         return Err(syn::Error::new_spanned(
             input,
             "#[device_repr(lanes)] requires at least one field",
         ));
     };
     let lane = &first.ty;
-    if parsed
-        .fields
+    if fields
         .iter()
         .any(|field| field.ty.to_token_stream().to_string() != lane.to_token_stream().to_string())
     {
@@ -223,7 +229,7 @@ fn generate_lanes(input: &DeriveInput) -> syn::Result<TokenStream> {
             "#[device_repr(lanes)] requires every field to have the same scalar type",
         ));
     }
-    let members: Vec<_> = parsed.fields.iter().map(|field| field.member()).collect();
+    let members: Vec<_> = fields.iter().map(|field| field.member()).collect();
     let first = &members[0];
     let indices: Vec<_> = (0..members.len()).collect();
     let rest = &members[1..];
@@ -274,6 +280,7 @@ fn generate_lanes(input: &DeriveInput) -> syn::Result<TokenStream> {
             ) -> Self::ExpandType {
                 #expanded {
                     #(#members: value.clone().__expand_extract_method(scope, #indices),)*
+                    #(#markers: ::core::marker::PhantomData,)*
                 }
             }
 
@@ -298,6 +305,7 @@ fn generate_lanes(input: &DeriveInput) -> syn::Result<TokenStream> {
             fn from_lanes(lanes: &[#lane]) -> Self {
                 Self {
                     #(#members: lanes[#indices],)*
+                    #(#markers: ::core::marker::PhantomData,)*
                 }
             }
         }
