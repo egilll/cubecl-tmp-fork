@@ -25,6 +25,18 @@ where
     }
 }
 
+impl<Q: DeviceRepr> core::fmt::Debug for StorageBuffer<Q>
+where
+    StorageElement<Q>: CubeElement,
+{
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("StorageBuffer")
+            .field("len", &self.len())
+            .finish_non_exhaustive()
+    }
+}
+
 impl<Q: DeviceRepr> StorageBuffer<Q>
 where
     StorageElement<Q>: CubeElement,
