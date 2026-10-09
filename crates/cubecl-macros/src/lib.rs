@@ -67,6 +67,8 @@ fn cube_impl(args: TokenStream, input: TokenStream) -> syn::Result<TokenStream> 
     let mut item: Item = syn::parse(input)?;
     let args = from_tokens(args.into())?;
     SeparateGeneratedLocals.visit_item_mut(&mut item);
+    parse::desugar::DesugarTry.visit_item_mut(&mut item);
+    parse::desugar::DesugarFold.visit_item_mut(&mut item);
 
     let tokens = match item.clone() {
         Item::Fn(kernel) => {

@@ -3,7 +3,7 @@ use std::mem::take;
 use quote::{format_ident, quote, quote_spanned};
 use syn::{
     Index, Local, LocalInit, Pat, PatIdent, PatSlice, PatStruct, PatTuple, PatTupleStruct, Stmt,
-    parse_quote,
+    parse_quote, parse_quote_spanned,
     spanned::Spanned,
     visit_mut::{self, VisitMut},
 };
@@ -17,6 +17,120 @@ impl VisitMut for Desugar {
         i.stmts = stmts;
         visit_mut::visit_block_mut(self, i)
     }
+}
+
+/// Desugars `?` in the bodies of every function of an item.
+pub struct DesugarTry;
+impl VisitMut for DesugarTry {
+    fn visit_item_fn_mut(&mut self, i: &mut syn::ItemFn) {
+        desugar_try(&mut i.block, &i.sig.output);
+    }
+
+    fn visit_impl_item_fn_mut(&mut self, i: &mut syn::ImplItemFn) {
+        desugar_try(&mut i.block, &i.sig.output);
+    }
+
+    fn visit_trait_item_fn_mut(&mut self, i: &mut syn::TraitItemFn) {
+        if let Some(block) = &mut i.default {
+            desugar_try(block, &i.sig.output);
+        }
+    }
+}
+
+/// `iter.fold(init, |acc, item| body)` becomes
+/// `{ let mut acc = init; for item in iter { acc = body; } acc }`, so a fold
+/// runs over anything a kernel loop runs over.
+pub struct DesugarFold;
+impl VisitMut for DesugarFold {
+    fn visit_expr_mut(&mut self, i: &mut syn::Expr) {
+        visit_mut::visit_expr_mut(self, i);
+        let syn::Expr::MethodCall(call) = i else {
+            return;
+        };
+        if call.method != "fold" || call.args.len() != 2 {
+            return;
+        }
+        let syn::Expr::Closure(closure) = &call.args[1] else {
+            return;
+        };
+        if closure.inputs.len() != 2 {
+            return;
+        }
+        let (accumulator, item) = (&closure.inputs[0], &closure.inputs[1]);
+        let Pat::Ident(PatIdent { ident, .. }) = accumulator else {
+            return;
+        };
+        let (receiver, init, body) = (&call.receiver, &call.args[0], &closure.body);
+        *i = parse_quote_spanned! {call.span()=> {
+            let mut #ident = #init;
+            for #item in #receiver {
+                #ident = #body;
+            }
+            #ident
+        }};
+    }
+}
+
+/// Runtime `?` in the body's statements: `let p = e?; rest` becomes
+/// `let t = e.split(); if t.0 { let p = t.1; rest } else { absent }`,
+/// so the remaining body runs only on a present value. Functions returning
+/// a host `Result` keep comptime `?`.
+fn desugar_try(block: &mut syn::Block, returns: &syn::ReturnType) {
+    let syn::ReturnType::Type(_, returns) = returns else {
+        return;
+    };
+    let host_result = matches!(&**returns, syn::Type::Path(path)
+        if path.path.segments.last().is_some_and(|segment| segment.ident == "Result"));
+    if !host_result {
+        let mut next_id = 0;
+        block.stmts = desugar_try_stmts(take(&mut block.stmts), returns, &mut next_id);
+    }
+}
+
+fn desugar_try_stmts(stmts: Vec<Stmt>, returns: &syn::Type, next_id: &mut usize) -> Vec<Stmt> {
+    let mut output = Vec::new();
+    let mut stmts = stmts.into_iter();
+    while let Some(stmt) = stmts.next() {
+        let (pat, inner) = match stmt {
+            Stmt::Local(Local {
+                pat,
+                init:
+                    Some(LocalInit {
+                        expr,
+                        diverge: None,
+                        ..
+                    }),
+                ..
+            }) if matches!(*expr, syn::Expr::Try(_)) => {
+                let syn::Expr::Try(inner) = *expr else {
+                    unreachable!()
+                };
+                (Some(pat), inner)
+            }
+            Stmt::Expr(syn::Expr::Try(inner), Some(_)) => (None, inner),
+            stmt => {
+                output.push(stmt);
+                continue;
+            }
+        };
+        let id = format_ident!("__try_{}", *next_id);
+        *next_id += 1;
+        let rest = desugar_try_stmts(stmts.collect(), returns, next_id);
+        let value = inner.expr;
+        let fallible = crate::paths::prelude_type("Fallible");
+        let bind = pat.map(|pat| quote_spanned![pat.span()=> let #pat = #id.1;]);
+        output.extend::<Vec<Stmt>>(parse_quote! {
+            let #id = (#value).split();
+            if #id.0 {
+                #bind
+                #(#rest)*
+            } else {
+                <#returns as #fallible>::absent()
+            }
+        });
+        break;
+    }
+    output
 }
 
 fn desugar_pats(stmts: Vec<Stmt>, next_id: &mut usize) -> Vec<Stmt> {

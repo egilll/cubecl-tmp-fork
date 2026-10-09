@@ -341,6 +341,91 @@ pub fn test_storage_atomic<R: Runtime>(client: Client) {
     assert_eq!(peaks.read(&client).unwrap(), [Count(31), Count(0)]);
 }
 
+/// A cell, or none as the largest index.
+#[repr(transparent)]
+#[derive(CubeType, CubeTypeMut, DeviceRepr, Debug, PartialEq)]
+#[device_repr(copy)]
+struct Found(u32);
+
+#[cube]
+impl Fallible for Found {
+    type Output = u32;
+
+    fn split(self) -> (bool, u32) {
+        (self.0 != u32::MAX, self.0)
+    }
+
+    fn absent() -> Found {
+        Found(u32::MAX)
+    }
+}
+
+#[cube]
+fn halve(value: u32) -> Found {
+    let mut found = Found(u32::MAX);
+    if value % 2 == 0 {
+        found = Found(value / 2);
+    }
+    found
+}
+
+/// `value` plus `0 + 1 + … + (count − 1)`, as a distance.
+#[cube]
+fn accumulate(value: u32, count: u32) -> Distance {
+    (0..count).fold(Distance(value as f32), |total, k| Distance(total.0 + k as f32))
+}
+
+#[cube]
+fn quarter(value: u32) -> Found {
+    let half = halve(value)?;
+    halve(half)?;
+    Found(half / 2)
+}
+
+#[cube(launch)]
+fn kernel_grid(
+    values: &GridTable<u32, Cell, u32>,
+    quarters: &mut GridColumn<Found, Cell, u32>,
+    totals: &AtomicGrid<Count, Cell, u32>,
+    sums: &mut Storage<Distance>,
+) {
+    let (row, column) = (ABSOLUTE_POS as u32 / values.width(), ABSOLUTE_POS as u32 % values.width());
+    if row < values.rows() {
+        let value = values.load(Cell(row), column);
+        quarters.store(Cell(row), column, quarter(value));
+        sums.store(ABSOLUTE_POS, accumulate(value, column));
+        totals.fetch_add(Cell(row), column % 2, Count(value));
+    }
+}
+
+pub fn test_storage_grid<R: Runtime>(client: Client) {
+    let values = StorageBuffer::create(&client, &[4u32, 6, 8, 3, 12, 0]);
+    let quarters = StorageBuffer::<Found>::empty(&client, 6);
+    let totals = StorageBuffer::create(&client, &[Count(0), Count(0), Count(0), Count(0)]);
+    let sums = StorageBuffer::<Distance>::empty(&client, 6);
+    kernel_grid::launch(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(8),
+        GridLaunch::new((&values).into(), 3),
+        GridLaunch::new((&quarters).into(), 3),
+        AtomicGridLaunch::new((&totals).into(), 2),
+        (&sums).into(),
+    );
+    assert_eq!(
+        sums.read(&client).unwrap(),
+        [4.0, 6.0, 9.0, 3.0, 12.0, 1.0].map(Distance)
+    );
+    assert_eq!(
+        quarters.read(&client).unwrap(),
+        [Found(1), Found(u32::MAX), Found(2), Found(u32::MAX), Found(3), Found(0)]
+    );
+    assert_eq!(
+        totals.read(&client).unwrap(),
+        [Count(12), Count(6), Count(3), Count(12)]
+    );
+}
+
 /// A brand over another brand keeps its representation and layout.
 #[repr(transparent)]
 #[derive(CubeType, DeviceRepr, Debug)]
@@ -554,6 +639,11 @@ macro_rules! testgen_storage {
         fn test_storage_lanes() {
             let client = TestRuntime::client(&Default::default());
             cubecl_core::runtime_tests::storage::test_storage_lanes::<TestRuntime>(client);
+        }
+        #[$crate::runtime_tests::test_log::test]
+        fn test_storage_grid() {
+            let client = TestRuntime::client(&Default::default());
+            cubecl_core::runtime_tests::storage::test_storage_grid::<TestRuntime>(client);
         }
         #[$crate::runtime_tests::test_log::test]
         fn test_storage_nested() {
