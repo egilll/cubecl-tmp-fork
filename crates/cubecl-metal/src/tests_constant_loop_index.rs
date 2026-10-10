@@ -79,7 +79,12 @@ fn halving(launch: impl Fn(&cubecl_core::prelude::Client, cubecl_core::server::H
 #[test]
 fn a_literal_initialized_loop_counter_halves() {
     let steps = halving(|client, output| unsafe {
-        halving_literal::launch_unchecked(client, CubeCount::Static(1, 1, 1), CubeDim::new_1d(64), BufferArg::from_raw_parts(output, 1));
+        halving_literal::launch_unchecked(
+            client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(64),
+            BufferArg::from_raw_parts(output, 1),
+        );
     });
     assert_eq!(steps, 6);
 }
@@ -87,7 +92,12 @@ fn a_literal_initialized_loop_counter_halves() {
 #[test]
 fn a_runtime_initialized_loop_counter_halves() {
     let steps = halving(|client, output| unsafe {
-        halving_from_runtime::launch_unchecked(client, CubeCount::Static(1, 1, 1), CubeDim::new_1d(64), BufferArg::from_raw_parts(output, 1));
+        halving_from_runtime::launch_unchecked(
+            client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(64),
+            BufferArg::from_raw_parts(output, 1),
+        );
     });
     assert_eq!(steps, 6);
 }

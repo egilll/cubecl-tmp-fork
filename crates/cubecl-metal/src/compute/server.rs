@@ -1137,7 +1137,15 @@ impl RelocatingStreams for Relocating<'_, '_> {
         }
     }
 
+    /// Release what freed buffers still hold: a completed command buffer
+    /// retains every buffer it bound until it is itself released, and a
+    /// recorded write keeps its buffer bound, so both go before the pools
+    /// return memory to the driver.
     fn cleanup_memory(&mut self) {
+        for stream in self.0.all() {
+            stream.finish();
+            stream.forget_confirmed_writes();
+        }
         let (stream, failures) = self.0.current_and_failures();
         stream
             .memory_management

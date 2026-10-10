@@ -410,15 +410,20 @@ impl MetalStream {
     /// Record that the open command buffer writes `bindings`.
     pub fn note_writes(&mut self, bindings: impl IntoIterator<Item = BufferBinding>) {
         let seq = self.batch_seq;
-        if self.unconfirmed_writes.len() >= 1024 {
-            let confirmed = self
-                .fault
-                .confirmed
-                .load(core::sync::atomic::Ordering::Acquire);
-            self.unconfirmed_writes.retain(|(s, _)| *s > confirmed);
-        }
+        self.forget_confirmed_writes();
         self.unconfirmed_writes
             .extend(bindings.into_iter().map(|binding| (seq, binding)));
+    }
+
+    /// Drop the writes of batches known to have completed. Each entry holds
+    /// a binding, which keeps its allocation bound: a buffer freed by every
+    /// handle must not stay reserved until later writes push it out.
+    pub fn forget_confirmed_writes(&mut self) {
+        let confirmed = self
+            .fault
+            .confirmed
+            .load(core::sync::atomic::Ordering::Acquire);
+        self.unconfirmed_writes.retain(|(s, _)| *s > confirmed);
     }
 
     /// Count the batch `active` is about to commit as in flight, and learn

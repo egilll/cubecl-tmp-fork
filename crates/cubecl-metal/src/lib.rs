@@ -34,6 +34,8 @@ mod tests_multistream;
 #[cfg(test)]
 mod tests_reads;
 #[cfg(test)]
+mod tests_release;
+#[cfg(test)]
 mod tests_writes;
 
 #[cfg(test)]
