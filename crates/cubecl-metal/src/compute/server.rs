@@ -147,6 +147,33 @@ fn read_pitched(src: *const u8, shape: &[usize], strides: &[usize], elem_size: u
 }
 
 /// Writes packed bytes into a pitched row-major buffer — the inverse of [`read_pitched`].
+/// The most bytes one write stages for an in-stream copy; larger writes wait
+/// for the device and copy directly, rather than hold a second copy alive.
+const MAX_STAGED_WRITE: usize = 64 << 20;
+
+/// The `(source range, destination offset)` pieces that copy `data` into the
+/// layout `descriptor` describes, when a blit can make every one of them:
+/// blits move whole words, so every offset and length is a multiple of four.
+fn blit_pieces(
+    descriptor: &CopyDescriptor,
+    data: &[u8],
+) -> Option<impl Iterator<Item = (core::ops::Range<usize>, usize)>> {
+    let rank = descriptor.shape.len();
+    let (rows, width, pitch) = if rank <= 1 {
+        (1, data.len(), 0)
+    } else {
+        let width = descriptor.shape[rank - 1] * descriptor.elem_size;
+        let rows = descriptor.shape[..rank - 1].iter().product::<usize>();
+        (
+            rows,
+            width,
+            descriptor.strides[rank - 2] * descriptor.elem_size,
+        )
+    };
+    let aligned = width % 4 == 0 && pitch % 4 == 0 && width > 0 && rows * width == data.len();
+    aligned.then(|| (0..rows).map(move |row| (row * width..(row + 1) * width, row * pitch)))
+}
+
 fn write_pitched(dst: *mut u8, data: &[u8], shape: &[usize], strides: &[usize], elem_size: usize) {
     let rank = shape.len();
     if rank <= 1 {
@@ -362,6 +389,38 @@ impl Server for MetalServer {
 
     fn write(&mut self, descriptors: Vec<(CopyDescriptor, Bytes)>, stream_id: StreamId) {
         use objc2_metal::MTLBuffer;
+
+        if descriptors
+            .iter()
+            .all(|(descriptor, data)| blit_pieces(descriptor, data).is_some())
+            && descriptors
+                .iter()
+                .map(|(_, data)| data.len())
+                .sum::<usize>()
+                <= MAX_STAGED_WRITE
+        {
+            for (descriptor, data) in descriptors {
+                let mut written = self.write_set();
+                written.push(descriptor.handle.clone());
+                ExecuteScope::over(self, stream_id, written).execute(|server| {
+                    let mut resolved = server
+                        .streams
+                        .resolve(stream_id, [&descriptor.handle].into_iter())
+                        .expect("creating a Metal stream never fails");
+                    let (resource, offset, _) =
+                        resolve_origin_resource(&mut resolved, &descriptor.handle)
+                            .map_err(ServerError::Io)?;
+                    let (stream, _) = resolved.current_and_failures();
+                    let pieces = blit_pieces(&descriptor, &data)
+                        .expect("checked above")
+                        .map(|(source, destination)| (source, destination + offset as usize));
+                    stream.upload(resource.inner(), &data, pieces)?;
+                    stream.note_writes([descriptor.handle.clone()]);
+                    Ok(())
+                });
+            }
+            return;
+        }
 
         let mut resolved = self
             .streams

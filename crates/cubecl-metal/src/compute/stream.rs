@@ -449,6 +449,66 @@ impl MetalStream {
         }
     }
 
+    /// Copy `data` into `target` in the open batch: after every dispatch
+    /// encoded before it, before every dispatch encoded after it, and without
+    /// waiting for the device. Each piece copies `data[source]` to the byte
+    /// `destination` of `target`.
+    ///
+    /// The bytes travel through a staging buffer the batch keeps alive, so
+    /// the host never touches memory a pending dispatch may still read. The
+    /// blit gets an encoder of its own; tracked resources order it against
+    /// the compute encoders on either side.
+    pub fn upload(
+        &mut self,
+        target: &ProtocolObject<dyn MTLBuffer>,
+        data: &[u8],
+        pieces: impl IntoIterator<Item = (core::ops::Range<usize>, usize)>,
+    ) -> Result<(), ServerError> {
+        use objc2_metal::{MTLBlitCommandEncoder, MTLCommandEncoder, MTLResourceOptions};
+
+        let staging = NonNull::new(data.as_ptr() as *mut core::ffi::c_void)
+            .and_then(|bytes| unsafe {
+                (*self.device).newBufferWithBytes_length_options(
+                    bytes,
+                    data.len(),
+                    MTLResourceOptions::StorageModeShared,
+                )
+            })
+            .ok_or_else(|| ServerError::Generic {
+                reason: format!(
+                    "failed to allocate a {} B staging buffer for a write",
+                    data.len()
+                ),
+                backtrace: cubecl_environment::backtrace::BackTrace::capture(),
+            })?;
+        let active = self.get_or_create_encoder();
+        (*active.encoder).endEncoding();
+        let blit = (*active.command_buffer)
+            .blitCommandEncoder()
+            .expect("Failed to create blit command encoder");
+        for (source, destination) in pieces {
+            unsafe {
+                blit.copyFromBuffer_sourceOffset_toBuffer_destinationOffset_size(
+                    &staging,
+                    source.start,
+                    target,
+                    destination,
+                    source.len(),
+                );
+            }
+        }
+        blit.endEncoding();
+        active.encoder = (*active.command_buffer)
+            .computeCommandEncoderWithDispatchType(MTLDispatchType::Concurrent)
+            .expect("Failed to create compute command encoder");
+        // The new encoder starts after the blit; nothing before it can race.
+        active.hazards = Hazards::default();
+        active.temporaries.push(staging);
+        self.batch_ops += 1;
+        self.batch_bytes += data.len();
+        Ok(())
+    }
+
     /// Whether the open batch's estimated GPU time reached the configured
     /// bound, so it should be committed now.
     pub fn batch_over_budget(&self) -> bool {
