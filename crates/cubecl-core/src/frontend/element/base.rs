@@ -411,6 +411,44 @@ pub trait IntoRuntime:
     fn __expand_runtime_method(self, scope: &Scope) -> Self::ExpandType;
 }
 
+/// The initial value of a mutable local bound to a value known at compile
+/// time, such as a constant or a folded constant expression. A literal
+/// initializer becomes a runtime variable; so must these, or the binding's
+/// later assignments, which expand as device stores, would store into a
+/// constant. A value whose type has no runtime form stays as it is.
+///
+/// Dispatch picks [`InitRuntimeMut`] where the value is [`IntoRuntime`]
+/// and [`InitComptimeMut`] otherwise:
+/// `(&MutableInit(value)).__init_mut(scope)`.
+#[doc(hidden)]
+pub struct MutableInit<T>(pub T);
+
+#[doc(hidden)]
+pub trait InitRuntimeMut {
+    type Init;
+    fn __init_mut(self, scope: &Scope) -> Self::Init;
+}
+
+impl<T: IntoRuntime + Clone> InitRuntimeMut for &&MutableInit<T> {
+    type Init = <T as CubeType>::ExpandType;
+    fn __init_mut(self, scope: &Scope) -> Self::Init {
+        self.0.clone().__expand_runtime_method(scope)
+    }
+}
+
+#[doc(hidden)]
+pub trait InitComptimeMut {
+    type Init;
+    fn __init_mut(self, scope: &Scope) -> Self::Init;
+}
+
+impl<T: Clone> InitComptimeMut for &MutableInit<T> {
+    type Init = T;
+    fn __init_mut(self, _scope: &Scope) -> T {
+        self.0.clone()
+    }
+}
+
 /// Trait for marking a function return value as comptime when the compiler can't infer it.
 pub trait IntoComptime: Sized {
     #[allow(clippy::wrong_self_convention)]

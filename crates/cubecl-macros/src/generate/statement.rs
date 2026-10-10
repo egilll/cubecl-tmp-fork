@@ -28,7 +28,16 @@ impl Statement {
                         )
                     } else if let Some(as_const) = init.as_ref().and_then(|it| it.as_const(context))
                     {
-                        Some(quote_spanned![as_const.span()=> #as_const.clone()])
+                        // A constant bound mutably becomes a runtime variable
+                        // where its type has one, as a literal does.
+                        let wrapper = frontend_type("MutableInit");
+                        let runtime = frontend_type("InitRuntimeMut");
+                        let comptime = frontend_type("InitComptimeMut");
+                        Some(quote_spanned![as_const.span()=> {
+                            use #runtime as _;
+                            use #comptime as _;
+                            (&&#wrapper(#as_const.clone())).__init_mut(scope)
+                        }])
                     } else {
                         init.as_ref().map(|it| it.to_tokens(context))
                     }
