@@ -193,8 +193,12 @@ impl<C: WgpuCompiler> WgpuServer<C> {
                     // checked by cube (if enabled).
                     // This is because the WebGPU specification only makes loose guarantees that Cube can't rely on.
                     bounds_checks: false,
-                    // Loop bounds are only checked in checked mode.
-                    force_loop_bounding: mode == ExecutionMode::Checked,
+                    // Loop bounds are only checked in checked mode. Apple's compiler can hoist a
+                    // device load out of a loop bounded by naga's 64-bit iteration budget, past
+                    // a store to the same address in the loop, so Metal goes without, as the
+                    // native Metal backend does.
+                    force_loop_bounding: mode == ExecutionMode::Checked
+                        && self.backend != wgpu::Backend::Metal,
                     ..wgpu::ShaderRuntimeChecks::unchecked()
                 };
 
