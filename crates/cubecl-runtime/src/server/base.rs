@@ -805,10 +805,12 @@ pub trait Server:
     /// Prefer having kernels already **autotuned before** this call, so the
     /// warmup run allocates what the recorded run asks for and nothing else.
     ///
-    /// A no-op by default (harmless on backends without graph support).
+    /// Unsupported by default, as is [`begin_capture`](Server::begin_capture):
+    /// a backend without graphs refuses here, before the caller's warmup run
+    /// executes work it would only repeat for nothing.
     fn graph_prepare(&mut self, stream_id: StreamId) -> Result<(), ServerError> {
         let _ = stream_id;
-        Ok(())
+        Err(ServerError::graph_capture_unsupported())
     }
 
     /// Begin recording the launches issued on `stream_id` into a graph instead

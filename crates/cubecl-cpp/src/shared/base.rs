@@ -321,6 +321,23 @@ where
 
         verify_operation(module.get_operation(), &ctx)?;
 
+        // Metal binds at most 31 buffers to a compute function; past that the
+        // MSL compiler fails on the attribute rather than on the kernel.
+        #[cfg(feature = "metal")]
+        if T::target() == Target::Metal {
+            let slots = crate::metal::signature::buffer_slots(&ctx, &entry_func);
+            if slots > crate::metal::signature::MAX_BUFFER_BINDINGS {
+                return Err(CompilationError::Validation {
+                    reason: format!(
+                        "kernel `{}` binds {slots} buffers, its scalars and metadata included; Metal binds at most {}",
+                        kernel.settings.kernel_name,
+                        crate::metal::signature::MAX_BUFFER_BINDINGS
+                    ),
+                    backtrace: BackTrace::capture(),
+                });
+            }
+        }
+
         let shared_memory_size = shared_memory_size(&ctx, module_op);
         let buffers = buffers(&ctx, entry_func);
         let io = buffer_io(&ctx, entry_func);

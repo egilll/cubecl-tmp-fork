@@ -81,6 +81,20 @@ fn max_total_threads_never_declaring_a_single_simdgroup(
     cube_dim_total.max(smallest_bound_compiled_correctly)
 }
 
+/// The buffer binding slots a Metal compute function may use.
+pub const MAX_BUFFER_BINDINGS: usize = 31;
+
+/// The buffer slots `func`'s arguments occupy: one past the highest.
+pub fn buffer_slots(ctx: &Context, func: &FuncOp) -> usize {
+    let block = func.get_entry_block(ctx);
+    let arguments = block.deref(ctx).get_num_arguments();
+    (0..arguments)
+        .filter_map(|i| func.get_arg_attr::<BufferBindingAttr>(ctx, i, &ATTR_BUFFER_BINDING))
+        .map(|binding| binding.buffer_pos + 1)
+        .max()
+        .unwrap_or(0)
+}
+
 fn gen_param(ctx: &Context, func: &FuncOp, i: usize, arg: Value) -> String {
     let mut segments = vec![];
     segments.push(arg.get_type(ctx).to_cpp(ctx));
