@@ -259,6 +259,12 @@ impl MetalContext {
         // device limit; exceeding it fails the dispatch on the GPU, so reject it at compile time.
         let max_units = pipeline.maxTotalThreadsPerThreadgroup();
         let requested = (cube_dim.x as usize) * (cube_dim.y as usize) * (cube_dim.z as usize);
+        log::debug!(
+            "Metal pipeline {entrypoint_name}: {requested} threads, execution width {}, \
+             maximum {max_units} threads, {} bytes static threadgroup memory",
+            pipeline.threadExecutionWidth(),
+            pipeline.staticThreadgroupMemoryLength(),
+        );
         if requested > max_units {
             return Err(cubecl_server::compiler::CompilationError::Generic {
                 reason: format!(

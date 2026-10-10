@@ -45,7 +45,7 @@ use cubecl_opt::{
         alloc_shared_memory::AllocateSharedMemoryBlockPass,
         annotate_buffer_visibility::AnnotateGlobalVisibilityPass,
     },
-    pipeline::{add_entry_and_call_passes, add_structured_cleanup_passes},
+    pipeline::{add_entry_and_call_passes, add_pre_lowering_passes, add_structured_cleanup_passes},
 };
 use cubecl_runtime::{
     compiler::{CompilationError, Compiler},
@@ -261,6 +261,8 @@ where
             kernel.settings.kernel_name.clone(),
         );
         let mut func_passes = OpPass::<FuncOp, Passes>::default();
+
+        add_pre_lowering_passes(&mut func_passes);
 
         func_passes.add_pass(LowerInfoPass);
         func_passes.add_pass(AllocateSharedMemoryBlockPass);

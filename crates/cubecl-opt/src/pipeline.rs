@@ -60,6 +60,16 @@ pub fn add_kernel_entry_passes(passes: &mut Passes, mode: ExecutionMode, kernel_
     passes.add_pass(CheckedIoPass::new(CheckedIo::new(mode, kernel_name)));
 }
 
+/// Fold indices and split local aggregates while their allocation operations
+/// still expose the scalar-replacement interfaces. Target declarations need
+/// not retain those interfaces after lowering.
+pub fn add_pre_lowering_passes(passes: &mut Passes) {
+    passes.add_pass(SCCPPass);
+    passes.add_pass(SimplifyOpsPass::default());
+    passes.add_pass(SROAPass);
+    passes.add_pass(DCEPass);
+}
+
 /// The cleanup a target runs once its lowerings are done, for targets that
 /// emit structured source from the `branch` dialect: constant propagation,
 /// simplification, CSE and dead code elimination, run on both sides of

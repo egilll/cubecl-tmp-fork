@@ -59,6 +59,30 @@ fn literal_kernel(values: &mut [u32]) {
     }
 }
 
+#[cube(launch)]
+fn literal_aliasing_kernel(values: &mut [u32]) {
+    if UNIT_POS == 0 {
+        let order = [values[0], values[1] + 1, values[2] * 2];
+        for i in 0..3usize {
+            values[ABSOLUTE_POS + i + 3] = order[(i + values[3] as usize) % 3];
+        }
+    }
+}
+
+/// The first store changes the rotation read by the remaining iterations.
+pub fn test_kernel_literal_aliasing<R: Runtime>(client: Client) {
+    let data = [4, 5, 6, 1, 0, 0];
+    let handle = client.create_from_slice(u32::as_bytes(&data));
+    literal_aliasing_kernel::launch(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(1),
+        unsafe { BufferArg::from_raw_parts(handle.clone(), data.len()) },
+    );
+    let actual = client.read_one_unchecked(handle);
+    assert_eq!(u32::from_bytes(&actual), &[4, 5, 6, 6, 6, 12]);
+}
+
 // Regression test for invalid `CopyTransform`
 pub fn test_kernel_shuffle<R: Runtime>(client: Client) {
     let handle = client.empty(4 * size_of::<u32>());
@@ -128,6 +152,12 @@ macro_rules! testgen_index {
         fn test_literal() {
             let client = TestRuntime::client(&Default::default());
             cubecl_core::runtime_tests::index::test_kernel_literal::<TestRuntime>(client);
+        }
+
+        #[$crate::runtime_tests::test_log::test]
+        fn test_literal_aliasing() {
+            let client = TestRuntime::client(&Default::default());
+            cubecl_core::runtime_tests::index::test_kernel_literal_aliasing::<TestRuntime>(client);
         }
 
         #[$crate::runtime_tests::test_log::test]
