@@ -50,9 +50,11 @@ fn literal_kernel(values: &mut [u32]) {
     if UNIT_POS == 0 {
         // Runtime elements, so the literal is a local array rather than a constant.
         let order = [values[0], values[1] + 1, values[2] * 2];
+        // Read before the loop overwrites it.
+        let rotation = values[3] as usize;
         for i in 0..3usize {
             // A dynamic index into the literal.
-            values[ABSOLUTE_POS + i + 3] = order[(i + values[3] as usize) % 3];
+            values[ABSOLUTE_POS + i + 3] = order[(i + rotation) % 3];
         }
     }
 }
