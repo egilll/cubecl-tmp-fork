@@ -323,7 +323,9 @@ impl<C: WgpuCompiler> WgpuServer<C> {
                 (dim.x, dim.y, dim.z),
             )
         });
-        if let Some(shared) = shared_key.as_ref().and_then(|key| self.pipelines_by_source.get(key))
+        if let Some(shared) = shared_key
+            .as_ref()
+            .and_then(|key| self.pipelines_by_source.get(key))
         {
             let shared = shared.clone();
             self.pipelines.insert(kernel_id.clone(), shared.clone());

@@ -206,7 +206,11 @@ fn generate_lanes(input: &DeriveInput) -> syn::Result<TokenStream> {
             "#[device_repr(lanes)] requires runtime fields and only comptime PhantomData markers",
         ));
     }
-    let fields: Vec<_> = parsed.fields.iter().filter(|field| !field.is_marker()).collect();
+    let fields: Vec<_> = parsed
+        .fields
+        .iter()
+        .filter(|field| !field.is_marker())
+        .collect();
     let markers: Vec<_> = parsed
         .fields
         .iter()

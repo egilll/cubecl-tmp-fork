@@ -237,10 +237,10 @@ fn inline_for_target(traced: &mut Traced, max_inline_ops: usize) {
     inline_for(traced, max_inline_ops, true);
 }
 
-fn inline_for(traced: &mut Traced, max_inline_ops: usize, global_pointer_params: bool) {
+fn inline_for(traced: &mut Traced, max_inline_ops: usize, memory_pointer_params: bool) {
     InlinePass::new(InlinePolicy::Target {
         max_inline_ops,
-        global_pointer_params,
+        memory_pointer_params,
     })
     .run(
         traced.module,
@@ -485,8 +485,47 @@ fn slices_are_passed_to_a_target_that_takes_global_pointers() {
 }
 
 #[test]
-fn slices_are_inlined_for_a_target_without_global_pointer_parameters() {
+fn slices_are_inlined_for_a_target_without_memory_pointer_parameters() {
     let mut traced = trace_slice_calls();
+    inline_for(&mut traced, 2, false);
+    assert_eq!(count::<CallOp>(&traced.ctx, traced.module), 0);
+    assert_eq!(count::<FuncOp>(&traced.ctx, traced.module), 1);
+}
+
+#[cube(inline)]
+fn shared_calls(values: &mut [f32]) {
+    let mut staged = Shared::<[f32]>::new_slice(64usize);
+    let unit = UNIT_POS as usize;
+    let factor = values[unit];
+    staged[unit] = factor;
+    sync_cube();
+    scale_into(&mut staged, factor, 8);
+    scale_into(&mut staged, factor + 1.0, 8);
+    values[unit] = staged[unit];
+}
+
+fn trace_shared_calls() -> Traced {
+    trace(|scope| {
+        let f32_ty = f32::__expand_as_type(scope);
+        let values = scope.global(0, None, f32_ty);
+        let len = scope.const_usize(64);
+        let zero = scope.const_usize(0);
+        let mut values =
+            cubecl_core::frontend::from_raw_parts::<f32>(scope, values, zero.into(), len.into());
+        shared_calls::expand(scope, &mut values);
+    })
+}
+
+#[test]
+fn shared_memory_is_passed_to_a_target_that_takes_memory_pointers() {
+    let mut traced = trace_shared_calls();
+    inline_for(&mut traced, 2, true);
+    assert_eq!(count::<CallOp>(&traced.ctx, traced.module), 2);
+}
+
+#[test]
+fn shared_memory_is_inlined_for_a_target_without_memory_pointer_parameters() {
+    let mut traced = trace_shared_calls();
     inline_for(&mut traced, 2, false);
     assert_eq!(count::<CallOp>(&traced.ctx, traced.module), 0);
     assert_eq!(count::<FuncOp>(&traced.ctx, traced.module), 1);

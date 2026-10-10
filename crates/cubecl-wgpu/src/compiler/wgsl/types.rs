@@ -1,9 +1,10 @@
 use cubecl_ir::{
+    AddressSpace,
     interfaces::{HasElementType, TypedExt},
     prelude::*,
     rewrite::visit_all_values,
     types::{
-        ArrayType, AtomicType, Fp8Format, RuntimeArrayType, VectorType,
+        ArrayType, AtomicType, Fp8Format, PointerType, RuntimeArrayType, VectorType,
         scalar::{
             BoolType, Float8E4M3Type, Float8E5M2Type, Float8E8M0Type, Float16Type, Float32Type,
             Float64Type, FloatFlex32Type, IndexType,
@@ -151,6 +152,22 @@ impl TypeToWgsl for AtomicType {
 impl TypeToWgsl for ArrayType {
     fn to_wgsl(&self, ctx: &Context) -> String {
         format!("array<{}, {}>", self.inner.to_wgsl(ctx), self.length)
+    }
+}
+
+/// A pointer passed to a function that was not inlined. Workgroup and
+/// function pointers are valid parameters in core WGSL; storage pointers
+/// are bound read-write, as every storage argument is unless memory is
+/// exclusive.
+#[type_interface_impl]
+impl TypeToWgsl for PointerType {
+    fn to_wgsl(&self, ctx: &Context) -> String {
+        let space = match self.address_space {
+            AddressSpace::Global(_) => "storage, read_write",
+            AddressSpace::Shared => "workgroup",
+            AddressSpace::Local => "function",
+        };
+        format!("ptr<{space}, {}>", self.inner.to_wgsl(ctx))
     }
 }
 

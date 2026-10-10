@@ -21,7 +21,14 @@ fn kernel_collectives(ranks: &[f32], output: &mut [f32]) {
     let mut best_ranks = SharedStorage::<Score>::new(comptime![subgroups(128)]);
     let mut best_items = SharedStorage::<Item>::new(comptime![subgroups(128)]);
     let total = cube_sum(Score(ranks[unit]), &mut sums);
-    let best = cube_argmax(Best::<Score, Item> { rank: Score(ranks[unit]), index: Item(UNIT_POS) }, &mut best_ranks, &mut best_items);
+    let best = cube_argmax(
+        Best::<Score, Item> {
+            rank: Score(ranks[unit]),
+            index: Item(UNIT_POS),
+        },
+        &mut best_ranks,
+        &mut best_items,
+    );
     let bits = plane_or(1u32 << (UNIT_POS % 8));
     output[4 * unit] = total.0;
     output[4 * unit + 1] = best.rank.0;
@@ -32,10 +39,24 @@ fn kernel_collectives(ranks: &[f32], output: &mut [f32]) {
 /// Every unit of a 128-unit cube receives the sum and the best offer
 /// (ties to the lower index), and its subgroup's OR.
 pub fn test_collectives<R: Runtime>(client: Client) {
-    let ranks: Vec<f32> = (0..128).map(|i| if i == 90 || i == 17 { 500.0 } else { ((i * 37) % 101) as f32 }).collect();
+    let ranks: Vec<f32> = (0..128)
+        .map(|i| {
+            if i == 90 || i == 17 {
+                500.0
+            } else {
+                ((i * 37) % 101) as f32
+            }
+        })
+        .collect();
     let input = Buffer::create(&client, &ranks);
     let output = Buffer::<f32>::empty(&client, 4 * 128);
-    kernel_collectives::launch(&client, CubeCount::Static(1, 1, 1), CubeDim::new_1d(128), (&input).into(), (&output).into());
+    kernel_collectives::launch(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(128),
+        (&input).into(),
+        (&output).into(),
+    );
     let output = output.read(&client).unwrap();
     let total: f32 = ranks.iter().sum();
     for unit in output.chunks(4) {

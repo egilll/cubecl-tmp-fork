@@ -21,7 +21,10 @@ impl<Q: DeviceRepr + CubeType<ExpandType: Clone + Copy> + Copy + Send + Sync> Co
 
 /// The sum of every unit's `value`.
 #[cube]
-pub fn cube_sum<Q: Collective + DeviceRepr<Repr = f32>>(value: Q, scratch: &mut SharedStorage<Q>) -> Q {
+pub fn cube_sum<Q: Collective + DeviceRepr<Repr = f32>>(
+    value: Q,
+    scratch: &mut SharedStorage<Q>,
+) -> Q {
     let partial = plane_sum(Q::into_repr(value));
     if UNIT_POS_PLANE == 0 {
         scratch.store((UNIT_POS / PLANE_DIM) as usize, Q::from_repr(partial));
@@ -52,7 +55,10 @@ fn beats(rank: f32, index: u32, best: f32, at: u32) -> bool {
 /// The best offer of the cube: the highest rank, ties to the lower index,
 /// so how units are batched never changes the winner.
 #[cube]
-pub fn cube_argmax<R: Collective + DeviceRepr<Repr = f32>, I: Collective + DeviceRepr<Repr = u32>>(
+pub fn cube_argmax<
+    R: Collective + DeviceRepr<Repr = f32>,
+    I: Collective + DeviceRepr<Repr = u32>,
+>(
     offer: Best<R, I>,
     ranks: &mut SharedStorage<R>,
     indices: &mut SharedStorage<I>,
@@ -84,7 +90,10 @@ pub fn cube_argmax<R: Collective + DeviceRepr<Repr = f32>, I: Collective + Devic
         at = select(take, named, at);
     }
     sync_cube();
-    Best::<R, I> { rank: R::from_repr(best), index: I::from_repr(at) }
+    Best::<R, I> {
+        rank: R::from_repr(best),
+        index: I::from_repr(at),
+    }
 }
 
 /// The OR of every unit's `bits` within its subgroup, by shuffles.

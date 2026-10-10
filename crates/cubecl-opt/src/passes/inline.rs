@@ -46,9 +46,9 @@ pub enum InlinePolicy {
     Target {
         /// Callees this small are inlined at every call.
         max_inline_ops: usize,
-        /// Whether a function can take a pointer into a global buffer, as
-        /// MSL's can. WGSL's can't without an extension.
-        global_pointer_params: bool,
+        /// Whether a function can take a pointer into a global buffer or
+        /// shared memory, as MSL's can. WGSL's can't without an extension.
+        memory_pointer_params: bool,
     },
 }
 
@@ -56,10 +56,10 @@ impl InlinePolicy {
     /// [`InlinePolicy::Target`] with the default size threshold: about the
     /// size of a call's own setup, so an inlined body costs no more than the
     /// call it replaces.
-    pub const fn target(global_pointer_params: bool) -> Self {
+    pub const fn target(memory_pointer_params: bool) -> Self {
         Self::Target {
             max_inline_ops: 16,
-            global_pointer_params,
+            memory_pointer_params,
         }
     }
 }
@@ -84,12 +84,12 @@ impl InlinePass {
     }
 
     fn should_inline(&self, ctx: &Context, call: &CallOp, round: &mut Round) -> bool {
-        let (max_inline_ops, global_pointer_params) = match self.policy {
+        let (max_inline_ops, memory_pointer_params) = match self.policy {
             InlinePolicy::All => return true,
             InlinePolicy::Target {
                 max_inline_ops,
-                global_pointer_params,
-            } => (max_inline_ops, global_pointer_params),
+                memory_pointer_params,
+            } => (max_inline_ops, memory_pointer_params),
         };
         let symbol = call.callee_symbol(ctx);
         let Some(callee) = resolve_callee(ctx, call) else {
@@ -99,8 +99,8 @@ impl InlinePass {
         let decision = round.decisions.entry(symbol.clone()).or_insert_with(|| {
             if let Some(op) = entry_only_op(ctx, callee) {
                 Decision::Inline(Reason::Requires(op))
-            } else if !global_pointer_params && takes_global_pointer(ctx, callee) {
-                Decision::Inline(Reason::Requires("a global pointer parameter".into()))
+            } else if !memory_pointer_params && takes_memory_pointer(ctx, callee) {
+                Decision::Inline(Reason::Requires("a memory pointer parameter".into()))
             } else if round.call_sites.get(&symbol).copied().unwrap_or(0) <= 1 {
                 Decision::Inline(Reason::SingleCallSite)
             } else {
@@ -144,8 +144,9 @@ enum Reason {
     SingleCallSite,
 }
 
-/// Whether one of `func`'s parameters points into a global buffer.
-fn takes_global_pointer(ctx: &Context, func: FuncOp) -> bool {
+/// Whether one of `func`'s parameters points into a global buffer or
+/// shared memory.
+fn takes_memory_pointer(ctx: &Context, func: FuncOp) -> bool {
     use cubecl_ir::{AddressSpace, types::PointerType};
 
     func.get_entry_block(ctx)
@@ -156,7 +157,7 @@ fn takes_global_pointer(ctx: &Context, func: FuncOp) -> bool {
             matches!(
                 ty.downcast_ref::<PointerType>(),
                 Some(PointerType {
-                    address_space: AddressSpace::Global(_),
+                    address_space: AddressSpace::Global(_) | AddressSpace::Shared,
                     ..
                 })
             )

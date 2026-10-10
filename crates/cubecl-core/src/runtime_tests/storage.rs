@@ -372,7 +372,9 @@ fn halve(value: u32) -> Found {
 /// `value` plus `0 + 1 + … + (count − 1)`, as a distance.
 #[cube]
 fn accumulate(value: u32, count: u32) -> Distance {
-    (0..count).fold(Distance(value as f32), |total, k| Distance(total.0 + k as f32))
+    (0..count).fold(Distance(value as f32), |total, k| {
+        Distance(total.0 + k as f32)
+    })
 }
 
 #[cube]
@@ -389,7 +391,10 @@ fn kernel_grid(
     totals: &AtomicGrid<Count, Cell, u32>,
     sums: &mut Storage<Distance>,
 ) {
-    let (row, column) = (ABSOLUTE_POS as u32 / values.width(), ABSOLUTE_POS as u32 % values.width());
+    let (row, column) = (
+        ABSOLUTE_POS as u32 / values.width(),
+        ABSOLUTE_POS as u32 % values.width(),
+    );
     if row < values.rows() {
         let value = values.load(Cell(row), column);
         quarters.store(Cell(row), column, quarter(value));
@@ -418,7 +423,14 @@ pub fn test_storage_grid<R: Runtime>(client: Client) {
     );
     assert_eq!(
         quarters.read(&client).unwrap(),
-        [Found(1), Found(u32::MAX), Found(2), Found(u32::MAX), Found(3), Found(0)]
+        [
+            Found(1),
+            Found(u32::MAX),
+            Found(2),
+            Found(u32::MAX),
+            Found(3),
+            Found(0)
+        ]
     );
     assert_eq!(
         totals.read(&client).unwrap(),
