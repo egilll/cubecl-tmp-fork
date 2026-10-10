@@ -3,7 +3,8 @@ pub use crate::{
     codegen::{KernelExpansion, KernelIntegrator},
     comment, comptime, comptime_type,
     compute::{
-        Bind, Buffer, KernelBuilder, KernelLauncher, ResidentBytes, ResidentGrid, StorageBuffer,
+        Bind, Buffer, BufferSize, Carve, GridShape, KernelBuilder, KernelLauncher, Residency,
+        ResidentBytes, ResidentGrid, Shaped, StorageBuffer,
     },
     cube, derive_cube_comptime,
     frontend::*,
