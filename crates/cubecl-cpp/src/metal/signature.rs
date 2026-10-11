@@ -26,15 +26,55 @@ dict_key!(ATTR_BUILTIN_ATTRIBUTE, "metal_builtin");
 /// compile options build it: wgpu's passthrough uses Metal's defaults (fast math), the native
 /// runtime asks for safe math. `math_mode(safe)` covers the arithmetic (no reassociation, no
 /// reciprocal division); the precise variant of each `float` function is named where it is called,
-/// since no pragma covers those.
+/// since no pragma covers those. A kernel whose arithmetic was written under `fast_math` takes
+/// `math_mode(fast)` for the whole source, the pragma being per translation unit.
 const IMPORT: &str = "
-#pragma METAL fp math_mode(safe)
 #include <metal_stdlib>
 using namespace metal;
 ";
 
+/// Whether any float operation under `op` was created under `fast_math` allowing
+/// transformations of the arithmetic itself: reassociation, contraction or reciprocals.
+fn fast_arithmetic(ctx: &Context, op: Ptr<Operation>) -> bool {
+    use cubecl_core::ir::{
+        FastMath,
+        attributes::{ATTR_FAST_MATH, FastMathAttr},
+    };
+    use pliron::graph::walkers::{
+        IRNode, WALKCONFIG_PREORDER_FORWARD,
+        interruptible::{immutable::walk_op, walk_advance, walk_break},
+    };
+    walk_op(
+        ctx,
+        &mut (),
+        &WALKCONFIG_PREORDER_FORWARD,
+        op,
+        |ctx, _, node| {
+            let IRNode::Operation(op) = node else {
+                return walk_advance();
+            };
+            let fast = op
+                .get_attr::<FastMathAttr>(ctx, &ATTR_FAST_MATH)
+                .is_some_and(|attr| {
+                    attr.allows(FastMath::AllowTransform)
+                        || attr.allows(FastMath::AllowReassociation)
+                        || attr.allows(FastMath::AllowReciprocal)
+                        || attr.allows(FastMath::AllowContraction)
+                });
+            if fast { walk_break(()) } else { walk_advance() }
+        },
+    )
+    .is_break()
+}
+
 metal_op!(ModuleOp, |op, ctx| {
-    let mut out = IMPORT.to_string();
+    let mode = if fast_arithmetic(ctx, op.get_operation()) {
+        "fast"
+    } else {
+        "safe"
+    };
+    let mut out = format!("\n#pragma METAL fp math_mode({mode})");
+    out.push_str(IMPORT);
     type_definitions(&mut out, "long").unwrap();
     out.push_str(&block_to_cpp(ctx, op.get_body(ctx, 0)));
     out
