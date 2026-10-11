@@ -8,6 +8,7 @@ use syn::{Ident, Type, TypeParamBound, parse_quote};
 
 use crate::{
     parse::{
+        helpers::rename_self,
         kernel::{
             DefinedGeneric, ExecutionMode, InlineHint, KernelBody, KernelFn, Launch,
             anon_lifetime_to_static, expand_kernel_ty, map_type_normalized, strip_ref,
@@ -341,41 +342,6 @@ fn contains_impl_trait(ty: &Type) -> bool {
     let mut find = Find(false);
     syn::visit_mut::VisitMut::visit_type_mut(&mut find, &mut ty.clone());
     find.0
-}
-
-/// `tokens` with the `self` keyword replaced by `with`, except as the start
-/// of a path (`self::`): inside the closure an outlined method's body becomes,
-/// `self` can't name the receiver.
-fn rename_self(tokens: TokenStream, with: &Ident) -> TokenStream {
-    use proc_macro2::{Group, TokenTree};
-
-    let tokens: Vec<TokenTree> = tokens.into_iter().collect();
-    let mut out = Vec::with_capacity(tokens.len());
-    for (i, token) in tokens.iter().enumerate() {
-        match token {
-            TokenTree::Ident(ident) if ident == "self" => {
-                let is_path = matches!(
-                    tokens.get(i + 1),
-                    Some(TokenTree::Punct(p)) if p.as_char() == ':'
-                );
-                match is_path {
-                    true => out.push(token.clone()),
-                    false => {
-                        let mut renamed = with.clone();
-                        renamed.set_span(ident.span());
-                        out.push(TokenTree::Ident(renamed));
-                    }
-                }
-            }
-            TokenTree::Group(group) => {
-                let mut renamed = Group::new(group.delimiter(), rename_self(group.stream(), with));
-                renamed.set_span(group.span());
-                out.push(TokenTree::Group(renamed));
-            }
-            other => out.push(other.clone()),
-        }
-    }
-    out.into_iter().collect()
 }
 
 fn trait_imports() -> TokenStream {

@@ -13,7 +13,7 @@ use super::{__expand_new, CubePrimitive, IntoMut, IntoRuntime, NativeAssign, Nat
 /// Signed or unsigned integer. Used as input in int kernels
 pub trait Int:
     Numeric
-    + CubeNot
+    + ScalarNot
     + CountOnes
     + ScalarReverseBits
     + LeadingZeros

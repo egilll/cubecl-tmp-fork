@@ -169,6 +169,9 @@ impl CubeTrait {
 
 impl CubeTraitImpl {
     pub fn to_tokens_mut(&mut self) -> TokenStream {
+        if let Some(operator) = self.operator {
+            return self.operator_tokens(operator);
+        }
         let has_expand = self.default_methods
             || self
                 .items
@@ -207,6 +210,42 @@ impl CubeTraitImpl {
 }
 
 impl CubeTraitImpl {
+    /// A `core::ops` operator: the impl as written, and its kernel
+    /// implementation, the frontend's `Cube{operator}` for the same host type
+    /// and operands.
+    fn operator_tokens(&mut self, operator: &str) -> TokenStream {
+        let unsafety = &self.unsafety;
+        let items = &self.original_items;
+        let struct_name = &self.struct_name;
+        let trait_name = &self.trait_name;
+        let (generics, _, impl_where) = self.generics.split_for_impl();
+
+        let mut cube_trait = frontend_path();
+        let mut segment = trait_name.segments.last().unwrap().clone();
+        segment.ident = format_ident!("Cube{operator}", span = segment.ident.span());
+        cube_trait.segments.push(segment);
+
+        let fns = self
+            .items
+            .iter_mut()
+            .filter_map(CubeTraitImplItem::func)
+            .map(|it| it.to_tokens_mut())
+            .collect::<Vec<_>>();
+
+        quote! {
+            #unsafety impl #generics #trait_name for #struct_name #impl_where {
+                #(#items)*
+            }
+
+            impl #generics #cube_trait for #struct_name #impl_where {
+                #(
+                    #[allow(unused, clippy::all)]
+                    #fns
+                )*
+            }
+        }
+    }
+
     fn generate_expand(&mut self) -> TokenStream {
         let others = self
             .items
@@ -222,36 +261,14 @@ impl CubeTraitImpl {
             .collect::<Vec<_>>();
         let unsafety = &self.unsafety;
 
-        let struct_name = match expand_type_of(&self.struct_name, &self.generics, true) {
+        let struct_name = match expand_type_of(&self.struct_name) {
             Ok(name) => name,
             Err(err) => return err.into_compile_error(),
         };
 
         let mut trait_name = self.trait_name.clone();
-        let operator = operator_trait(&trait_name);
         let trait_ident = trait_name.segments.last_mut().unwrap();
         trait_ident.ident = format_ident!("{}Expand", trait_ident.ident);
-        // A `core::ops` operator expands through the frontend's operator
-        // trait of the same name, so `a + b` traces into the user's `add`. Its
-        // type arguments and `Output` are the expand types, and the unary
-        // operators' expand traits have no `Output`.
-        let others = match operator {
-            Some(op) => {
-                let mut path = frontend_path();
-                let mut last = trait_ident.clone();
-                last.arguments = match expand_type_args(&last.arguments, &self.generics) {
-                    Ok(args) => args,
-                    Err(err) => return err.into_compile_error(),
-                };
-                path.segments.push(last);
-                trait_name = path;
-                others
-                    .into_iter()
-                    .filter_map(|tokens| expand_operator_item(tokens, op))
-                    .collect()
-            }
-            None => others,
-        };
 
         let (generics, _, impl_where) = self.generics.split_for_impl();
 
@@ -267,64 +284,9 @@ impl CubeTraitImpl {
     }
 }
 
-/// The `core::ops` operator `path` names, if any, whichever way it's spelled.
-fn operator_trait(path: &syn::Path) -> Option<&'static str> {
-    const OPERATORS: &[&str] = &[
-        "Add",
-        "Sub",
-        "Mul",
-        "Div",
-        "Rem",
-        "BitAnd",
-        "BitOr",
-        "BitXor",
-        "Shl",
-        "Shr",
-        "Neg",
-        "Not",
-        "AddAssign",
-        "SubAssign",
-        "MulAssign",
-        "DivAssign",
-        "RemAssign",
-    ];
-    let last = path.segments.last()?.ident.to_string();
-    let prefix_is_ops = path.segments.len() == 1
-        || path
-            .segments
-            .iter()
-            .rev()
-            .nth(1)
-            .is_some_and(|seg| seg.ident == "ops");
-    OPERATORS
-        .iter()
-        .find(|op| **op == last)
-        .copied()
-        .filter(|_| prefix_is_ops)
-}
-
-/// `<A, B>` with every type replaced by its expand type.
-fn expand_type_args(
-    args: &syn::PathArguments,
-    generics: &syn::Generics,
-) -> syn::Result<syn::PathArguments> {
-    let mut args = args.clone();
-    if let syn::PathArguments::AngleBracketed(angle) = &mut args {
-        for arg in angle.args.iter_mut() {
-            if let GenericArgument::Type(ty) = arg {
-                let expanded = expand_type_of(ty, generics, false)?;
-                *ty = parse_quote!(#expanded);
-            }
-        }
-    }
-    Ok(args)
-}
-
-/// The expand type of `ty` in an impl over `generics`. It's named directly
-/// where a projection would leave the impl's parameters unconstrained (and
-/// always for the self type): primitives and vectors expand to `NativeExpand`,
-/// other structs to their derived `{Name}Expand`.
-fn expand_type_of(ty: &Type, generics: &syn::Generics, named: bool) -> syn::Result<TokenStream> {
+/// The expand type of an impl's self type `ty`: primitives and vectors expand
+/// to `NativeExpand`, other structs to their derived `{Name}Expand`.
+fn expand_type_of(ty: &Type) -> syn::Result<TokenStream> {
     const NATIVE: &[&str] = &[
         "f16", "bf16", "f32", "f64", "bool", "u8", "u16", "u32", "u64", "usize", "i8", "i16",
         "i32", "i64", "isize", "Vector",
@@ -335,40 +297,8 @@ fn expand_type_of(ty: &Type, generics: &syn::Generics, named: bool) -> syn::Resu
         let native = prelude_type("NativeExpand");
         return Ok(quote![#native<#path>]);
     }
-    let is_param = path.qself.is_none()
-        && path.path.segments.len() == 1
-        && generics.type_params().any(|param| param.ident == name);
-    if !named && (is_param || !mentions_params(ty.to_token_stream(), generics)) {
-        let cube_type = prelude_type("CubeType");
-        return Ok(quote![<#ty as #cube_type>::ExpandType]);
-    }
     path.path.segments.last_mut().unwrap().ident = format_ident!("{name}Expand");
     Ok(quote![#path])
-}
-
-fn mentions_params(tokens: TokenStream, generics: &syn::Generics) -> bool {
-    tokens.into_iter().any(|token| match token {
-        proc_macro2::TokenTree::Ident(ident) => generics.type_params().any(|p| p.ident == ident),
-        proc_macro2::TokenTree::Group(group) => mentions_params(group.stream(), generics),
-        _ => false,
-    })
-}
-
-/// An operator impl's item in the expand impl: `type Output = T` becomes the
-/// expand type, and unary operators drop it.
-fn expand_operator_item(tokens: TokenStream, operator: &str) -> Option<TokenStream> {
-    let Ok(item) = syn::parse2::<syn::ImplItemType>(tokens.clone()) else {
-        return Some(tokens);
-    };
-    if item.ident != "Output" {
-        return Some(tokens);
-    }
-    if matches!(operator, "Neg" | "Not") {
-        return None;
-    }
-    let cube_type = prelude_type("CubeType");
-    let ty = &item.ty;
-    Some(quote![type Output = <#ty as #cube_type>::ExpandType;])
 }
 
 fn path_of_type(ty: &Type) -> Result<TypePath, syn::Error> {

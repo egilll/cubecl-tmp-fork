@@ -13,22 +13,22 @@ use cubecl_core as cubecl;
 /// A real number a formula can be generic over: `f32`, `f32` lanes, or [`Dual`].
 ///
 /// Inside a `#[cube]` function generic over `R: Real`, use the operators and
-/// the path form of the functions (`R::exp(x)`, `R::constant(0.5)`). The
-/// operator bounds sit on the expand type, so `a + b` traces into the right
-/// arithmetic for either, a `let mut` accumulator of type `R` can be
-/// reassigned in a loop, and `*sequence.index(i)` reads an `R` back out.
+/// the path form of the functions (`R::exp(x)`, `R::constant(0.5)`). A
+/// `let mut` accumulator of type `R` can be reassigned in a loop, and
+/// `*sequence.index(i)` reads an `R` back out.
 pub trait Real:
     CubeType<
-        ExpandType: AddExpand<Output = <Self as CubeType>::ExpandType>
-                        + SubExpand<Output = <Self as CubeType>::ExpandType>
-                        + MulExpand<Output = <Self as CubeType>::ExpandType>
-                        + DivExpand<Output = <Self as CubeType>::ExpandType>
-                        + NegExpand
+        ExpandType: Expanded<Host = Self>
                         + Assign
                         + RuntimeAssign
                         + DerefExpand<Target = <Self as CubeType>::ExpandType>
                         + Copy,
-    > + core::ops::Add<Output = Self>
+    > + CubeAdd
+    + CubeSub
+    + CubeMul
+    + CubeDiv
+    + CubeNeg
+    + core::ops::Add<Output = Self>
     + core::ops::Sub<Output = Self>
     + core::ops::Mul<Output = Self>
     + core::ops::Div<Output = Self>

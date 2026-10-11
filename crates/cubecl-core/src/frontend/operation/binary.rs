@@ -6,7 +6,6 @@ use crate::{
 };
 use crate::{frontend::CubeType, tf32};
 use crate::{frontend::operation::base::binary_expand, unexpanded};
-use core::ops::*;
 use cubecl_ir::dialect::{
     bitwise::*,
     general::{BoolAndOp, BoolOrOp},
@@ -20,7 +19,7 @@ pub mod sub {
 
     use super::*;
 
-    pub fn expand<C: CubeSub>(
+    pub fn expand<C: CubePrimitive<Scalar: SubNativeExpand>>(
         scope: &Scope,
         lhs: NativeExpand<C>,
         rhs: NativeExpand<C>,
@@ -371,48 +370,13 @@ macro_rules! forward_ref_binop {
     };
 }
 
-macro_rules! define_core_binop {
+/// A scalar whose operator is native.
+macro_rules! define_native_binop {
     ($trait: ident, $method: ident) => {
         paste::paste! {
-            pub trait [<Scalar $trait>]: [<Cube $trait>] + [<$trait NativeExpand>] {}
-            impl<T: [<Cube $trait>] + [<$trait NativeExpand>]> [<Scalar $trait>] for T {}
-
-            pub trait [<Cube $trait>]:
-                $trait<Output = Self> + CubePrimitive<Scalar: [<$trait NativeExpand>]> + IntoRuntime
-                + CubeType<ExpandType: [<$trait Expand>]<Output = NativeExpand<Self>>> + Sized {
-                fn [<__expand_ $method _method>](self, scope: &Scope, rhs: NativeExpand<Self>) -> NativeExpand<Self> {
-                    let this = self.__expand_runtime_method(scope);
-                    this.[<__expand_ $method _method>](scope, rhs)
-                }
-
-                fn [<__expand_ $method>](
-                    scope: &Scope,
-                    lhs: NativeExpand<Self>,
-                    rhs: NativeExpand<Self>,
-                ) -> NativeExpand<Self> {
-                    lhs.[<__expand_ $method _method>](scope, rhs)
-                }
-            }
-
-            /// The expansion of the operator, which the macro calls as
-            /// `Trait::method(lhs, scope, rhs)` so either operand can give the other its type.
-            pub trait [<$trait Expand>]<Rhs = Self> {
-                type Output;
-                fn [<__expand_ $method _method>](self, scope: &Scope, rhs: Rhs) -> Self::Output;
-            }
-
             pub trait [<$trait NativeExpand>] {
                 fn [<__expand_native_ $method>](scope: &Scope, this: ExpandValue, rhs: ExpandValue) -> ExpandValue;
             }
-
-            impl<T: $trait<Output = Self> + CubePrimitive<Scalar: [<$trait NativeExpand>]> + IntoRuntime> [<Cube $trait>] for T {}
-            impl<T: [<Cube $trait>]> [<$trait Expand>] for NativeExpand<T> {
-                type Output = Self;
-                fn [<__expand_ $method _method>](self, scope: &Scope, rhs: Self) -> Self::Output {
-                    T::Scalar::[<__expand_native_ $method>](scope, self.into(), rhs.into()).into()
-                }
-            }
-            forward_ref_binop!([<$trait Expand>], [<__expand_ $method _method>], [<Cube $trait>]);
         }
     };
 }
@@ -428,39 +392,11 @@ macro_rules! impl_core_binop {
         }
     };
 }
-macro_rules! define_core_assign_binop {
-    ($trait: ident, $base_trait: ident, $method: ident, $base_method: ident) => {
-        paste::paste! {
-            pub trait [<Cube $trait>]: $trait + CubePrimitive<Scalar: [<$base_trait NativeExpand>]>
-                + CubeType<ExpandType: [<$trait Expand>]> + Sized {
-                fn [<__expand_ $method>](
-                    scope: &Scope,
-                    lhs: &mut NativeExpand<Self>,
-                    rhs: NativeExpand<Self>,
-                ) {
-                    lhs.[<__expand_ $method _method>](scope, rhs)
-                }
-            }
-
-            pub trait [<$trait Expand>]<Rhs = Self> {
-                fn [<__expand_ $method _method>](&mut self, scope: &Scope, rhs: Rhs);
-            }
-
-            impl<T: $trait + [<Cube $base_trait>]> [<Cube $trait>] for T {}
-            impl<T: $trait + [<Cube $base_trait>]> [<$trait Expand>] for NativeExpand<T> {
-                fn [<__expand_ $method _method>](&mut self, scope: &Scope, rhs: Self) {
-                    assign_binop_expand(scope, self, rhs, T::Scalar::[<__expand_native_ $base_method>]);
-                }
-            }
-        }
-    };
-}
-
-define_core_binop!(Add, add);
-define_core_binop!(Sub, sub);
-define_core_binop!(Mul, mul);
-define_core_binop!(Div, div);
-define_core_binop!(Rem, rem);
+define_native_binop!(Add, add);
+define_native_binop!(Sub, sub);
+define_native_binop!(Mul, mul);
+define_native_binop!(Div, div);
+define_native_binop!(Rem, rem);
 
 impl_core_binop!(i8, i16, i32, i64, isize, u8, u16, u32, u64, usize; Add, add, IAddOp);
 impl_core_binop!(f16, bf16, f32, flex32, tf32, f64; Add, add, FAddOp);
@@ -479,29 +415,17 @@ impl_core_binop!(i8, i16, i32, i64, isize; Rem, rem, SRemOp);
 impl_core_binop!(u8, u16, u32, u64, usize; Rem, rem, URemOp);
 impl_core_binop!(f16, bf16, f32, flex32, tf32, f64; Rem, rem, FRemOp);
 
-define_core_assign_binop!(AddAssign, Add, add_assign, add);
-define_core_assign_binop!(SubAssign, Sub, sub_assign, sub);
-define_core_assign_binop!(MulAssign, Mul, mul_assign, mul);
-define_core_assign_binop!(DivAssign, Div, div_assign, div);
-define_core_assign_binop!(RemAssign, Rem, rem_assign, rem);
-
-define_core_binop!(BitAnd, bitand);
-define_core_binop!(BitOr, bitor);
-define_core_binop!(BitXor, bitxor);
-define_core_binop!(Shl, shl);
-define_core_binop!(Shr, shr);
+define_native_binop!(BitAnd, bitand);
+define_native_binop!(BitOr, bitor);
+define_native_binop!(BitXor, bitxor);
+define_native_binop!(Shl, shl);
+define_native_binop!(Shr, shr);
 
 impl_core_binop!(i8, i16, i32, i64, isize, u8, u16, u32, u64, usize; BitAnd, bitand, BitwiseAndOp);
 impl_core_binop!(i8, i16, i32, i64, isize, u8, u16, u32, u64, usize; BitOr, bitor, BitwiseOrOp);
 impl_core_binop!(i8, i16, i32, i64, isize, u8, u16, u32, u64, usize; BitXor, bitxor, BitwiseXorOp);
 impl_core_binop!(i8, i16, i32, i64, isize, u8, u16, u32, u64, usize; Shl, shl, ShiftLeftOp);
 impl_core_binop!(i8, i16, i32, i64, isize, u8, u16, u32, u64, usize; Shr, shr, ShiftRightOp);
-
-define_core_assign_binop!(BitAndAssign, BitAnd, bitand_assign, bitand);
-define_core_assign_binop!(BitOrAssign, BitOr, bitor_assign, bitor);
-define_core_assign_binop!(BitXorAssign, BitXor, bitxor_assign, bitxor);
-define_core_assign_binop!(ShlAssign, Shl, shl_assign, shl);
-define_core_assign_binop!(ShrAssign, Shr, shr_assign, shr);
 
 impl BitAndNativeExpand for bool {
     fn __expand_native_bitand(scope: &Scope, this: ExpandValue, rhs: ExpandValue) -> ExpandValue {

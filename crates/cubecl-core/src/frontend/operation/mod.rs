@@ -8,6 +8,7 @@ mod copy_op;
 mod dp4a_internal;
 #[path = "fma.rs"]
 mod fma_internal;
+mod operator;
 mod unary;
 
 pub use assignation::*;
@@ -18,4 +19,5 @@ pub use cmp::*;
 pub use copy_op::*;
 pub use dp4a_internal::*;
 pub use fma_internal::*;
+pub use operator::*;
 pub use unary::*;

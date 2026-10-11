@@ -104,7 +104,7 @@ impl CubeTypeEnum {
 
         let name = &self.ident;
         let name_expand = &self.name_expand;
-        let reference_impls = reference_impls(name_expand, &self.generics);
+        let reference_impls = reference_impls(&self.ident, name_expand, &self.generics);
         let (generics, generic_names, where_clause) = self.generics.split_for_impl();
 
         let constructors = if self.with_constructors {

@@ -15,8 +15,15 @@ impl CubeType {
 
 /// Lets an expand type be dereferenced and reborrowed like the type it expands: `*x` copies it
 /// into fresh variables, and `&mut x` can be passed where `&x` is expected.
-pub(crate) fn reference_impls(name_expand: &Ident, generics: &Generics) -> TokenStream {
+/// It is also an operator operand of the type it expands, by value or behind a reference.
+pub(crate) fn reference_impls(
+    name: &Ident,
+    name_expand: &Ident,
+    generics: &Generics,
+) -> TokenStream {
     let scope = prelude_type("Scope");
+    let expanded = prelude_type("Expanded");
+    let expanded_place = prelude_type("ExpandedPlace");
     let deref = prelude_type("DerefExpand");
     let clone = prelude_type("ExpandTypeClone");
     let into_mut = prelude_type("IntoMut");
@@ -32,6 +39,42 @@ pub(crate) fn reference_impls(name_expand: &Ident, generics: &Generics) -> Token
 
             fn __expand_deref_method(&self, scope: &#scope) -> Self {
                 #into_mut::into_mut(#clone::clone_unchecked(self), scope)
+            }
+        }
+
+        impl #impl_generics #expanded for #name_expand #generic_names #where_clause {
+            type Host = #name #generic_names;
+
+            fn __expand_operand(self, _: &#scope) -> Self {
+                self
+            }
+        }
+
+        impl #impl_generics #expanded_place for #name_expand #generic_names #where_clause {
+            fn __expand_place(&mut self) -> &mut Self {
+                self
+            }
+        }
+
+        impl #ref_impl_generics #expanded for &'__a mut #name_expand #generic_names #where_clause {
+            type Host = #name #generic_names;
+
+            fn __expand_operand(self, _: &#scope) -> #name_expand #generic_names {
+                #clone::clone_unchecked(&*self)
+            }
+        }
+
+        impl #ref_impl_generics #expanded_place for &'__a mut #name_expand #generic_names #where_clause {
+            fn __expand_place(&mut self) -> &mut #name_expand #generic_names {
+                self
+            }
+        }
+
+        impl #ref_impl_generics #expanded for &'__a #name_expand #generic_names #where_clause {
+            type Host = #name #generic_names;
+
+            fn __expand_operand(self, _: &#scope) -> #name_expand #generic_names {
+                #clone::clone_unchecked(self)
             }
         }
 

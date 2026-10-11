@@ -13,7 +13,7 @@ use crate::{
 };
 
 #[cube]
-fn atomic_i_sub<T: Numeric + CubeNot, N: Size>(
+fn atomic_i_sub<T: Numeric + ScalarNot, N: Size>(
     ptr: Atomic<Vector<T, N>>,
     value: Vector<T, N>,
 ) -> Vector<T, N> {
@@ -21,7 +21,7 @@ fn atomic_i_sub<T: Numeric + CubeNot, N: Size>(
 }
 
 #[cube]
-fn atomic_f_sub<T: Numeric + CubeNeg, N: Size>(
+fn atomic_f_sub<T: Numeric + ScalarNeg, N: Size>(
     ptr: Atomic<Vector<T, N>>,
     value: Vector<T, N>,
 ) -> Vector<T, N> {
@@ -29,7 +29,7 @@ fn atomic_f_sub<T: Numeric + CubeNeg, N: Size>(
 }
 
 #[cube]
-fn atomic_store<T: Numeric + CubeNeg, N: Size>(ptr: Atomic<Vector<T, N>>, value: Vector<T, N>) {
+fn atomic_store<T: Numeric + ScalarNeg, N: Size>(ptr: Atomic<Vector<T, N>>, value: Vector<T, N>) {
     ptr.exchange(value);
 }
 

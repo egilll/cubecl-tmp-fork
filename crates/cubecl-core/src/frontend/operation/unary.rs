@@ -1,4 +1,4 @@
-use core::ops::{Div, Neg, Not};
+use core::ops::Div;
 use cubecl_common::{e2m1, e2m1x2, e4m3, e5m2, ue8m0};
 use cubecl_ir::dialect::{bitwise::*, general::BoolNotOp, math::*, vector::*};
 use half::{bf16, f16};
@@ -7,9 +7,7 @@ use crate::{
     flex32,
     frontend::{DivExpand, Scalar},
     ir::{ExpandValue, Scope},
-    prelude::{
-        CubePrimitive, CubePrimitiveExpand, CubeType, IntoExpand, NativeExpand, Reinterpret,
-    },
+    prelude::{CubePrimitive, CubePrimitiveExpand, CubeType, NativeExpand, Reinterpret},
     tf32, unexpanded,
 };
 
@@ -92,7 +90,7 @@ macro_rules! impl_abs_nop {
 pub mod not {
     use super::*;
 
-    pub fn expand<T: CubeNot>(scope: &Scope, x: NativeExpand<T>) -> NativeExpand<T> {
+    pub fn expand<T: CubePrimitive>(scope: &Scope, x: NativeExpand<T>) -> NativeExpand<T> {
         if T::Scalar::elem_type(scope).is_bool() {
             unary_expand(scope, x.into(), BoolNotOp::new).into()
         } else {
@@ -163,7 +161,7 @@ macro_rules! impl_normalize {
             }
 
             $(impl $trait_name for $type {})*
-            impl<T: $trait_name + CubePrimitive<WithScalar<<T as Abs>::AbsElem> = T>> [<$trait_name Expand>] for NativeExpand<T> where NativeExpand<T>: DivExpand<Output = NativeExpand<T>> {
+            impl<T: $trait_name + CubePrimitive<WithScalar<<T as Abs>::AbsElem> = T>> [<$trait_name Expand>] for NativeExpand<T> where NativeExpand<T>: DivExpand<NativeExpand<T>, Output = NativeExpand<T>> {
                 fn [<__expand_ $method_name _method>](self, scope: &Scope) -> Self {
                     if self.__expand_vector_size_method(scope) == 1 {
                         // Sign might work, but dividing by `abs` preserves the NaN when normalizing 0.0
@@ -267,79 +265,12 @@ macro_rules! impl_unary_func_fixed_out_ty {
     }
 }
 
-// Needs special handling because Rust combines bitwise and logical or into one trait
-macro_rules! impl_not {
-    ($trait:ident, $method_name:ident, $($type:ty),*) => {
-        paste::paste! {
-            pub trait [<Cube $trait>]:
-                $trait<Output = Self>
-                + CubePrimitive
-                + CubeType<ExpandType: [<$trait Expand>]>
-                + IntoExpand<Expand = <Self as CubeType>::ExpandType> {
-                fn [<__expand_ $method_name _method>](self, scope: &Scope) -> NativeExpand<Self> {
-                    let this = self.into_expand(scope);
-                    this.[<__expand_ $method_name _method>](scope)
-                }
+/// A scalar whose `!` is native: logical for `bool`, bitwise for integers.
+pub trait NotNativeExpand {}
 
-                fn [<__expand_ $method_name>](scope: &Scope, x: NativeExpand<Self>) -> NativeExpand<Self> {
-                    x.[<__expand_ $method_name _method>](scope)
-                }
-            }
-
-            pub trait [<$trait Expand>] {
-                fn [<__expand_ $method_name _method>](self, scope: &Scope) -> Self;
-            }
-
-            $(impl [<Cube $trait>] for $type {})*
-            impl<T: [<Cube $trait>] + CubePrimitive> [<$trait Expand>] for NativeExpand<T> {
-                fn [<__expand_ $method_name _method>](self, scope: &Scope) -> Self {
-                    not::expand(scope, self.into())
-                }
-            }
-        }
-    }
-}
-
-macro_rules! define_core_unop {
-    ($trait: ident, $method: ident) => {
-        paste::paste! {
-            pub trait [<Scalar $trait>]: [<Cube $trait>] + [<$trait NativeExpand>] {}
-            impl<T: [<Cube $trait>] + [<$trait NativeExpand>]> [<Scalar $trait>] for T {}
-
-            pub trait [<Cube $trait>]:
-                $trait<Output = Self> + CubePrimitive<Scalar: [<$trait NativeExpand>]>
-                + IntoExpand<Expand = <Self as CubeType>::ExpandType>
-                + CubeType<ExpandType: [<$trait Expand>]> + Sized {
-                fn [<__expand_ $method _method>](self, scope: &Scope) -> NativeExpand<Self> {
-                    let this: NativeExpand<Self> = self.into_expand(scope);
-                    this.[<__expand_ $method _method>](scope)
-                }
-
-                fn [<__expand_ $method>](
-                    scope: &Scope,
-                    lhs: NativeExpand<Self>,
-                ) -> NativeExpand<Self> {
-                    lhs.[<__expand_ $method _method>](scope)
-                }
-            }
-
-            pub trait [<$trait Expand>] {
-                fn [<__expand_ $method _method>](self, scope: &Scope) -> Self;
-            }
-
-            pub trait [<$trait NativeExpand>] {
-                fn [<__expand_native_ $method>](scope: &Scope, this: ExpandValue) -> ExpandValue;
-            }
-
-            impl<T: $trait<Output = Self> + CubePrimitive<Scalar: [<$trait NativeExpand>]>
-                + IntoExpand<Expand = <Self as CubeType>::ExpandType>> [<Cube $trait>] for T {}
-            impl<T: [<Cube $trait>]> [<$trait Expand>] for NativeExpand<T> {
-                fn [<__expand_ $method _method>](self, scope: &Scope) -> Self {
-                    T::Scalar::[<__expand_native_ $method>](scope, self.expand).into()
-                }
-            }
-        }
-    };
+/// A scalar whose `-` is native.
+pub trait NegNativeExpand {
+    fn __expand_native_neg(scope: &Scope, this: ExpandValue) -> ExpandValue;
 }
 
 macro_rules! impl_core_unop {
@@ -354,11 +285,11 @@ macro_rules! impl_core_unop {
     };
 }
 
-impl_not!(
-    Not, not, bool, u8, u16, u32, u64, i8, i16, i32, i64, isize, usize
-);
+macro_rules! impl_not_native {
+    ($($ty: ty),*) => {$(impl NotNativeExpand for $ty {})*};
+}
+impl_not_native!(bool, u8, u16, u32, u64, i8, i16, i32, i64, isize, usize);
 
-define_core_unop!(Neg, neg);
 impl_core_unop!(i8, i16, i32, i64, isize; Neg, neg, SNegOp);
 impl_core_unop!(f16, bf16, f32, flex32, tf32, f64; Neg, neg, FNegOp);
 

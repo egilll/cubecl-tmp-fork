@@ -267,7 +267,6 @@ impl<P: Scalar + Floor, N: Size> Floor for Vector<P, N> {}
 impl<P: Scalar + Ceil, N: Size> Ceil for Vector<P, N> {}
 impl<P: Scalar + Trunc, N: Size> Trunc for Vector<P, N> {}
 impl<P: Scalar + ReverseBits, N: Size> ReverseBits for Vector<P, N> {}
-impl<P: Scalar + CubeNot, N: Size> CubeNot for Vector<P, N> {}
 impl<P: Scalar + SaturatingAdd, N: Size> SaturatingAdd for Vector<P, N> {}
 impl<P: Scalar + SaturatingSub, N: Size> SaturatingSub for Vector<P, N> {}
 impl<P: Scalar + IsNan, N: Size> IsNan for Vector<P, N> {}

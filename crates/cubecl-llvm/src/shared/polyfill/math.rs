@@ -108,7 +108,7 @@ pub fn powi<T: Float, N: Size>(base: Vector<T, N>, exp: Vector<i32, N>) -> Vecto
     let neg = exp.less_than(&Vector::<i32, N>::new(0));
     let mut e = select_many(neg, Vector::<i32, N>::new(0) - exp, exp);
 
-    let bits = 32;
+    let bits = 32u32;
 
     let mut acc = one_t;
     let mut sq = base;

@@ -347,6 +347,7 @@ impl CubeTypeStruct {
 
         let name_expand = &self.name_expand;
         let reference_impls = reference_impls(
+            &self.ident,
             name_expand.as_ref().expect("should be set when parsed"),
             &self.generics,
         );

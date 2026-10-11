@@ -369,7 +369,10 @@ fn iter_expand<I: Int>(
     let step: ExpandValue = I::new(1).into();
 
     if inclusive {
-        end = end.__expand_add_method(scope, I::new(1).into());
+        end = end.__expand_add_method(
+            scope,
+            NativeExpand::<I>::from(Into::<ExpandValue>::into(I::new(1))),
+        );
     }
 
     let start = start.read_value(scope);
@@ -401,7 +404,10 @@ impl<I: Int + Into<ExpandValue>> Iterable for SteppedRangeExpand<I> {
     fn expand(self, scope: &Scope, body: &mut dyn FnMut(&Scope, <I as CubeType>::ExpandType)) {
         let mut end = self.end;
         if self.inclusive {
-            end = end.__expand_add_method(scope, I::new(1).into());
+            end = end.__expand_add_method(
+                scope,
+                NativeExpand::<I>::from(Into::<ExpandValue>::into(I::new(1))),
+            );
         }
 
         let start = self.start.read_value(scope);

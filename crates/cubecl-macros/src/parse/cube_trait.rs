@@ -1,15 +1,16 @@
 use proc_macro2::TokenStream;
 use quote::{ToTokens, format_ident, quote};
 use syn::{
-    Attribute, FnArg, Generics, Ident, ImplItem, ItemImpl, ItemTrait, Path, Signature, Token,
-    TraitItem, Type, TypeParamBound, Visibility, parse_quote, punctuated::Punctuated,
-    spanned::Spanned, visit_mut::VisitMut,
+    Attribute, FnArg, Generics, Ident, ImplItem, ItemImpl, ItemTrait, Path, ReceiverKind,
+    Signature, Token, TraitItem, Type, TypeParamBound, Visibility, parse_quote,
+    punctuated::Punctuated, spanned::Spanned, visit_mut::VisitMut,
 };
 
 use crate::{
     RemoveHelpers, ReplaceDefines,
     parse::{
         StripBounds, StripDefault,
+        helpers::rename_self,
         kernel::{KernelArgs, KernelFn},
         signature::{KernelParam, KernelSignature},
     },
@@ -36,6 +37,9 @@ pub struct CubeTraitImpl {
     pub items: Vec<CubeTraitImplItem>,
     pub original_items: Vec<ImplItem>,
     pub default_methods: bool,
+    /// The `core::ops` operator this implements, whose kernel implementation
+    /// is the frontend's `Cube{operator}` on the same host type.
+    pub operator: Option<&'static str>,
 }
 
 pub enum CubeTraitItem {
@@ -129,6 +133,7 @@ impl CubeTraitItem {
 impl CubeTraitImplItem {
     pub fn from_impl_item(
         struct_ty: &Type,
+        trait_path: &Path,
         item: ImplItem,
         args: &KernelArgs,
     ) -> syn::Result<Self> {
@@ -138,7 +143,7 @@ impl CubeTraitImplItem {
                 let args = &method_args;
                 let is_method = has_receiver(&func.sig);
                 let name = func.sig.ident.clone();
-                let full_name = quote!(#struct_ty::#name).to_string();
+                let full_name = quote!(<#struct_ty as #trait_path>::#name).to_string();
 
                 let mut func = KernelFn::from_sig_and_block(
                     func.attrs, func.vis, func.sig, func.block, full_name, args,
@@ -267,12 +272,22 @@ fn has_receiver(sig: &Signature) -> bool {
 
 impl CubeTraitImpl {
     pub fn from_item_impl(mut item_impl: ItemImpl, args: &KernelArgs) -> syn::Result<Self> {
+        let trait_path = item_impl.trait_.as_ref().unwrap().0.clone();
+        let operator = operator_trait(&trait_path);
         let items = item_impl
             .items
             .iter_mut()
             .map(|item| {
-                let impl_item =
-                    CubeTraitImplItem::from_impl_item(&item_impl.self_ty, item.clone(), args)?;
+                let source = match operator {
+                    Some(_) => operator_function(item.clone())?,
+                    None => item.clone(),
+                };
+                let impl_item = CubeTraitImplItem::from_impl_item(
+                    &item_impl.self_ty,
+                    &trait_path,
+                    source,
+                    args,
+                )?;
                 // A method's own `#[cube(...)]` is read above, and the plain
                 // method emitted next to the expansion must not expand again.
                 if let ImplItem::Fn(func) = item {
@@ -308,6 +323,68 @@ impl CubeTraitImpl {
             items,
             original_items: item_impl.items,
             default_methods: args.default_methods.is_present(),
+            operator,
         })
     }
+}
+
+/// The `core::ops` operator `path` names, if any, whichever way it's spelled.
+pub fn operator_trait(path: &syn::Path) -> Option<&'static str> {
+    const OPERATORS: &[&str] = &[
+        "Add",
+        "Sub",
+        "Mul",
+        "Div",
+        "Rem",
+        "BitAnd",
+        "BitOr",
+        "BitXor",
+        "Shl",
+        "Shr",
+        "Neg",
+        "Not",
+        "AddAssign",
+        "SubAssign",
+        "MulAssign",
+        "DivAssign",
+        "RemAssign",
+    ];
+    let last = path.segments.last()?.ident.to_string();
+    let prefix_is_ops = path.segments.len() == 1
+        || path
+            .segments
+            .iter()
+            .rev()
+            .nth(1)
+            .is_some_and(|seg| seg.ident == "ops");
+    OPERATORS
+        .iter()
+        .find(|op| **op == last)
+        .copied()
+        .filter(|_| prefix_is_ops)
+}
+
+/// An operator method as an associated function of the host type: its receiver
+/// becomes a `this` parameter, since the kernel implementation is keyed on the
+/// host type, where `self` would not be its expand type.
+fn operator_function(item: ImplItem) -> syn::Result<ImplItem> {
+    let ImplItem::Fn(mut func) = item else {
+        return Ok(item);
+    };
+    let Some(FnArg::Receiver(receiver)) = func.sig.inputs.first().cloned() else {
+        return Ok(ImplItem::Fn(func));
+    };
+    let mutability = receiver.mutability;
+    let this: FnArg = match receiver.kind {
+        ReceiverKind::Value => parse_quote!(#mutability this: Self),
+        ReceiverKind::Reference(and, lifetime, mut_) => {
+            parse_quote!(this: #and #lifetime #mut_ Self)
+        }
+        ReceiverKind::Typed(_, ty) => parse_quote!(#mutability this: #ty),
+        _ => return Ok(ImplItem::Fn(func)),
+    };
+    func.sig.inputs[0] = this;
+    let this = Ident::new("this", receiver.self_token.span);
+    func.block = syn::parse2(rename_self(func.block.to_token_stream(), &this))?;
+    Ok(ImplItem::Fn(func))
 }

@@ -795,7 +795,7 @@ impl<Marker: 'static> Float for DynamicScalar<Marker> {
     }
 }
 
-impl<Marker: 'static> CubeNot for DynamicScalar<Marker> {}
+impl<Marker: 'static> NotNativeExpand for DynamicScalar<Marker> {}
 impl<Marker: 'static> ReverseBits for DynamicScalar<Marker> {}
 impl<Marker: 'static> ReverseBitsNativeExpand for DynamicScalar<Marker> {
     fn __expand_native_reverse_bits(scope: &Scope, input: ExpandValue) -> ExpandValue {

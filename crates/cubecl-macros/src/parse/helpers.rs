@@ -249,3 +249,36 @@ impl VisitMut for SeparateGeneratedLocals {
         mac.tokens = Self::separate_tokens(core::mem::take(&mut mac.tokens));
     }
 }
+
+/// `tokens` with the `self` keyword replaced by `with`, except as the start
+/// of a path (`self::`), for a method body moved where `self` can't name the
+/// receiver.
+pub fn rename_self(tokens: TokenStream, with: &Ident) -> TokenStream {
+    let tokens: Vec<TokenTree> = tokens.into_iter().collect();
+    let mut out = Vec::with_capacity(tokens.len());
+    for (i, token) in tokens.iter().enumerate() {
+        match token {
+            TokenTree::Ident(ident) if ident == "self" => {
+                let is_path = matches!(
+                    tokens.get(i + 1),
+                    Some(TokenTree::Punct(p)) if p.as_char() == ':'
+                );
+                match is_path {
+                    true => out.push(token.clone()),
+                    false => {
+                        let mut renamed = with.clone();
+                        renamed.set_span(ident.span());
+                        out.push(TokenTree::Ident(renamed));
+                    }
+                }
+            }
+            TokenTree::Group(group) => {
+                let mut renamed = Group::new(group.delimiter(), rename_self(group.stream(), with));
+                renamed.set_span(group.span());
+                out.push(TokenTree::Group(renamed));
+            }
+            other => out.push(other.clone()),
+        }
+    }
+    out.into_iter().collect()
+}

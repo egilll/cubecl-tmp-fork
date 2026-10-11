@@ -378,7 +378,7 @@ pub mod bitwise {
 pub mod plane {
     use super::*;
     use crate::prelude::{
-        CUBE_DIM, CubeAdd, CubeMul, CubePartialOrd, PLANE_DIM, UNIT_POS_PLANE, max, min,
+        CUBE_DIM, CubePartialOrd, PLANE_DIM, ScalarAdd, ScalarMul, UNIT_POS_PLANE, max, min,
         plane_shuffle_up, plane_shuffle_xor, select,
     };
 
@@ -393,13 +393,13 @@ pub mod plane {
     pub struct OpMax;
 
     #[cube]
-    impl<T: Scalar + CubeAdd, N: Size> PlaneOp<T, N> for OpAdd {
+    impl<T: Scalar + ScalarAdd, N: Size> PlaneOp<T, N> for OpAdd {
         fn apply(lhs: Vector<T, N>, rhs: Vector<T, N>) -> Vector<T, N> {
             lhs + rhs
         }
     }
     #[cube]
-    impl<T: Scalar + CubeMul, N: Size> PlaneOp<T, N> for OpMul {
+    impl<T: Scalar + ScalarMul, N: Size> PlaneOp<T, N> for OpMul {
         fn apply(lhs: Vector<T, N>, rhs: Vector<T, N>) -> Vector<T, N> {
             lhs * rhs
         }
