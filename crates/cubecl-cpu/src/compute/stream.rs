@@ -155,10 +155,7 @@ impl CpuStream {
                 {
                     self.submit();
                 }
-                // No unit cap: the threadpool grows to fit any cube_dim, one
-                // worker per unit for barrier kernels.
-                let units = cube_dim.num_elems();
-                self.threadpool.lock().execute_data(
+                let calls = self.threadpool.lock().execute_data(
                     pliron_engine,
                     bindings,
                     cube_dim,
@@ -168,7 +165,7 @@ impl CpuStream {
                     self.next_counter_step,
                     &self.atomic_counter,
                 );
-                self.next_counter_step += units as u64;
+                self.next_counter_step += calls;
             }
         }
     }

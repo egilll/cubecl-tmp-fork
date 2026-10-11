@@ -1,34 +1,56 @@
-use crate::{
-    cpu::synchronization::ATTR_SYNC_CUBE_STATE,
-    prelude::*,
-    shared::{
-        builtin_values::{
-            BuiltinValues, Replacer, absolute_pos, absolute_pos_x, absolute_pos_y, absolute_pos_z,
-            constant, cube_count, cube_pos, set_dim_and_cluster_constants, unit_pos,
-        },
-        shared_memory::declares_shared_memory,
-    },
-};
-use cubecl_core::{
-    ir::dialect::{
-        branch::{RangeLoopOp, YieldOp},
-        general::ReadBuiltinOp,
-        synchronization::{SyncOp, SyncScope},
-    },
-    prelude::*,
-};
-use pliron::linked_list::ContainsLinkedList;
+//! The builtins of a CPU kernel, read as one unit of one cube.
+//!
+//! The kernel body is compiled for a single unit. Its cube and unit coordinates are left as
+//! builtin reads, which [`UnitLoopsPass`](super::unit_loops::UnitLoopsPass) replaces once it has
+//! wrapped the body in loops over the cubes and units a launch hands the function.
 
-pub const CPU_RUNTIME_BUILTINS: [Builtin; 6] = [
-    Builtin::CubeCountX,
-    Builtin::CubeCountY,
-    Builtin::CubeCountZ,
+use crate::{
+    prelude::*,
+    shared::builtin_values::{
+        BuiltinValues, Replacer, absolute_pos, absolute_pos_x, absolute_pos_y, absolute_pos_z,
+        constant, cube_count, cube_pos, set_dim_and_cluster_constants, unit_pos,
+    },
+};
+use cubecl_core::{ir::dialect::general::ReadBuiltinOp, prelude::*};
+use pliron::{dict_key, linked_list::ContainsLinkedList};
+
+dict_key!(
+    /// The launch's cube count along x.
+    ATTR_CUBE_COUNT_X, "cube_count_x"
+);
+dict_key!(
+    /// The launch's cube count along y.
+    ATTR_CUBE_COUNT_Y, "cube_count_y"
+);
+dict_key!(
+    /// The first cube of the launch's linear range the call runs.
+    ATTR_CUBE_BEGIN, "cube_begin"
+);
+dict_key!(
+    /// One past the last cube the call runs.
+    ATTR_CUBE_END, "cube_end"
+);
+dict_key!(
+    /// The first unit of each cube the call runs.
+    ATTR_UNIT_BEGIN, "unit_begin"
+);
+dict_key!(
+    /// One past the last unit of each cube the call runs.
+    ATTR_UNIT_END, "unit_end"
+);
+
+/// The coordinates [`UnitLoopsPass`](super::unit_loops::UnitLoopsPass) provides.
+pub const LOOP_BUILTINS: [Builtin; 6] = [
+    Builtin::CubePosX,
+    Builtin::CubePosY,
+    Builtin::CubePosZ,
     Builtin::UnitPosX,
     Builtin::UnitPosY,
     Builtin::UnitPosZ,
 ];
 
-/// CPU launch grid emulation.
+/// Arguments every CPU kernel takes after its buffers: the cube count, then the ranges of cubes
+/// and units the call runs.
 #[derive(Default)]
 pub struct InsertConstantEmulationPass;
 
@@ -51,65 +73,67 @@ impl Pass for InsertConstantEmulationPass {
         let cube_dim = abi.cube_dim;
         let cluster_dim = abi.cluster_dim.unwrap_or(Dim3::new_single());
 
-        let fence_cubes = cube_dim.num_elems() > 1 && declares_shared_memory(ctx, op);
-
         let entry_block = func.get_entry_block(ctx);
-        let terminator = entry_block
-            .deref(ctx)
-            .get_terminator(ctx)
-            .expect("Entry block should be terminated with a return");
-
-        let body_ops: Vec<Ptr<Operation>> = entry_block
-            .deref(ctx)
-            .iter(ctx)
-            .filter(|body_op| *body_op != terminator)
-            .collect();
-        for body_op in body_ops.iter() {
-            body_op.unlink(ctx);
-        }
-
+        let first = entry_block.deref(ctx).iter(ctx).next();
         let mut builtins = BuiltinValues::default();
-
-        let body_block = {
-            let mut inserter = OpInserter::new_before_operation(terminator);
+        let mut placeholders = Vec::new();
+        {
+            let mut inserter = match first {
+                Some(first) => OpInserter::new_before_operation(first),
+                None => OpInserter::new_at_block_end(entry_block),
+            };
             let scope = Scope::from_context_and_inserter(ctx, &mut inserter);
 
             let u32_ty = u32::__expand_as_type(&scope);
-            for builtin in CPU_RUNTIME_BUILTINS {
-                let arg = func.push_argument(scope.ctx(), u32_ty);
-                let value = entry_block.deref(scope.ctx()).get_argument(arg);
-                builtins.set(builtin, value);
+            let u64_ty = u64::__expand_as_type(&scope);
+            let argument = |ty, key: Option<&Identifier>| {
+                let arg = func.push_argument(scope.ctx(), ty);
+                if let Some(key) = key {
+                    func.set_arg_attr_unit(scope.ctx(), arg, key);
+                }
+                entry_block.deref(scope.ctx()).get_argument(arg)
+            };
+            builtins.set(
+                Builtin::CubeCountX,
+                argument(u32_ty, Some(&ATTR_CUBE_COUNT_X)),
+            );
+            builtins.set(
+                Builtin::CubeCountY,
+                argument(u32_ty, Some(&ATTR_CUBE_COUNT_Y)),
+            );
+            builtins.set(Builtin::CubeCountZ, argument(u32_ty, None));
+            argument(u64_ty, Some(&ATTR_CUBE_BEGIN));
+            argument(u64_ty, Some(&ATTR_CUBE_END));
+            argument(u32_ty, Some(&ATTR_UNIT_BEGIN));
+            argument(u32_ty, Some(&ATTR_UNIT_END));
+
+            for builtin in LOOP_BUILTINS {
+                let read = ReadBuiltinOp::new(scope.ctx_mut(), u32_ty, builtin);
+                scope.register(&read);
+                placeholders.push(read.get_operation());
+                builtins.set(builtin, read.get_result(scope.ctx()));
             }
 
-            let ptr_ty = LlvmPointerType::get(scope.ctx_mut(), 0).into();
-            let state_arg = func.push_argument(scope.ctx(), ptr_ty);
-            func.set_arg_attr_unit(scope.ctx(), state_arg, &ATTR_SYNC_CUBE_STATE);
-
-            insert_skeleton(&scope, &mut builtins, cube_dim, cluster_dim)
-        };
-
-        for body_op in body_ops {
-            body_op.insert_at_back(body_block, ctx);
+            derive_builtins(&scope, &mut builtins, cube_dim, cluster_dim);
         }
-        if fence_cubes {
-            SyncOp::new(ctx, SyncScope::Cube)
-                .get_operation()
-                .insert_at_back(body_block, ctx);
-        }
-        YieldOp::new(ctx)
-            .get_operation()
-            .insert_at_back(body_block, ctx);
 
-        let mut replacer = Replacer {
-            builtins: &builtins,
-            replacements: Vec::new(),
-        };
-        visit_all_ops_of_type::<ReadBuiltinOp, _>(ctx, &mut replacer, op, |ctx, replacer, op| {
-            if let Some(value) = replacer.builtins.get(op.builtin(ctx).0) {
-                replacer.replacements.push((op.get_result(ctx), value));
+        let mut state = (
+            Replacer {
+                builtins: &builtins,
+                replacements: Vec::new(),
+            },
+            placeholders,
+        );
+        visit_all_ops_of_type::<ReadBuiltinOp, _>(ctx, &mut state, op, |ctx, state, read| {
+            let (replacer, placeholders) = state;
+            if placeholders.contains(&read.get_operation()) {
+                return;
+            }
+            if let Some(value) = replacer.builtins.get(read.builtin(ctx).0) {
+                replacer.replacements.push((read.get_result(ctx), value));
             }
         });
-        for (old_value, new_value) in replacer.replacements {
+        for (old_value, new_value) in state.0.replacements {
             old_value.replace_all_uses_with(ctx, &new_value);
         }
 
@@ -127,12 +151,8 @@ pub fn runtime_arg(ctx: &Context, func: FuncOp, key: &Identifier) -> Value {
         .unwrap_or_else(|| panic!("entry point must carry the '{key}' argument"))
 }
 
-fn insert_skeleton(
-    scope: &Scope,
-    builtins: &mut BuiltinValues,
-    cube_dim: Dim3,
-    cluster_dim: Dim3,
-) -> Ptr<BasicBlock> {
+/// Every builtin the coordinates decide.
+fn derive_builtins(scope: &Scope, builtins: &mut BuiltinValues, cube_dim: Dim3, cluster_dim: Dim3) {
     set_dim_and_cluster_constants(scope, builtins, cube_dim, cluster_dim);
 
     let mut set_const = |builtin: Builtin, value: u32| {
@@ -143,21 +163,11 @@ fn insert_skeleton(
     set_const(Builtin::PlaneDim, 1);
     set_const(Builtin::UnitPosPlane, 0);
 
-    let zero = constant::expand(scope, 0).value(scope);
-    let one = constant::expand(scope, 1).value(scope);
-
-    let unit_pos_x = builtins.expect(Builtin::UnitPosX);
-    let unit_pos_y = builtins.expect(Builtin::UnitPosY);
-    let unit_pos_z = builtins.expect(Builtin::UnitPosZ);
-    let cube_count_x = builtins.expect(Builtin::CubeCountX);
-    let cube_count_y = builtins.expect(Builtin::CubeCountY);
-    let cube_count_z = builtins.expect(Builtin::CubeCountZ);
-
     let unit_pos = unit_pos::expand(
         scope,
-        unit_pos_x.into(),
-        unit_pos_y.into(),
-        unit_pos_z.into(),
+        builtins.expect(Builtin::UnitPosX).into(),
+        builtins.expect(Builtin::UnitPosY).into(),
+        builtins.expect(Builtin::UnitPosZ).into(),
         cube_dim.x,
         cube_dim.y,
     )
@@ -167,77 +177,55 @@ fn insert_skeleton(
 
     let cube_count = cube_count::expand(
         scope,
-        cube_count_x.into(),
-        cube_count_y.into(),
-        cube_count_z.into(),
+        builtins.expect(Builtin::CubeCountX).into(),
+        builtins.expect(Builtin::CubeCountY).into(),
+        builtins.expect(Builtin::CubeCountZ).into(),
     )
     .value(scope);
     builtins.set(Builtin::CubeCount, cube_count);
 
-    let loop_z = RangeLoopOp::new(scope.ctx_mut(), zero, cube_count_z, one);
-    let scope_z = scope.child(OpInserter::new_at_block_end(loop_z.loop_body(scope.ctx())));
-    {
-        let cube_pos_z = loop_z.iter_var(scope.ctx());
-        builtins.set(Builtin::CubePosZ, cube_pos_z);
+    let absolute_pos_x = absolute_pos_x::expand(
+        scope,
+        builtins.expect(Builtin::CubePosX).into(),
+        builtins.expect(Builtin::UnitPosX).into(),
+        cube_dim.x,
+    )
+    .value(scope);
+    builtins.set(Builtin::AbsolutePosX, absolute_pos_x);
+    let absolute_pos_y = absolute_pos_y::expand(
+        scope,
+        builtins.expect(Builtin::CubePosY).into(),
+        builtins.expect(Builtin::UnitPosY).into(),
+        cube_dim.y,
+    )
+    .value(scope);
+    builtins.set(Builtin::AbsolutePosY, absolute_pos_y);
+    let absolute_pos_z = absolute_pos_z::expand(
+        scope,
+        builtins.expect(Builtin::CubePosZ).into(),
+        builtins.expect(Builtin::UnitPosZ).into(),
+        cube_dim.z,
+    )
+    .value(scope);
+    builtins.set(Builtin::AbsolutePosZ, absolute_pos_z);
 
-        let absolute_pos_z =
-            absolute_pos_z::expand(&scope_z, cube_pos_z.into(), unit_pos_z.into(), cube_dim.z)
-                .value(&scope_z);
-        builtins.set(Builtin::AbsolutePosZ, absolute_pos_z);
-    }
+    let cube_pos = cube_pos::expand(
+        scope,
+        builtins.expect(Builtin::CubePosX).into(),
+        builtins.expect(Builtin::CubePosY).into(),
+        builtins.expect(Builtin::CubePosZ).into(),
+        builtins.expect(Builtin::CubeCountX).into(),
+        builtins.expect(Builtin::CubeCountY).into(),
+    )
+    .value(scope);
+    builtins.set(Builtin::CubePos, cube_pos);
 
-    let loop_y = RangeLoopOp::new(scope_z.ctx_mut(), zero, cube_count_y, one);
-    let scope_y = scope_z.child(OpInserter::new_at_block_end(
-        loop_y.loop_body(scope_z.ctx()),
-    ));
-    {
-        let cube_pos_y = loop_y.iter_var(scope.ctx());
-        builtins.set(Builtin::CubePosY, cube_pos_y);
-
-        let absolute_pos_y =
-            absolute_pos_y::expand(&scope_y, cube_pos_y.into(), unit_pos_y.into(), cube_dim.y)
-                .value(&scope_y);
-        builtins.set(Builtin::AbsolutePosY, absolute_pos_y);
-    }
-
-    let loop_x = RangeLoopOp::new(scope_y.ctx_mut(), zero, cube_count_x, one);
-    let body_block = loop_x.loop_body(scope_y.ctx());
-    let scope_x = scope_y.child(OpInserter::new_at_block_end(body_block));
-    {
-        let cube_pos_x = loop_x.iter_var(scope.ctx());
-        builtins.set(Builtin::CubePosX, cube_pos_x);
-
-        let absolute_pos_x =
-            absolute_pos_x::expand(&scope_x, cube_pos_x.into(), unit_pos_x.into(), cube_dim.x)
-                .value(&scope_x);
-        builtins.set(Builtin::AbsolutePosX, absolute_pos_x);
-
-        let cube_pos = cube_pos::expand(
-            &scope_x,
-            cube_pos_x.into(),
-            builtins.expect(Builtin::CubePosY).into(),
-            builtins.expect(Builtin::CubePosZ).into(),
-            cube_count_x.into(),
-            cube_count_y.into(),
-        )
-        .value(&scope_x);
-        builtins.set(Builtin::CubePos, cube_pos);
-
-        let absolute_pos = absolute_pos::expand(
-            &scope_x,
-            cube_pos.into(),
-            builtins.expect(Builtin::UnitPos).into(),
-            cube_dim.num_elems(),
-        )
-        .value(&scope_x);
-        builtins.set(Builtin::AbsolutePos, absolute_pos);
-    }
-
-    scope_y.register(&loop_x);
-    scope_y.terminate_yield();
-    scope_z.register(&loop_y);
-    scope_z.terminate_yield();
-    scope.register(&loop_z);
-
-    body_block
+    let absolute_pos = absolute_pos::expand(
+        scope,
+        cube_pos.into(),
+        unit_pos.into(),
+        cube_dim.num_elems(),
+    )
+    .value(scope);
+    builtins.set(Builtin::AbsolutePos, absolute_pos);
 }

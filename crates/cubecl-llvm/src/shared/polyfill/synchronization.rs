@@ -5,6 +5,11 @@ use cubecl_core::ir::dialect::synchronization::{SyncOp, SyncScope};
 
 #[op_interface_impl]
 impl LowerOp for SyncOp {
+    /// A CPU cube barrier divides the unit loops instead.
+    fn should_lower(&self, ctx: &Context) -> bool {
+        !(ctx.target() == LlvmTarget::Cpu && self.scope(ctx).0 == SyncScope::Cube)
+    }
+
     fn lower(&self, scope: &Scope) -> Vec<Value> {
         let ctx = scope.ctx();
         let sync_scope = self.scope(ctx).0;

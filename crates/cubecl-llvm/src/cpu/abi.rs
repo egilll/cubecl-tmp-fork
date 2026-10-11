@@ -3,7 +3,7 @@
 use crate::{
     cpu::{
         entrypoint::InsertConstantEmulationPass, f16_evaluation::EvaluateF16Pass,
-        shared_memory::SharedMemories,
+        shared_memory::SharedMemories, unit_loops::UnitLoopsPass,
     },
     prelude::*,
     shared::metadata::{load_table, rebuild_func_type, table_ty},
@@ -91,6 +91,10 @@ impl CpuLowering {
 impl TargetLowering for CpuLowering {
     fn prologue(&self, passes: &mut OpPass<FuncOp, Passes>) {
         passes.add_pass(InsertConstantEmulationPass);
+    }
+
+    fn lowered_control_flow(&self, passes: &mut OpPass<FuncOp, Passes>) {
+        passes.add_pass(UnitLoopsPass);
     }
 
     /// F16 evaluation follows FMA contraction.

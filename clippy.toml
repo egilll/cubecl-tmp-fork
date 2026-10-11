@@ -1,0 +1,2 @@
+# Proper names prose may use without backticks, besides clippy's own.
+doc-valid-idents = ["OpenCL", ".."]

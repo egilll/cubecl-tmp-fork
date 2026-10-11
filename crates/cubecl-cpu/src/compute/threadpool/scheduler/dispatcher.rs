@@ -55,26 +55,21 @@ impl DispatcherScheduler {
         }
     }
 
-    pub fn send(&mut self, index: usize, task: ComputeTask) {
-        let target = if task.pliron_engine.requirements().needs_parallelism {
-            // Barrier kernels need one dedicated worker per unit; the caller
-            // grew the pool via `ensure_workers` so `index` is in range.
-            index
-        } else {
-            // Independent units load-balance onto the least-loaded worker. The
-            // incoming `index` is a unit position that can exceed the worker
-            // count, so never use it directly here.
-            let mut best = 0;
-            let mut min_value = self.lens[0].load(atomic::Ordering::Relaxed);
-            for i in 1..self.lens.len() {
-                let len = self.lens[i].load(atomic::Ordering::Relaxed);
-                if len < min_value {
-                    best = i;
-                    min_value = len;
-                }
+    pub fn workers(&self) -> usize {
+        self.tx.len()
+    }
+
+    /// Calls are independent, so each goes to the least-loaded worker.
+    pub fn send(&mut self, _index: usize, task: ComputeTask) {
+        let mut target = 0;
+        let mut min_value = self.lens[0].load(atomic::Ordering::Relaxed);
+        for i in 1..self.lens.len() {
+            let len = self.lens[i].load(atomic::Ordering::Relaxed);
+            if len < min_value {
+                target = i;
+                min_value = len;
             }
-            best
-        };
+        }
         let _ = self.tx[target].send(task);
         self.lens[target].fetch_add(1, atomic::Ordering::Relaxed);
     }

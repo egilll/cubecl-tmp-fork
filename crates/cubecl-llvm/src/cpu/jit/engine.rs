@@ -19,15 +19,15 @@ use std::{
     sync::{Arc, Once},
 };
 
-/// Kernel ABI: buffer pointers, cube count x/y/z, unit position x/y/z,
-/// barrier state, metadata.
-type KernelFn = extern "C" fn(*mut *mut c_void, u32, u32, u32, u32, u32, u32, *mut u32, *mut u64);
+/// Kernel ABI: buffer pointers, cube count x/y/z, the linear range of cubes the call runs, the
+/// range of units of each cube it runs, metadata.
+type KernelFn = extern "C" fn(*mut *mut c_void, u32, u32, u32, u64, u64, u32, u32, *mut u64);
 
 /// Resources and scheduling required for a launch.
 #[derive(Clone, Debug, Default)]
 pub struct KernelRequirements {
-    /// Cube barriers require a separate thread for each unit.
-    pub needs_parallelism: bool,
+    /// The units of a cube meet at barriers or share memory, so each call must run whole cubes.
+    pub whole_cubes: bool,
     /// Shared memory required for a launch.
     pub shared_memories: SharedMemories,
 }
@@ -105,19 +105,18 @@ impl PlironEngine {
     }
 
     pub fn run_kernel(&self, data: &mut PlironData) {
-        let b = data.builtins;
+        let [count_x, count_y, count_z] = data.cube_count;
         let buffer_ptrs = data.shared.buffer_ptrs.as_ptr() as *mut *mut c_void;
         let metadata = data.shared.metadata.as_ptr() as *mut u64;
-        let sync_cube_state = data.shared.sync_cube_state.as_ptr() as *mut u32;
         (self.0.func)(
             buffer_ptrs,
-            b[0],
-            b[1],
-            b[2],
-            b[3],
-            b[4],
-            b[5],
-            sync_cube_state,
+            count_x,
+            count_y,
+            count_z,
+            data.cubes.start,
+            data.cubes.end,
+            data.units.start,
+            data.units.end,
             metadata,
         );
     }

@@ -262,7 +262,7 @@ impl PlironCompiler {
         ctx.set_aux_ty(crate::target::CpuBufferAlignment(alignment));
         ctx.set_grid_constants(false);
 
-        let needs_parallelism = kernel.settings.cube_dim.num_elems() > 1
+        let whole_cubes = kernel.settings.cube_dim.num_elems() > 1
             && (uses_cube_barrier(&ctx, module_op) || declares_shared_memory(&ctx, module_op));
         let shared_memories = Rc::new(RefCell::new(SharedMemories::default()));
 
@@ -270,7 +270,7 @@ impl PlironCompiler {
         let io = lower(&mut ctx, &ir, &lowering)?;
 
         let requirements = KernelRequirements {
-            needs_parallelism,
+            whole_cubes,
             shared_memories: shared_memories.take(),
         };
 
@@ -437,6 +437,7 @@ fn lower(
     let mut lowering_passes = OpPass::<FuncOp, Passes>::default();
     lowering_passes.add_pass(BranchToSCFPass::default());
     lowering_passes.add_pass(SCFToLlvmCf::default());
+    target.lowered_control_flow(&mut lowering_passes);
     lowering_passes.add_pass(LowerEntryAbiPass::new(
         kernel.info.clone(),
         target.arg_layout(),

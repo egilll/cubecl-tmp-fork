@@ -28,8 +28,12 @@ impl NaiveScheduler {
         Self { tx }
     }
 
+    pub fn workers(&self) -> usize {
+        self.tx.len()
+    }
+
     pub fn send(&mut self, index: usize, task: ComputeTask) {
-        let _ = self.tx[index].send(task);
+        let _ = self.tx[index % self.tx.len()].send(task);
     }
 }
 

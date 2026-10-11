@@ -5,7 +5,10 @@ use cubecl_server::{
     memory_management::{ErrorGraph, MemoryManagement},
     storage::BytesStorage,
 };
-use std::sync::{Arc, OnceLock, atomic::AtomicU64};
+use std::{
+    ops::Range,
+    sync::{Arc, OnceLock, atomic::AtomicU64},
+};
 
 use cubecl_llvm::{PlironData, PlironEngine, SharedMemories};
 
@@ -57,7 +60,7 @@ impl Threadpool {
         failures: &mut ErrorGraph,
         next_counter_step: u64,
         atomic_counter: &Arc<CachePadded<AtomicU64>>,
-    ) {
+    ) -> u64 {
         let requirements = pliron_engine.requirements().clone();
 
         let BindingsResource { resources, info } = bindings;
@@ -79,35 +82,60 @@ impl Threadpool {
             .into_iter()
             .map(|resource| Box::new(resource) as Box<dyn std::any::Any + Send>)
             .collect();
-        let base_data = PlironData::new(buffer_ptrs, info.data, cube_count, keepalive);
+        let launch = PlironData::new(buffer_ptrs, info.data, cube_count, keepalive);
 
-        // A cube barrier only completes if every unit of the cube is running, so such a kernel
-        // needs as many workers as the cube has units.
-        if requirements.needs_parallelism {
-            self.scheduler.ensure_workers(cube_dim.num_elems() as usize);
+        let calls = calls(
+            cube_count.iter().map(|&count| u64::from(count)).product(),
+            cube_dim.num_elems(),
+            requirements.whole_cubes,
+            self.scheduler.workers() * CALLS_PER_WORKER,
+        );
+        let tasks = calls.len() as u64;
+        for (i, (cubes, units)) in calls.into_iter().enumerate() {
+            let compute_task = ComputeTask {
+                pliron_engine: pliron_engine.clone(),
+                pliron_data: launch.call(cubes, units),
+                next_counter_step,
+                atomic_counter: Arc::clone(atomic_counter),
+            };
+            self.scheduler.send(i, compute_task);
         }
-
-        let mut i = 0;
-        for unit_pos_x in 0..cube_dim.x {
-            for unit_pos_y in 0..cube_dim.y {
-                for unit_pos_z in 0..cube_dim.z {
-                    let pliron_engine = pliron_engine.clone();
-                    let mut pliron_data = base_data.clone();
-                    pliron_data.set_unit_pos([unit_pos_x, unit_pos_y, unit_pos_z]);
-
-                    let atomic_counter = Arc::clone(atomic_counter);
-                    let compute_task = ComputeTask {
-                        pliron_engine,
-                        pliron_data,
-                        next_counter_step,
-                        atomic_counter,
-                    };
-                    self.scheduler.send(i, compute_task);
-                    i += 1;
-                }
-            }
-        }
+        tasks
     }
+}
+
+/// Calls per worker a launch is split into, so workers that finish early take on more.
+const CALLS_PER_WORKER: usize = 4;
+
+/// How a launch of `cubes` cubes of `units` units is split into about `target` calls: ranges of
+/// whole cubes, or, with fewer cubes than calls and units that need not run together, ranges of
+/// the units of each cube.
+fn calls(
+    cubes: u64,
+    units: u32,
+    whole_cubes: bool,
+    target: usize,
+) -> Vec<(Range<u64>, Range<u32>)> {
+    if cubes == 0 || units == 0 {
+        return Vec::new();
+    }
+    let target = target.max(1) as u64;
+    if whole_cubes || cubes >= target {
+        let calls = cubes.min(target);
+        return (0..calls)
+            .map(|call| (cubes * call / calls..cubes * (call + 1) / calls, 0..units))
+            .collect();
+    }
+    let per_cube = target.div_ceil(cubes).min(u64::from(units));
+    (0..cubes)
+        .flat_map(|cube| {
+            (0..per_cube).map(move |part| {
+                let start = u64::from(units) * part / per_cube;
+                let end = u64::from(units) * (part + 1) / per_cube;
+                (cube..cube + 1, start as u32..end as u32)
+            })
+        })
+        .collect()
 }
 
 /// Reserves the shared memory of a launch out of the stream's dedicated pool, and writes each

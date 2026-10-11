@@ -60,6 +60,15 @@ impl Scheduler {
         }
     }
 
+    /// How many workers run tasks.
+    pub fn workers(&self) -> usize {
+        match self {
+            Scheduler::Naive(naive) => naive.workers(),
+            Scheduler::Aside(aside) => aside.workers(),
+            Scheduler::Dispatcher(dispatcher) => dispatcher.workers(),
+        }
+    }
+
     /// Grows the pool so it has at least `n` workers, spawning threads as needed.
     /// Called before dispatching a parallel cube whose unit count exceeds the
     /// current worker count. Only the `Dispatcher` (the variant the threadpool

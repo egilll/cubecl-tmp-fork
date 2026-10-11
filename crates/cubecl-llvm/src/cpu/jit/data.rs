@@ -1,30 +1,28 @@
-use crate::cpu::synchronization::SYNC_CUBE_STATE_LEN;
-use std::{
-    ffi::c_void,
-    sync::{Arc, atomic::AtomicU32},
-};
+use std::{ffi::c_void, ops::Range, sync::Arc};
 
-/// Resources shared by all units of a launch.
+/// Resources shared by all calls of a launch.
 #[derive(Default)]
 pub struct SharedData {
     pub buffer_ptrs: Vec<*mut c_void>,
     pub metadata: Vec<u64>,
-    /// Shared barrier counters, initialized to zero.
-    pub sync_cube_state: [AtomicU32; SYNC_CUBE_STATE_LEN],
     /// Keeps buffer storage alive until the launch completes.
     pub keepalive: Vec<Box<dyn std::any::Any + Send>>,
 }
 
-/// SAFETY: Buffer and shared memory storage outlive the launch. Barrier counters are
-/// atomic, and `keepalive` contents are only dropped, never accessed concurrently.
+/// SAFETY: Buffer storage outlives the launch, and `keepalive` contents are only dropped, never
+/// accessed concurrently.
 unsafe impl Send for SharedData {}
 unsafe impl Sync for SharedData {}
 
-/// Per-unit kernel arguments. Builtin order: cube count x/y/z, then unit position x/y/z.
+/// The arguments of one call of a kernel: the cubes it runs, and which of their units.
 #[derive(Clone, Default)]
 pub struct PlironData {
     pub shared: Arc<SharedData>,
-    pub builtins: [u32; 6],
+    pub cube_count: [u32; 3],
+    /// Cubes by linear index, x fastest.
+    pub cubes: Range<u64>,
+    /// Units by index within their cube.
+    pub units: Range<u32>,
 }
 
 impl PlironData {
@@ -38,16 +36,21 @@ impl PlironData {
             shared: Arc::new(SharedData {
                 buffer_ptrs,
                 metadata,
-                sync_cube_state: Default::default(),
                 keepalive,
             }),
-            builtins: [cube_count[0], cube_count[1], cube_count[2], 0, 0, 0],
+            cube_count,
+            cubes: 0..0,
+            units: 0..0,
         }
     }
 
-    pub fn set_unit_pos(&mut self, unit_pos: [u32; 3]) {
-        self.builtins[3] = unit_pos[0];
-        self.builtins[4] = unit_pos[1];
-        self.builtins[5] = unit_pos[2];
+    /// The same launch, running `cubes` and, of each, `units`.
+    pub fn call(&self, cubes: Range<u64>, units: Range<u32>) -> Self {
+        Self {
+            shared: self.shared.clone(),
+            cube_count: self.cube_count,
+            cubes,
+            units,
+        }
     }
 }

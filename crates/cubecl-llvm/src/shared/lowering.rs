@@ -12,6 +12,12 @@ pub trait TargetLowering {
         let _ = passes;
     }
 
+    /// Runs once structured control flow is lowered to branches, before the entry point's
+    /// arguments are.
+    fn lowered_control_flow(&self, passes: &mut OpPass<FuncOp, Passes>) {
+        let _ = passes;
+    }
+
     /// Kernel argument layout.
     fn arg_layout(&self) -> Box<dyn EntryArgLayout>;
 }

@@ -16,6 +16,7 @@ pub mod cmma2;
 pub mod comparison;
 pub mod complex;
 pub mod const_match;
+pub mod cube_barriers;
 pub mod debug;
 pub mod device_fn;
 pub mod different_rank;
@@ -167,6 +168,7 @@ macro_rules! testgen_untyped {
         cubecl_core::testgen_properties!();
 
         cubecl_core::testgen_sync_plane!();
+        cubecl_core::testgen_cube_barriers!();
         cubecl_core::testgen_tensor_indexing!();
         cubecl_core::testgen_debug!();
         cubecl_core::testgen_binary_untyped!();

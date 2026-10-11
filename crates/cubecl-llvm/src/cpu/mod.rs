@@ -8,3 +8,4 @@ pub mod ordered_atomic;
 pub mod shared_memory;
 pub mod synchronization;
 pub mod to_llvm;
+pub mod unit_loops;
