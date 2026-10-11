@@ -272,14 +272,14 @@ fn shape(
                 sizes.push(quote! {
                     visit(#prelude::BufferSize::of::<#element>(
                         #label,
-                        shape.#ident.rows * shape.#ident.width as usize,
+                        shape.#ident.rows * shape.#ident.width,
                     ));
                 });
                 carved.push(quote! {
                     #ident: #prelude::ResidentGrid {
                         values: carver.carve::<#element>(#prelude::BufferSize::of::<#element>(
                             #label,
-                            shape.#ident.rows * shape.#ident.width as usize,
+                            shape.#ident.rows * shape.#ident.width,
                         )),
                         width: shape.#ident.width,
                     }

@@ -82,7 +82,7 @@ pub trait Shaped: Sized {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct GridShape {
     pub rows: usize,
-    pub width: u32,
+    pub width: usize,
 }
 
 /// Device memory a resident value holds, in bytes.
@@ -106,7 +106,7 @@ where
     StorageElement<Q>: CubeElement,
 {
     pub values: StorageBuffer<Q>,
-    pub width: u32,
+    pub width: usize,
 }
 
 impl<Q: DeviceRepr + Send + Sync> ResidentGrid<Q>

@@ -386,20 +386,18 @@ fn quarter(value: u32) -> Found {
 
 #[cube(launch)]
 fn kernel_grid(
-    values: &GridTable<u32, Cell, u32>,
-    quarters: &mut GridColumn<Found, Cell, u32>,
-    totals: &AtomicGrid<Count, Cell, u32>,
+    values: &GridTable<u32, Cell, usize>,
+    quarters: &mut GridColumn<Found, Cell, usize>,
+    totals: &AtomicGrid<Count, Cell, usize>,
     sums: &mut Storage<Distance>,
 ) {
-    let (row, column) = (
-        ABSOLUTE_POS as u32 / values.width(),
-        ABSOLUTE_POS as u32 % values.width(),
-    );
+    let (row, column) = (ABSOLUTE_POS / values.width(), ABSOLUTE_POS % values.width());
     if row < values.rows() {
-        let value = values.load(Cell(row), column);
-        quarters.store(Cell(row), column, quarter(value));
-        sums.store(ABSOLUTE_POS, accumulate(value, column));
-        totals.fetch_add(Cell(row), column % 2, Count(value));
+        let cell = Cell(row as u32);
+        let value = values.load(cell, column);
+        quarters.store(cell, column, quarter(value));
+        sums.store(ABSOLUTE_POS, accumulate(value, column as u32));
+        totals.fetch_add(cell, column % 2, Count(value));
     }
 }
 

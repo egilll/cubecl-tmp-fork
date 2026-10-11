@@ -13,7 +13,7 @@ pub struct Grid<
     C: StorageKey + Send + Sync,
 > {
     values: Storage<Q, V>,
-    width: u32,
+    width: usize,
     #[cube(comptime)]
     axes: PhantomData<(R, C)>,
 }
@@ -32,18 +32,18 @@ impl<
 > Grid<Q, V, R, C>
 {
     /// Values per row.
-    pub fn width(&self) -> u32 {
+    pub fn width(&self) -> usize {
         self.width
     }
 
     /// Rows held.
-    pub fn rows(&self) -> u32 {
-        self.values.len() as u32 / self.width
+    pub fn rows(&self) -> usize {
+        self.values.len() / self.width
     }
 
     pub fn load(&self, row: R, column: C) -> Q {
         self.values
-            .load(R::position(row) * self.width as usize + C::position(column))
+            .load(R::position(row) * self.width + C::position(column))
     }
 }
 
@@ -52,7 +52,7 @@ impl<Q: DeviceRepr + Send + Sync, R: StorageKey + Send + Sync, C: StorageKey + S
     Grid<Q, ReadWrite, R, C>
 {
     pub fn store(&mut self, row: R, column: C, value: Q) {
-        let at = R::position(row) * self.width as usize + C::position(column);
+        let at = R::position(row) * self.width + C::position(column);
         self.values.store(at, value);
     }
 }
@@ -65,7 +65,7 @@ pub struct AtomicGrid<
     C: StorageKey + Send + Sync,
 > {
     values: AtomicStorage<Q>,
-    width: u32,
+    width: usize,
     #[cube(comptime)]
     axes: PhantomData<(R, C)>,
 }
@@ -78,12 +78,12 @@ impl<
 > AtomicGrid<Q, R, C>
 {
     /// Values per row.
-    pub fn width(&self) -> u32 {
+    pub fn width(&self) -> usize {
         self.width
     }
 
     fn at(&self, row: R, column: C) -> usize {
-        R::position(row) * self.width as usize + C::position(column)
+        R::position(row) * self.width + C::position(column)
     }
 
     pub fn load(&self, row: R, column: C) -> Q {
@@ -107,7 +107,7 @@ impl<
 {
     /// Adds `value`, returning the previous value.
     pub fn fetch_add(&self, row: R, column: C, value: Q) -> Q {
-        let at = R::position(row) * self.width as usize + C::position(column);
+        let at = R::position(row) * self.width + C::position(column);
         self.values.fetch_add(at, value)
     }
 }
@@ -121,13 +121,13 @@ impl<
 {
     /// Keeps the smaller value, returning the previous value.
     pub fn fetch_min(&self, row: R, column: C, value: Q) -> Q {
-        let at = R::position(row) * self.width as usize + C::position(column);
+        let at = R::position(row) * self.width + C::position(column);
         self.values.fetch_min(at, value)
     }
 
     /// Keeps the larger value, returning the previous value.
     pub fn fetch_max(&self, row: R, column: C, value: Q) -> Q {
-        let at = R::position(row) * self.width as usize + C::position(column);
+        let at = R::position(row) * self.width + C::position(column);
         self.values.fetch_max(at, value)
     }
 }
