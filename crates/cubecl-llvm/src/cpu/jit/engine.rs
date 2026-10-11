@@ -1,6 +1,5 @@
 use super::data::PlironData;
 use crate::{
-    cpu::shared_memory::SharedMemories,
     prelude::{Context, ModuleOp},
     shared::llvm_module::LlvmModule,
 };
@@ -28,8 +27,6 @@ type KernelFn = extern "C" fn(*mut *mut c_void, u32, u32, u32, u64, u64, u32, u3
 pub struct KernelRequirements {
     /// The units of a cube meet at barriers or share memory, so each call must run whole cubes.
     pub whole_cubes: bool,
-    /// Shared memory required for a launch.
-    pub shared_memories: SharedMemories,
 }
 
 /// A compiled kernel and its owning JIT.

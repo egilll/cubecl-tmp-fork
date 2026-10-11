@@ -14,7 +14,6 @@ impl LowerOp for SyncOp {
         let ctx = scope.ctx();
         let sync_scope = self.scope(ctx).0;
         let target = ctx.target();
-        let op = self.get_operation();
 
         match sync_scope {
             SyncScope::Unit => {}
@@ -26,7 +25,7 @@ impl LowerOp for SyncOp {
                 LlvmTarget::Nvptx => crate::nvptx::synchronization::lower_sync_plane(scope),
             },
             SyncScope::Cube => match target {
-                LlvmTarget::Cpu => crate::cpu::synchronization::lower_sync_cube(scope, op),
+                LlvmTarget::Cpu => unreachable!("a CPU cube barrier divides the unit loops"),
                 #[cfg(feature = "amdgpu")]
                 LlvmTarget::AmdGpu => crate::amdgpu::synchronization::lower_sync_cube(scope),
                 #[cfg(feature = "nvptx")]

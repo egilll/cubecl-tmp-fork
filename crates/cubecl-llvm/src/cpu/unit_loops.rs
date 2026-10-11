@@ -55,6 +55,10 @@ use cubecl_core::{
 };
 use pliron::{linked_list::ContainsLinkedList, opts::dce::SideEffects};
 
+/// Whether the units of each cube must run in one call: they meet at barriers or share memory.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct WholeCubes(pub bool);
+
 /// Wraps an entry point in its cube and unit loops.
 #[derive(Default)]
 pub struct UnitLoopsPass;
@@ -74,7 +78,17 @@ impl Pass for UnitLoopsPass {
         let Some(abi) = func.get_entrypoint_abi(ctx) else {
             return Ok(res);
         };
-        Kernel::new(ctx, func, abi.cube_dim).wrap(ctx);
+        let kernel = Kernel::new(ctx, func, abi.cube_dim);
+        let shares_memory = kernel.body.iter().any(|block| {
+            block.deref(ctx).iter(ctx).any(|op| {
+                op.as_op::<DeclareVariableOp>(ctx)
+                    .is_some_and(|declare| declare.addr_space(ctx).0 == AddressSpace::Shared)
+            })
+        });
+        let whole_cubes =
+            abi.cube_dim.num_elems() > 1 && (!kernel.barriers.is_empty() || shares_memory);
+        ctx.set_aux_ty(WholeCubes(whole_cubes));
+        kernel.wrap(ctx);
         res.ir_changed = IRStatus::Changed;
         Ok(res)
     }

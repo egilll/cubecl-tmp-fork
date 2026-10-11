@@ -27,13 +27,6 @@ use std::sync::{Arc, atomic::AtomicU64};
 
 pub struct CpuStream {
     pub(crate) memory_management: MemoryManagement<BytesStorage>,
-    /// Dedicated pool for per-launch shared memory.
-    ///
-    /// Shared memory MUST NOT be reserved from `memory_management`: kernel input/output
-    /// bindings keep their allocation alive through a `ManagedMemoryBinding`, which does
-    /// *not* hold the pool reservation. `reserve` would then hand a still-bound tensor's
-    /// slice to shared memory, aliasing an input and corrupting it in place.
-    pub(crate) shared_memory_management: MemoryManagement<BytesStorage>,
     pub(crate) timestamps: TimestampProfiler,
     threadpool: &'static spin::Mutex<Threadpool>,
     next_counter_step: u64,
@@ -103,23 +96,15 @@ impl CpuStream {
         let memory_management = MemoryManagement::from_configuration(
             BytesStorage::default(),
             &memory_properties,
-            memory_config.clone(),
-            logger.clone(),
-            MemoryManagementOptions::new("Main CPU"),
-        );
-        let shared_memory_management = MemoryManagement::from_configuration(
-            BytesStorage::default(),
-            &memory_properties,
             memory_config,
-            logger.clone(),
-            MemoryManagementOptions::new("Shared CPU"),
+            logger,
+            MemoryManagementOptions::new("Main CPU"),
         );
         let threadpool = Threadpool::get();
         let next_counter_step = 0;
         let atomic_counter = Arc::new(CachePadded::new(AtomicU64::new(0)));
         Self {
             memory_management,
-            shared_memory_management,
             timestamps: TimestampProfiler::default(),
             threadpool,
             next_counter_step,
@@ -127,14 +112,11 @@ impl CpuStream {
         }
     }
 
-    pub fn enqueue_task(&mut self, task: ScheduleTask, failures: &mut ErrorGraph) {
+    pub fn enqueue_task(&mut self, task: ScheduleTask) {
         // Launches pipeline: `ComputeTask::is_ready` orders tasks and the
         // launch's resources ride in `SharedData::keepalive`, so the client
-        // only drains where that protocol does not cover:
-        // * a host `Write`, which copies on this thread and would race a
-        //   queued kernel reading the buffer;
-        // * a shared-memory kernel, whose pool reservations are released at
-        //   enqueue — sound only while one such launch has the pool to itself.
+        // only drains before a host `Write`, which copies on this thread and
+        // would race a queued kernel reading the buffer.
         match task {
             ScheduleTask::Write { data, mut buffer } => {
                 self.submit();
@@ -147,21 +129,11 @@ impl CpuStream {
                 cube_count,
                 ..
             } => {
-                if !pliron_engine
-                    .requirements()
-                    .shared_memories
-                    .blocks
-                    .is_empty()
-                {
-                    self.submit();
-                }
                 let calls = self.threadpool.lock().execute_data(
                     pliron_engine,
                     bindings,
                     cube_dim,
                     cube_count,
-                    &mut self.shared_memory_management,
-                    failures,
                     self.next_counter_step,
                     &self.atomic_counter,
                 );

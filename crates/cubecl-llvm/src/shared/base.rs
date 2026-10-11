@@ -12,8 +12,7 @@ use crate::{
     cpu::{
         abi::CpuLowering,
         jit::engine::{KernelRequirements, PlironEngine},
-        shared_memory::SharedMemories,
-        synchronization::uses_cube_barrier,
+        unit_loops::WholeCubes,
     },
     prelude::{
         AnalysisManager, Context, ContextExt, CtxTarget, FuncOp, LlvmTarget, ModuleOp,
@@ -24,11 +23,9 @@ use crate::{
         branch::SCFToLlvmCf,
         metadata::{CtxGridConstants, LowerEntryAbiPass},
         polyfill::LowerComplexOpPass,
-        shared_memory::declares_shared_memory,
         to_llvm::CubeToLLVMPass,
     },
 };
-use core::cell::RefCell;
 #[cfg(feature = "nvptx")]
 use cubecl_core::ir::nvidia::SmArch;
 use cubecl_core::{
@@ -57,7 +54,6 @@ use pliron::{
     opts::{dce::DCEPass, mem2reg::Mem2RegPass, simplify_cfg::SimplifyCFGPass},
 };
 use pliron_llvm::builtin_to_llvm::builtin_to_llvm_pass;
-use std::rc::Rc;
 #[cfg(feature = "pliron-dump")]
 use std::{path::PathBuf, str::FromStr};
 
@@ -252,7 +248,6 @@ impl PlironCompiler {
         options: &PlironOptions,
     ) -> Result<PlironEngine, CompilationError> {
         let module = kernel.body.state().module;
-        let module_op = module.get_operation();
         let ir = KernelIr::of(&kernel);
         let mut ctx = kernel.body.into_context().expect("Should be owned scope");
 
@@ -262,16 +257,11 @@ impl PlironCompiler {
         ctx.set_aux_ty(crate::target::CpuBufferAlignment(alignment));
         ctx.set_grid_constants(false);
 
-        let whole_cubes = kernel.settings.cube_dim.num_elems() > 1
-            && (uses_cube_barrier(&ctx, module_op) || declares_shared_memory(&ctx, module_op));
-        let shared_memories = Rc::new(RefCell::new(SharedMemories::default()));
-
-        let lowering = CpuLowering::new(shared_memories.clone(), options.f16_evaluation);
+        let lowering = CpuLowering::new(options.f16_evaluation);
         let io = lower(&mut ctx, &ir, &lowering)?;
 
         let requirements = KernelRequirements {
-            whole_cubes,
-            shared_memories: shared_memories.take(),
+            whole_cubes: ctx.aux_ty::<WholeCubes>().0,
         };
 
         PlironEngine::compile(&ctx, module, &kernel.settings.kernel_name, requirements, io)

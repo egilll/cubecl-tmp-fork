@@ -12,14 +12,6 @@ pub struct SharedMemoryBlock {
     pub align: usize,
 }
 
-pub fn declares_shared_memory(ctx: &Context, op: Ptr<Operation>) -> bool {
-    let mut found = false;
-    visit_all_ops_of_type::<DeclareVariableOp, _>(ctx, &mut found, op, |ctx, found, d| {
-        *found |= d.addr_space(ctx).0 == AddressSpace::Shared;
-    });
-    found
-}
-
 #[derive(Default)]
 pub struct SharedDeclarations(pub(crate) Vec<(Ptr<Operation>, Value, SharedMemoryBlock)>);
 

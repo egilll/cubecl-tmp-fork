@@ -14,7 +14,6 @@ pub mod target;
 
 pub use cpu::jit::data::{PlironData, SharedData};
 pub use cpu::jit::engine::{KernelRequirements, PlironEngine};
-pub use cpu::shared_memory::SharedMemories;
 #[cfg(feature = "amdgpu")]
 pub use shared::AmdGpuModule;
 #[cfg(feature = "nvptx")]

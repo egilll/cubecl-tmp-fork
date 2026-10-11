@@ -1,16 +1,11 @@
 use crossbeam_utils::CachePadded;
 use cubecl_core::CubeDim;
-use cubecl_server::memory_management::PageUpdate;
-use cubecl_server::{
-    memory_management::{ErrorGraph, MemoryManagement},
-    storage::BytesStorage,
-};
 use std::{
     ops::Range,
     sync::{Arc, OnceLock, atomic::AtomicU64},
 };
 
-use cubecl_llvm::{PlironData, PlironEngine, SharedMemories};
+use cubecl_llvm::{PlironData, PlironEngine};
 
 use crate::compute::{
     schedule::BindingsResource,
@@ -49,33 +44,25 @@ impl Threadpool {
         INSTANCE.get_or_init(|| spin::Mutex::new(Self::init()))
     }
 
-    #[allow(clippy::too_many_arguments)]
+    /// Queues a launch as calls over ranges of its cubes, and returns how many.
     pub fn execute_data(
         &mut self,
         pliron_engine: PlironEngine,
         bindings: BindingsResource,
         cube_dim: CubeDim,
         cube_count: [u32; 3],
-        memory: &mut MemoryManagement<BytesStorage>,
-        failures: &mut ErrorGraph,
         next_counter_step: u64,
         atomic_counter: &Arc<CachePadded<AtomicU64>>,
     ) -> u64 {
-        let requirements = pliron_engine.requirements().clone();
+        let whole_cubes = pliron_engine.requirements().whole_cubes;
 
         let BindingsResource { resources, info } = bindings;
-        let mut buffer_ptrs: Vec<*mut std::ffi::c_void> = resources
+        let buffer_ptrs: Vec<*mut std::ffi::c_void> = resources
             .iter()
             .map(|resource| {
                 resource.resource().get_write_ptr_and_length().0 as *mut std::ffi::c_void
             })
             .collect();
-        reserve_shared_memories(
-            memory,
-            failures,
-            &requirements.shared_memories,
-            &mut buffer_ptrs,
-        );
         // Pin the resources for the launch's lifetime (see
         // `SharedData::keepalive`).
         let keepalive: Vec<Box<dyn std::any::Any + Send>> = resources
@@ -87,7 +74,7 @@ impl Threadpool {
         let calls = calls(
             cube_count.iter().map(|&count| u64::from(count)).product(),
             cube_dim.num_elems(),
-            requirements.whole_cubes,
+            whole_cubes,
             self.scheduler.workers() * CALLS_PER_WORKER,
         );
         let tasks = calls.len() as u64;
@@ -136,48 +123,4 @@ fn calls(
             })
         })
         .collect()
-}
-
-/// Reserves the shared memory of a launch out of the stream's dedicated pool, and writes each
-/// block into the slot of `table` the kernel reads it from. Those slots follow the buffers, so
-/// the table is padded first when the kernel takes fewer buffers than the launch provides.
-///
-/// Blocks requiring more than the pool's SIMD alignment are over-reserved and their bases
-/// rounded up.
-///
-/// The reservations are released right away: shared-memory launches never overlap — the stream
-/// drains before enqueuing one (see `CpuStream::enqueue_task`).
-fn reserve_shared_memories(
-    memory: &mut MemoryManagement<BytesStorage>,
-    failures: &mut ErrorGraph,
-    shared_memories: &SharedMemories,
-    table: &mut Vec<*mut std::ffi::c_void>,
-) {
-    let end = shared_memories.base + shared_memories.blocks.len();
-    if table.len() < end {
-        table.resize(end, core::ptr::null_mut());
-    }
-
-    // The handles are held until every block is reserved: releasing one right away would let
-    // the pool hand the same memory out to the next shared memory of the same launch.
-    let mut handles = Vec::with_capacity(shared_memories.blocks.len());
-
-    for (slot, block) in shared_memories.blocks.iter().enumerate() {
-        let padding = if block.align > BytesStorage::ALIGNMENT {
-            block.align - 1
-        } else {
-            0
-        };
-        let handle = memory
-            .reserve((block.size + padding) as u64, PageUpdate::Allow, failures)
-            .expect("Failed to reserve the shared memory of the launch");
-        let reserved = memory
-            .get_resource(handle.clone().binding(), None, None)
-            .expect("Failed to resolve the shared memory of the launch");
-        handles.push(handle);
-
-        let (ptr, _) = reserved.get_write_ptr_and_length();
-        let ptr = ptr.wrapping_add(ptr.align_offset(block.align));
-        table[shared_memories.base + slot] = ptr as *mut std::ffi::c_void;
-    }
 }

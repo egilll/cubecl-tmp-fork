@@ -113,8 +113,8 @@ impl SchedulerStreamBackend for ScheduledCpuBackend {
     type Stream = CpuStream;
     type Factory = CpuStreamFactory;
 
-    fn enqueue(task: Self::Task, stream: &mut Self::Stream, failures: &mut ErrorGraph) {
-        stream.enqueue_task(task, failures);
+    fn enqueue(task: Self::Task, stream: &mut Self::Stream, _failures: &mut ErrorGraph) {
+        stream.enqueue_task(task);
     }
 
     fn flush(stream: &mut Self::Stream, _failures: &mut ErrorGraph) {

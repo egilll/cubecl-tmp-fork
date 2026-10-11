@@ -3,25 +3,16 @@
 use crate::{
     cpu::{
         entrypoint::InsertConstantEmulationPass, f16_evaluation::EvaluateF16Pass,
-        shared_memory::SharedMemories, unit_loops::UnitLoopsPass,
+        unit_loops::UnitLoopsPass,
     },
     prelude::*,
     shared::metadata::{load_table, rebuild_func_type, table_ty},
 };
-use core::cell::RefCell;
 use cubecl_runtime::config::compilation::F16Evaluation;
-use std::rc::Rc;
 
-pub struct TableArgs {
-    /// Shared memory required for a launch.
-    shared_memories: Rc<RefCell<SharedMemories>>,
-}
-
-impl TableArgs {
-    pub fn new(shared_memories: Rc<RefCell<SharedMemories>>) -> Self {
-        Self { shared_memories }
-    }
-}
+/// Buffers reach a CPU kernel through a table of pointers. Shared memory is the kernel's own
+/// stack memory, made so by [`UnitLoopsPass`], and never reaches the table.
+pub struct TableArgs;
 
 impl EntryArgLayout for TableArgs {
     fn present_args(
@@ -31,13 +22,13 @@ impl EntryArgLayout for TableArgs {
         buffers: &[(usize, usize, Value)],
         shared: SharedDeclarations,
     ) {
+        assert!(
+            shared.is_empty(),
+            "CPU shared memory is lowered with the unit loops"
+        );
         let entry = func.get_entry_block(ctx);
 
-        let shared_base = (buffers.iter())
-            .map(|(_, buffer_pos, _)| buffer_pos + 1)
-            .max()
-            .unwrap_or(0);
-        if !buffers.is_empty() || !shared.is_empty() {
+        if !buffers.is_empty() {
             let table_ty = table_ty(ctx);
             BasicBlock::insert_argument(entry, ctx, 0, table_ty);
             let buffer_ptrs = entry.deref(ctx).get_argument(0);
@@ -52,14 +43,6 @@ impl EntryArgLayout for TableArgs {
                 old_val.replace_all_uses_with(ctx, &buffer);
             }
 
-            let blocks = shared.lower(ctx, buffer_ptrs, shared_base, terminator);
-            if !blocks.is_empty() {
-                *self.shared_memories.borrow_mut() = SharedMemories {
-                    base: shared_base,
-                    blocks,
-                };
-            }
-
             let mut removed: Vec<usize> = buffers.iter().map(|(i, _, _)| i + 1).collect();
             removed.sort_unstable();
             for idx in removed.into_iter().rev() {
@@ -72,19 +55,12 @@ impl EntryArgLayout for TableArgs {
 }
 
 pub struct CpuLowering {
-    shared_memories: Rc<RefCell<SharedMemories>>,
     f16_evaluation: F16Evaluation,
 }
 
 impl CpuLowering {
-    pub fn new(
-        shared_memories: Rc<RefCell<SharedMemories>>,
-        f16_evaluation: F16Evaluation,
-    ) -> Self {
-        Self {
-            shared_memories,
-            f16_evaluation,
-        }
+    pub fn new(f16_evaluation: F16Evaluation) -> Self {
+        Self { f16_evaluation }
     }
 }
 
@@ -109,7 +85,7 @@ impl TargetLowering for CpuLowering {
     }
 
     fn arg_layout(&self) -> Box<dyn EntryArgLayout> {
-        Box::new(TableArgs::new(self.shared_memories.clone()))
+        Box::new(TableArgs)
     }
 }
 
@@ -119,7 +95,7 @@ mod tests {
 
     #[test]
     fn table_args_is_a_boxed_layout() {
-        let layout: Box<dyn EntryArgLayout> = Box::new(TableArgs::new(Rc::default()));
+        let layout: Box<dyn EntryArgLayout> = Box::new(TableArgs);
         let _ = layout;
     }
 }

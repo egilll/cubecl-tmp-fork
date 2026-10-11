@@ -10,12 +10,11 @@ use std::{
 use crossbeam_utils::CachePadded;
 
 use crate::compute::{
-    affinity::{CoreId, get_active_cores},
+    affinity::get_active_cores,
     threadpool::{ThreadTask, compute_task::ComputeTask, scheduler::Worker},
 };
 
 pub struct DispatcherScheduler {
-    cores: Vec<CoreId>,
     tx: Vec<mpsc::Sender<ComputeTask>>,
     lens: Vec<Arc<CachePadded<AtomicUsize>>>,
 }
@@ -27,32 +26,17 @@ impl Default for DispatcherScheduler {
 }
 
 impl DispatcherScheduler {
+    /// One worker per active core.
     pub fn new() -> Self {
-        let cores: Vec<_> = get_active_cores().collect();
-        let mut scheduler = Self {
-            cores,
-            tx: Vec::new(),
-            lens: Vec::new(),
-        };
-        // Start with one worker per active core; the pool grows on demand when a
-        // parallel cube needs more units than we currently have workers.
-        let cores = scheduler.cores.len();
-        scheduler.ensure_workers(cores);
-        scheduler
-    }
-
-    /// Spawns workers until at least `n` exist. Overflow workers past the core
-    /// count round-robin over the active cores, so a cube with more units than
-    /// cores still gets one thread per unit — required so the `sync_cube` spin
-    /// barrier never queues two units of the same cube behind each other.
-    pub fn ensure_workers(&mut self, n: usize) {
-        while self.tx.len() < n {
-            let core_id = self.cores[self.tx.len() % self.cores.len()];
-            let (worker, tx, len) = DispatcherWorker::new();
+        let mut tx = Vec::new();
+        let mut lens = Vec::new();
+        for core_id in get_active_cores() {
+            let (worker, sender, len) = DispatcherWorker::new();
             worker.spawn_thread(core_id);
-            self.tx.push(tx);
-            self.lens.push(len);
+            tx.push(sender);
+            lens.push(len);
         }
+        Self { tx, lens }
     }
 
     pub fn workers(&self) -> usize {
@@ -101,8 +85,8 @@ impl DispatcherWorker {
 
 /// How long an idle worker polls `try_recv`, yielding the CPU between
 /// misses, before parking in the blocking `recv`. A parked worker costs a
-/// futex wake per launch, and a barrier kernel runs at the latency of its
-/// last-woken unit, while the budget caps what an actually-idle pool burns.
+/// futex wake per launch, and a launch runs at the latency of its last-woken
+/// call, while the budget caps what an actually-idle pool burns.
 const IDLE_POLL: std::time::Duration = std::time::Duration::from_micros(200);
 
 impl Worker for DispatcherWorker {
