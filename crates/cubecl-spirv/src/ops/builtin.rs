@@ -170,19 +170,17 @@ impl MatchRewrite for RewriteBuiltins<'_> {
 
 #[cube]
 fn absolute_pos() -> usize {
-    cube_pos() * CUBE_DIM as usize + UNIT_POS as usize
+    cube_pos() * CUBE_DIM + UNIT_POS
 }
 
 #[cube]
 fn cube_count() -> usize {
-    CUBE_COUNT_X as usize * CUBE_COUNT_Y as usize * CUBE_COUNT_Z as usize
+    CUBE_COUNT_X * CUBE_COUNT_Y * CUBE_COUNT_Z
 }
 
 #[cube]
 fn cube_pos() -> usize {
-    CUBE_POS_Z as usize * CUBE_COUNT_Y as usize * CUBE_COUNT_X as usize
-        + CUBE_POS_Y as usize * CUBE_COUNT_X as usize
-        + CUBE_POS_X as usize
+    CUBE_POS_Z * CUBE_COUNT_Y * CUBE_COUNT_X + CUBE_POS_Y * CUBE_COUNT_X + CUBE_POS_X
 }
 
 #[cube]

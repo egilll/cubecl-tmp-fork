@@ -217,7 +217,7 @@ impl Barrier {
     ///
     /// If all units in the cube arrive on the barrier, use `CUBE_DIM` as the arrival count. For
     /// other purposes, only a subset may need to arrive.
-    pub fn shared(arrival_count: u32, is_elected: bool) -> Shared<Barrier> {
+    pub fn shared(arrival_count: usize, is_elected: bool) -> Shared<Barrier> {
         intrinsic!(|scope| {
             if is_elected.expand.as_const().is_some() {
                 scope.push_warning(
@@ -227,6 +227,7 @@ impl Barrier {
             let value =
                 scope.create_shared(BarrierType::get(scope.ctx(), BarrierLevel::Cube), None);
             if_expand(scope, is_elected, |scope| {
+                let arrival_count = u32::__expand_cast_from(scope, arrival_count);
                 let arrival_count = arrival_count.read_value(scope);
                 let op = InitOp::new(scope.ctx_mut(), value, arrival_count);
                 scope.register(&op);
@@ -258,9 +259,10 @@ impl Barrier {
     /// ensure only one unit performs the initialization, and synchronize the cube afterwards. There
     /// may also be additional synchronization requirements for bulk copy operations, like
     /// [`sync_async_proxy_shared()`].
-    pub fn init_manual(&self, arrival_count: u32) {
+    pub fn init_manual(&self, arrival_count: usize) {
         intrinsic!(|scope| {
             let barrier = self.value(scope);
+            let arrival_count = u32::__expand_cast_from(scope, arrival_count);
             let arrival_count = arrival_count.read_value(scope);
             let op = InitOp::new(scope.ctx_mut(), barrier, arrival_count);
             scope.register(&op);
@@ -363,6 +365,7 @@ impl Barrier {
     pub fn arrive_and_expect_tx(&self, arrival_count: u32, transaction_count: u32) -> BarrierToken {
         intrinsic!(|scope| {
             let barrier = self.value(scope);
+            let arrival_count = u32::__expand_cast_from(scope, arrival_count);
             let arrival_count = arrival_count.read_value(scope);
             let transaction_count = transaction_count.read_value(scope);
             let op = ArriveAndExpectTxOp::new(
@@ -547,7 +550,7 @@ mod tests {
             ExecutionMode::Unchecked,
             AddressType::U32,
         ));
-        let _ = Barrier::__expand_shared(&scope, 64u32.into(), true.into());
+        let _ = Barrier::__expand_shared(&scope, 64usize.into(), true.into());
         let warnings = scope.pop_warnings();
         assert_eq!(warnings.len(), 1, "{warnings:?}");
         assert!(warnings[0].contains("UNIT_POS == 0"), "{warnings:?}");
@@ -562,7 +565,7 @@ mod tests {
         ));
         let elected: NativeExpand<bool> =
             ExpandValue::from(scope.create_local_mut(BoolType::get(scope.ctx()), None)).into();
-        let _ = Barrier::__expand_shared(&scope, 64u32.into(), elected);
+        let _ = Barrier::__expand_shared(&scope, 64usize.into(), elected);
         assert!(scope.pop_warnings().is_empty());
     }
 }

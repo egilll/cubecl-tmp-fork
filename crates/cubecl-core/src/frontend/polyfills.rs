@@ -419,7 +419,7 @@ pub mod plane {
 
     #[cube]
     fn plane_dim_checked() -> u32 {
-        min(PLANE_DIM, CUBE_DIM)
+        min(PLANE_DIM, CUBE_DIM) as u32
     }
 
     #[cube]

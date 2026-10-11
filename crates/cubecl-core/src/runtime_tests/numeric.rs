@@ -5,7 +5,7 @@ use cubecl_runtime::runtime::Runtime;
 
 #[cube(launch)]
 pub fn kernel_define<N: Numeric>(array: &mut [N], #[define(N)] _elem: ElemType) {
-    array[UNIT_POS as usize] += N::cast_from(5.0f32);
+    array[UNIT_POS] += N::cast_from(5.0f32);
 }
 
 #[cube(launch)]
@@ -14,7 +14,7 @@ pub fn kernel_define_many<N: Numeric, N2: Numeric>(
     second: &[N2],
     #[define(N, N2)] _defines: [ElemType; 2],
 ) {
-    array[UNIT_POS as usize] += N::cast_from(second[UNIT_POS as usize]);
+    array[UNIT_POS] += N::cast_from(second[UNIT_POS]);
 }
 
 pub fn test_kernel_define<R: Runtime>(client: Client) {

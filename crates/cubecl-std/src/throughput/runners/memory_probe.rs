@@ -219,7 +219,7 @@ fn prime_buffer<I: Numeric, N: Size>(
     len: usize,
     #[define(I)] _dtype: ElemType,
 ) {
-    let stride = CUBE_DIM as usize * CUBE_COUNT;
+    let stride = CUBE_DIM * CUBE_COUNT;
     let steps = len.div_ceil(stride).max(1);
 
     for step in 0..steps {

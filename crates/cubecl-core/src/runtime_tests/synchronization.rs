@@ -8,11 +8,10 @@ use cubecl_ir::features::{AtomicUsage, Plane};
 #[cube(launch)]
 /// First 32 elements should be 1, while last 32 elements may or may not be 1
 fn kernel_test_sync_cube(buffer: &mut [u32], out: &mut [u32]) {
-    let unit_pos = UNIT_POS as usize;
-    buffer[unit_pos] = UNIT_POS;
+    buffer[UNIT_POS] = UNIT_POS as u32;
     sync_cube();
-    if unit_pos != 0 {
-        out[unit_pos] = buffer[unit_pos - 1] + buffer[unit_pos];
+    if UNIT_POS != 0 {
+        out[UNIT_POS] = buffer[UNIT_POS - 1] + buffer[UNIT_POS];
     }
 }
 
@@ -46,15 +45,14 @@ pub fn test_sync_cube<R: Runtime>(client: Client) {
 #[cube(launch)]
 /// First 32 elements should be 1, while last 32 elements may or may not be 1
 fn kernel_test_finished_sync_cube(buffer: &mut [u32], out: &mut [u32]) {
-    let unit_pos = UNIT_POS as usize;
-    buffer[unit_pos] = UNIT_POS;
+    buffer[UNIT_POS] = UNIT_POS as u32;
     if UNIT_POS > 16 {
         terminate!();
     }
     sync_cube();
     sync_cube();
     if UNIT_POS != 0 {
-        out[unit_pos] = buffer[unit_pos - 1] + buffer[unit_pos];
+        out[UNIT_POS] = buffer[UNIT_POS - 1] + buffer[UNIT_POS];
     }
     sync_cube();
 }
@@ -97,7 +95,7 @@ fn kernel_test_sync_plane<F: Float>(out: &mut [F]) {
 
     sync_plane();
 
-    out[UNIT_POS as usize] = *shared_memory;
+    out[UNIT_POS] = *shared_memory;
 }
 
 pub fn test_sync_plane<R: Runtime>(client: Client) {
@@ -136,7 +134,7 @@ fn kernel_test_sync_cube_shared<F: Float>(out: &mut [F]) {
 
     sync_cube();
 
-    out[UNIT_POS as usize] = *shared_memory;
+    out[UNIT_POS] = *shared_memory;
 }
 
 pub fn test_sync_cube_shared<R: Runtime>(client: Client) {
@@ -169,7 +167,7 @@ fn kernel_test_workgroup_uniform_load(out: &mut [u32]) {
     if n > 0 {
         sync_cube();
     }
-    out[UNIT_POS as usize] = n;
+    out[UNIT_POS] = n;
 }
 
 pub fn test_workgroup_uniform_load<R: Runtime>(client: Client) {
@@ -200,7 +198,7 @@ fn kernel_test_workgroup_uniform_load_atomic(out: &mut [u32]) {
     if n > 0 {
         sync_cube();
     }
-    out[UNIT_POS as usize] = n;
+    out[UNIT_POS] = n;
 }
 
 pub fn test_workgroup_uniform_load_atomic<R: Runtime>(client: Client) {
@@ -236,7 +234,7 @@ fn kernel_test_workgroup_uniform_load_vec<N: Size>(out: &mut [Vector<f32, N>]) {
     }
     sync_cube();
 
-    out[UNIT_POS as usize] = workgroup_uniform_load(&smem[0]);
+    out[UNIT_POS] = workgroup_uniform_load(&smem[0]);
 }
 
 pub fn test_workgroup_uniform_load_vec<R: Runtime>(client: Client) {
@@ -285,7 +283,7 @@ fn kernel_test_workgroup_uniform_load_synchronizes(out: &mut [u32]) {
         sum += k;
         k += 1u32;
     }
-    out[UNIT_POS as usize] = sum;
+    out[UNIT_POS] = sum;
 }
 
 fn expected_uniform_load_sum() -> u32 {
@@ -331,7 +329,7 @@ fn kernel_test_workgroup_uniform_load_atomic_synchronizes(out: &mut [u32]) {
         sum += k;
         k += 1u32;
     }
-    out[UNIT_POS as usize] = sum;
+    out[UNIT_POS] = sum;
 }
 
 pub fn test_workgroup_uniform_load_atomic_synchronizes<R: Runtime>(client: Client) {
@@ -370,18 +368,18 @@ fn kernel_test_sync_storage_across_cubes(
     partials: &mut [u32],
     counter: &mut [Atomic<u32>],
     out: &mut [u32],
-    #[comptime] cubes: u32,
-    #[comptime] units: u32,
+    #[comptime] cubes: usize,
+    #[comptime] units: usize,
 ) {
-    let mut mine = Shared::<[u32]>::new_slice(units as usize);
-    mine[UNIT_POS as usize] = CUBE_POS as u32 * units + UNIT_POS + 1;
+    let mut mine = Shared::<[u32]>::new_slice(units);
+    mine[UNIT_POS] = (CUBE_POS * units + UNIT_POS + 1) as u32;
     sync_cube();
     if UNIT_POS == 0 {
         let mut total = 0u32;
-        let mut i = 0u32;
+        let mut i = 0;
         while i < units {
-            total += mine[i as usize];
-            i += 1u32;
+            total += mine[i];
+            i += 1;
         }
         partials[CUBE_POS] = total;
     }
@@ -396,15 +394,15 @@ fn kernel_test_sync_storage_across_cubes(
     // cubes that arrived before published is visible to this one.
     sync_storage();
 
-    if *arrived == cubes - 1 {
+    if *arrived as usize == cubes - 1 {
         // A stripe per unit, so the count has to have reached all of them.
         let mut sum = 0u32;
         let mut cube = UNIT_POS;
         while cube < cubes {
-            sum += partials[cube as usize];
+            sum += partials[cube];
             cube += units;
         }
-        out[UNIT_POS as usize] = sum;
+        out[UNIT_POS] = sum;
     }
 }
 
@@ -439,8 +437,8 @@ pub fn test_sync_storage_across_cubes<R: Runtime>(client: Client) {
         unsafe { BufferArg::from_raw_parts(partials, cubes as usize) },
         unsafe { BufferArg::from_raw_parts(counter, 1) },
         unsafe { BufferArg::from_raw_parts(out.clone(), units as usize) },
-        cubes,
-        units,
+        cubes as usize,
+        units as usize,
     );
 
     let partial = |cube: u32| (0..units).map(|unit| cube * units + unit + 1).sum::<u32>();
@@ -464,16 +462,16 @@ fn kernel_test_sync_storage_over_a_stale_copy(
     counter: &mut [Atomic<u32>],
     before: &mut [u32],
     out: &mut [u32],
-    #[comptime] cubes: u32,
+    #[comptime] cubes: usize,
 ) {
     // Every slot as it is before this cube writes, kept live so the read is made.
     let mut cached = 0u32;
     let mut slot = UNIT_POS;
     while slot < cubes {
-        cached += slots[slot as usize];
+        cached += slots[slot];
         slot += CUBE_DIM;
     }
-    before[CUBE_POS * CUBE_DIM as usize + UNIT_POS as usize] = cached;
+    before[CUBE_POS * CUBE_DIM + UNIT_POS] = cached;
 
     if UNIT_POS == 0 {
         slots[CUBE_POS] = CUBE_POS as u32 + 1;
@@ -487,14 +485,14 @@ fn kernel_test_sync_storage_over_a_stale_copy(
     // Acquire: every slot the cubes before published is visible here, over what this cube cached.
     sync_storage();
 
-    if *arrived == cubes - 1 {
+    if *arrived as usize == cubes - 1 {
         let mut sum = 0u32;
         let mut slot = UNIT_POS;
         while slot < cubes {
-            sum += slots[slot as usize];
+            sum += slots[slot];
             slot += CUBE_DIM;
         }
-        out[UNIT_POS as usize] = sum;
+        out[UNIT_POS] = sum;
     }
 }
 
@@ -529,7 +527,7 @@ pub fn test_sync_storage_over_a_stale_copy<R: Runtime>(client: Client) {
         unsafe { BufferArg::from_raw_parts(counter, 1) },
         unsafe { BufferArg::from_raw_parts(before, (cubes * units) as usize) },
         unsafe { BufferArg::from_raw_parts(out.clone(), units as usize) },
-        cubes,
+        cubes as usize,
     );
 
     let expected: Vec<u32> = (0..units)

@@ -70,8 +70,8 @@ fn assign_ref<F: Float>(value: &mut F) {
 
 #[cube(launch)]
 fn assign_mut_expression(output: &mut [u32]) {
-    let thread_idx = UNIT_POS as usize;
-    let num_threads = CUBE_DIM as usize;
+    let thread_idx = UNIT_POS;
+    let num_threads = CUBE_DIM;
     let mut step = 256 / 2usize;
 
     while step > 0 {

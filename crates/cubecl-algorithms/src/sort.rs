@@ -31,7 +31,7 @@ fn count_digits(keys: &[u32], counts: &mut [u32], tiles: u32, #[comptime] shift:
     let tile = CUBE_POS;
     if tile < tiles as usize {
         let mut shared = Shared::<[u32]>::new_slice(UNITS);
-        let digit = digit_of(keys, tile * UNITS + UNIT_POS as usize, shift);
+        let digit = digit_of(keys, tile * UNITS + UNIT_POS, shift);
         #[unroll]
         for d in 0..DIGITS {
             let count = cube_sum::<u32>(select(digit == d as u32, 1u32, 0u32), &mut shared);
@@ -55,7 +55,7 @@ fn scatter_digits(
     let tile = CUBE_POS;
     if tile < tiles as usize {
         let mut shared = Shared::<[u32]>::new_slice(UNITS);
-        let i = tile * UNITS + UNIT_POS as usize;
+        let i = tile * UNITS + UNIT_POS;
         let digit = digit_of(keys, i, shift);
         let mut rank = 0u32;
         #[unroll]

@@ -49,7 +49,7 @@ pub fn test_async_memcpy<R: Runtime, F: Float + CubeElement>(client: Client) {
 #[cube(launch)]
 pub fn async_copy_test<F: Float, N: Size>(input: &[Vector<F, N>], output: &mut [Vector<F, N>]) {
     let elected = plane_elect();
-    let barrier = Barrier::shared(1u32, elected);
+    let barrier = Barrier::shared(1, elected);
     // Align to 16 to avoid any issues with misaligned pointers
     let mut smem = Shared::new_aligned_slice(2usize, 16usize);
 
@@ -103,7 +103,7 @@ fn one_load<F: Float, N: Size>(lhs: &Tensor<Vector<F, N>>, output: &mut Tensor<V
 
     barrier.arrive_and_wait();
 
-    let start = UNIT_POS_X as usize * 2;
+    let start = UNIT_POS_X * 2;
     let end = start + 2;
     for i in start..end {
         output[i] = lhs_smem[i];
@@ -123,7 +123,7 @@ fn two_loads<F: Float, N: Size>(
     let barrier = Barrier::shared(CUBE_DIM, UNIT_POS == 0);
     sync_cube();
 
-    let start = UNIT_POS_X as usize * num_data / 2;
+    let start = UNIT_POS_X * num_data / 2;
     let end = start + num_data / 2;
 
     barrier.memcpy_async(&lhs[start..end], &mut lhs_smem[start..end]);
@@ -135,7 +135,7 @@ fn two_loads<F: Float, N: Size>(
         dot += lhs_smem[i] * rhs_smem[i];
     }
 
-    output[UNIT_POS_X as usize] = dot;
+    output[UNIT_POS_X] = dot;
 }
 
 #[cube(launch)]
@@ -154,7 +154,7 @@ fn two_independent_loads<F: Float, N: Size>(
     // exist for all units
     sync_cube();
 
-    let start = UNIT_POS_X as usize * num_data / 2;
+    let start = UNIT_POS_X * num_data / 2;
     let end = start + num_data / 2;
 
     for i in start..end {
@@ -174,7 +174,7 @@ fn two_independent_loads<F: Float, N: Size>(
         dot += lhs_smem[i] * rhs_smem[i];
     }
 
-    output[UNIT_POS_X as usize] = dot;
+    output[UNIT_POS_X] = dot;
 }
 
 pub fn test_memcpy_one_load<R: Runtime, F: Float + CubeElement>(client: Client) {

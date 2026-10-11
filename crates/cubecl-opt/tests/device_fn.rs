@@ -447,7 +447,7 @@ fn scale_into(values: &mut [f32], factor: f32, count: usize) {
 
 #[cube(inline)]
 fn slice_calls(values: &mut [f32], weights: &[f32]) {
-    let n = UNIT_POS as usize;
+    let n = UNIT_POS;
     let a = weighted_sum(values, weights, n, 4);
     let b = weighted_sum(values, weights, n + 4, 4);
     scale_into(values, a + b, 8);
@@ -495,7 +495,7 @@ fn slices_are_inlined_for_a_target_without_memory_pointer_parameters() {
 #[cube(inline)]
 fn shared_calls(values: &mut [f32]) {
     let mut staged = Shared::<[f32]>::new_slice(64usize);
-    let unit = UNIT_POS as usize;
+    let unit = UNIT_POS;
     let factor = values[unit];
     staged[unit] = factor;
     sync_cube();

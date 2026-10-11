@@ -11,10 +11,10 @@ pub fn kernel_saturating_add<I: Int, N: Size>(
 ) {
     // Unit-strided so the test can clamp the cube dim to the device's
     // `max_units_per_cube` (e.g. on CPU) while still covering every element.
-    let mut i = UNIT_POS as usize;
+    let mut i = UNIT_POS;
     while i < output.len() {
         output[i] = Vector::<I, N>::saturating_add(lhs[i], rhs[i]);
-        i += CUBE_DIM as usize;
+        i += CUBE_DIM;
     }
 }
 
@@ -24,10 +24,10 @@ pub fn kernel_saturating_sub<I: Int, N: Size>(
     rhs: &[Vector<I, N>],
     output: &mut [Vector<I, N>],
 ) {
-    let mut i = UNIT_POS as usize;
+    let mut i = UNIT_POS;
     while i < output.len() {
         output[i] = Vector::<I, N>::saturating_sub(lhs[i], rhs[i]);
-        i += CUBE_DIM as usize;
+        i += CUBE_DIM;
     }
 }
 

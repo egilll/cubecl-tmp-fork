@@ -61,10 +61,10 @@ pub(crate) fn scale_kernel(address_type: AddressType) -> impl CubeKernel {
 
 #[cube(launch)]
 fn plane_moves(input: &[f32], output: &mut [f32]) {
-    let value = input[UNIT_POS as usize];
+    let value = input[UNIT_POS];
     let first = plane_broadcast(value, 0u32);
     let swapped = plane_shuffle_xor(value, 1u32);
-    output[UNIT_POS as usize] = first + swapped;
+    output[UNIT_POS] = first + swapped;
 }
 
 pub(crate) fn plane_moves_kernel() -> impl CubeKernel {
@@ -131,16 +131,16 @@ pub(crate) fn keep_largest_kernel(k: usize) -> impl CubeKernel {
 fn strided_walk(
     input: &[f32],
     output: &mut [f32],
-    bands: u32,
-    pitch: u32,
-    stride: u32,
-    steps: u32,
+    bands: usize,
+    pitch: usize,
+    stride: usize,
+    steps: usize,
 ) {
     let start = (CUBE_POS_Y % bands) * pitch;
     let mut sum = 0.0f32;
     for step in 0..steps {
         let row = step * 32 + UNIT_POS_X;
-        sum += input[(row * stride + start) as usize];
+        sum += input[row * stride + start];
     }
     output[ABSOLUTE_POS] = sum;
 }

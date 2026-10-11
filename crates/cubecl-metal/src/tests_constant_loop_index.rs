@@ -12,7 +12,7 @@ const UNITS: usize = 64;
 #[cube(launch_unchecked)]
 fn tree_sum(input: &[f32], output: &mut [f32]) {
     let mut scratch = Shared::<[f32]>::new_slice(UNITS);
-    let unit = UNIT_POS as usize;
+    let unit = UNIT_POS;
     scratch[unit] = input[unit];
     sync_cube();
     let mut half = UNITS / 2;
@@ -60,7 +60,7 @@ fn halving_literal(output: &mut [u32]) {
 
 #[cube(launch_unchecked)]
 fn halving_from_runtime(output: &mut [u32]) {
-    let mut half = CUBE_DIM as usize / 2;
+    let mut half = CUBE_DIM / 2;
     let mut steps = 0u32;
     while half > 0 {
         steps += 1;

@@ -507,7 +507,7 @@ fn kernel_shared(
     input: &Storage<Distance, ReadOnly, Cell>,
     output: &mut Storage<Distance, ReadWrite, Cell>,
 ) {
-    let unit = UNIT_POS;
+    let unit = UNIT_POS as u32;
     let mut scratch = SharedStorage::<Distance, Cell>::new(4usize);
     scratch.store(Cell(unit), input.load(Cell(unit)));
     sync_cube();

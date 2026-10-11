@@ -215,13 +215,13 @@ mod tests {
             mem[0] = 0xDEADBEEFu32;
         }
         sync_cube();
-        out[UNIT_POS as usize] = mem[0];
+        out[UNIT_POS] = mem[0];
     }
 
     #[cube(launch)]
     fn sync_cube_two_phase(out: &mut [u32]) {
         let mut mem = Shared::new_slice(4usize);
-        let idx = UNIT_POS as usize;
+        let idx = UNIT_POS;
         mem[idx] = (idx as u32) + 1;
         sync_cube();
 
@@ -243,8 +243,8 @@ mod tests {
     fn sync_cube_two_shared(out: &mut [u32]) {
         let mut units = Shared::new_slice(4usize);
         let mut scaled = Shared::new_slice(4usize);
-        let idx = UNIT_POS as usize;
-        units[idx] = UNIT_POS + 1;
+        let idx = UNIT_POS;
+        units[idx] = (UNIT_POS + 1) as u32;
         scaled[idx] = 10u64 * (UNIT_POS as u64 + 1);
         sync_cube();
 
@@ -258,7 +258,7 @@ mod tests {
     #[cube(launch)]
     fn sync_cube_all_reduce(out: &mut [u32]) {
         let mut mem = Shared::new_slice(8usize);
-        let idx = UNIT_POS as usize;
+        let idx = UNIT_POS;
         mem[idx] = idx as u32;
         sync_cube();
 

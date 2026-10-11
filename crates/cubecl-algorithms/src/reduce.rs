@@ -12,7 +12,7 @@ fn sum_segments<T: Numeric>(values: &[T], offsets: &[u32], sums: &mut [T]) {
     if segment < sums.len() {
         let mut shared = Shared::<[T]>::new_slice(UNITS);
         let end = offsets[segment + 1] as usize;
-        let mut i = offsets[segment] as usize + UNIT_POS as usize;
+        let mut i = offsets[segment] as usize + UNIT_POS;
         let mut total = T::from_int(0);
         while i < end {
             total += values[i];

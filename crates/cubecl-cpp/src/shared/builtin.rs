@@ -18,49 +18,47 @@ shared_op_with_out!(ReadBuiltinOp, |op, ctx| {
 
 #[cube]
 pub fn absolute_pos() -> usize {
-    cube_pos() * CUBE_DIM as usize + UNIT_POS as usize
+    cube_pos() * CUBE_DIM + UNIT_POS
 }
 
 #[cube]
 pub fn absolute_pos_x() -> u32 {
-    CUBE_POS_X * CUBE_DIM_X + UNIT_POS_X
+    (CUBE_POS_X * CUBE_DIM_X + UNIT_POS_X) as u32
 }
 
 #[cube]
 pub fn absolute_pos_y() -> u32 {
-    CUBE_POS_Y * CUBE_DIM_Y + UNIT_POS_Y
+    (CUBE_POS_Y * CUBE_DIM_Y + UNIT_POS_Y) as u32
 }
 
 #[cube]
 pub fn absolute_pos_z() -> u32 {
-    CUBE_POS_Z * CUBE_DIM_Z + UNIT_POS_Z
+    (CUBE_POS_Z * CUBE_DIM_Z + UNIT_POS_Z) as u32
 }
 
 #[cube]
 pub fn cube_count() -> usize {
-    CUBE_COUNT_X as usize * CUBE_COUNT_Y as usize * CUBE_COUNT_Z as usize
+    CUBE_COUNT_X * CUBE_COUNT_Y * CUBE_COUNT_Z
 }
 
 #[cube]
 pub fn cube_pos() -> usize {
-    CUBE_POS_Z as usize * CUBE_COUNT_Y as usize * CUBE_COUNT_X as usize
-        + CUBE_POS_Y as usize * CUBE_COUNT_X as usize
-        + CUBE_POS_X as usize
+    CUBE_POS_Z * CUBE_COUNT_Y * CUBE_COUNT_X + CUBE_POS_Y * CUBE_COUNT_X + CUBE_POS_X
 }
 
 #[cube]
 pub fn unit_pos() -> u32 {
-    UNIT_POS_X + UNIT_POS_Y * CUBE_DIM_X + UNIT_POS_Z * CUBE_DIM_X * CUBE_DIM_Y
+    (UNIT_POS_X + UNIT_POS_Y * CUBE_DIM_X + UNIT_POS_Z * CUBE_DIM_X * CUBE_DIM_Y) as u32
 }
 
 #[cube]
 pub fn unit_pos_plane() -> u32 {
-    UNIT_POS % PLANE_DIM
+    (UNIT_POS % PLANE_DIM) as u32
 }
 
 #[cube]
 pub fn plane_pos() -> u32 {
-    UNIT_POS / PLANE_DIM
+    (UNIT_POS / PLANE_DIM) as u32
 }
 
 #[cube]

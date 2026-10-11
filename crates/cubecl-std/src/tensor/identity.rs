@@ -11,8 +11,8 @@ fn identity_kernel<C: Numeric, N: Size>(
     gap: usize,
     #[define(C)] _elem: ElemType,
 ) {
-    let pos_x = ABSOLUTE_POS_X as usize * output.vector_size();
-    let pos_y = ABSOLUTE_POS_Y as usize;
+    let pos_x = ABSOLUTE_POS_X * output.vector_size();
+    let pos_y = ABSOLUTE_POS_Y;
     let vector_size = output.vector_size();
     if pos_y < output.shape(0) && pos_x < output.shape(1) {
         let mut vector = Vector::new(C::from_int(0));

@@ -16,7 +16,7 @@ struct Item(u32);
 
 #[cube(launch)]
 fn kernel_collectives(ranks: &[f32], output: &mut [f32]) {
-    let unit = UNIT_POS as usize;
+    let unit = UNIT_POS;
     let mut sums = SharedStorage::<Score>::new(comptime![subgroups(128)]);
     let mut best_ranks = SharedStorage::<Score>::new(comptime![subgroups(128)]);
     let mut best_items = SharedStorage::<Item>::new(comptime![subgroups(128)]);
@@ -24,12 +24,12 @@ fn kernel_collectives(ranks: &[f32], output: &mut [f32]) {
     let best = cube_argmax(
         Best::<Score, Item> {
             rank: Score(ranks[unit]),
-            index: Item(UNIT_POS),
+            index: Item(UNIT_POS as u32),
         },
         &mut best_ranks,
         &mut best_items,
     );
-    let bits = plane_or(1u32 << (UNIT_POS % 8));
+    let bits = plane_or(1u32 << (UNIT_POS % 8) as u32);
     output[4 * unit] = total.0;
     output[4 * unit + 1] = best.rank.0;
     output[4 * unit + 2] = f32::cast_from(best.index.0);

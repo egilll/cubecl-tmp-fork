@@ -24,10 +24,9 @@ pub fn kernel_absolute_pos_cube(output1: &mut [u32]) {
 
 #[cube(launch)]
 pub fn kernel_plane_pos(output: &mut [u32]) {
-    let unit = UNIT_POS as usize;
-    output[unit * 3] = PLANE_POS;
-    output[unit * 3 + 1] = UNIT_POS_PLANE;
-    output[unit * 3 + 2] = PLANE_DIM;
+    output[UNIT_POS * 3] = PLANE_POS as u32;
+    output[UNIT_POS * 3 + 1] = UNIT_POS_PLANE;
+    output[UNIT_POS * 3 + 2] = PLANE_DIM as u32;
 }
 
 pub fn test_kernel_topology_absolute_pos(client: Client, addr_type: AddressType) {

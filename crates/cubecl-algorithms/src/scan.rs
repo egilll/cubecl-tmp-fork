@@ -21,7 +21,7 @@ pub(crate) const TILE: usize = UNITS * ITEMS;
 /// Every unit must call it.
 #[cube]
 pub(crate) fn cube_inclusive_scan<T: Numeric>(value: T, shared: &mut [T]) -> T {
-    let unit = UNIT_POS as usize;
+    let unit = UNIT_POS;
     shared[unit] = value;
     sync_cube();
     #[unroll]
@@ -54,7 +54,7 @@ fn tile_sums<T: Numeric>(input: &[T], sums: &mut [T], tiles: u32) {
     let tile = CUBE_POS;
     if tile < tiles as usize {
         let mut shared = Shared::<[T]>::new_slice(UNITS);
-        let base = tile * TILE + UNIT_POS as usize * ITEMS;
+        let base = tile * TILE + UNIT_POS * ITEMS;
         let mut total = T::from_int(0);
         #[unroll]
         for k in 0..ITEMS {
@@ -80,7 +80,7 @@ fn tile_scan<T: Numeric>(
     let tile = CUBE_POS;
     if tile < tiles as usize {
         let mut shared = Shared::<[T]>::new_slice(UNITS);
-        let base = tile * TILE + UNIT_POS as usize * ITEMS;
+        let base = tile * TILE + UNIT_POS * ITEMS;
         let mut items = Array::<T>::new(ITEMS);
         let mut total = T::from_int(0);
         #[unroll]

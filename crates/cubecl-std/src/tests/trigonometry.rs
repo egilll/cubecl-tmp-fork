@@ -7,8 +7,8 @@ use crate::trigonometry::*;
 
 #[cube(launch_unchecked)]
 fn kernel_to_degrees(input: &[f32], output: &mut [f32]) {
-    if (UNIT_POS as usize) < input.len() {
-        output[UNIT_POS as usize] = to_degrees::<f32>(input[UNIT_POS as usize]);
+    if (UNIT_POS) < input.len() {
+        output[UNIT_POS] = to_degrees::<f32>(input[UNIT_POS]);
     }
 }
 
@@ -45,8 +45,8 @@ pub fn test_to_degrees<R: Runtime>(client: Client) {
 
 #[cube(launch_unchecked)]
 fn kernel_to_radians(input: &[f32], output: &mut [f32]) {
-    if (UNIT_POS as usize) < input.len() {
-        output[UNIT_POS as usize] = to_radians::<f32>(input[UNIT_POS as usize]);
+    if (UNIT_POS) < input.len() {
+        output[UNIT_POS] = to_radians::<f32>(input[UNIT_POS]);
     }
 }
 

@@ -67,14 +67,14 @@ pub fn kernel_with_max_shared(
     let mut shared_1 = Shared::new_slice(shared_size_1);
     let mut shared_2 = Shared::new_slice(shared_size_2);
     if UNIT_POS < 8 {
-        shared_1[shared_size_1 - UNIT_POS as usize - 1] = output[UNIT_POS as usize];
-        shared_2[shared_size_2 - UNIT_POS as usize - 1] = output[8 - UNIT_POS as usize];
+        shared_1[shared_size_1 - UNIT_POS - 1] = output[UNIT_POS];
+        shared_2[shared_size_2 - UNIT_POS - 1] = output[8 - UNIT_POS];
     }
     sync_cube();
     if UNIT_POS < 8 {
-        let a = shared_1[shared_size_1 - UNIT_POS as usize - 2];
-        let b = shared_2[shared_size_2 - UNIT_POS as usize - 1];
-        output[UNIT_POS as usize] = a + b;
+        let a = shared_1[shared_size_1 - UNIT_POS - 2];
+        let b = shared_2[shared_size_2 - UNIT_POS - 1];
+        output[UNIT_POS] = a + b;
     }
 }
 

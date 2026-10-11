@@ -27,12 +27,12 @@ pub fn cube_sum<Q: Collective + DeviceRepr<Repr = f32>>(
 ) -> Q {
     let partial = plane_sum(Q::into_repr(value));
     if UNIT_POS_PLANE == 0 {
-        scratch.store((UNIT_POS / PLANE_DIM) as usize, Q::from_repr(partial));
+        scratch.store(PLANE_POS, Q::from_repr(partial));
     }
     sync_cube();
     let mut total = 0.0f32;
     for plane in 0..CUBE_DIM.div_ceil(PLANE_DIM) {
-        total += Q::into_repr(scratch.load(plane as usize));
+        total += Q::into_repr(scratch.load(plane));
     }
     sync_cube();
     Q::from_repr(total)
@@ -66,7 +66,7 @@ pub fn cube_argmax<
     let mut rank = R::into_repr(offer.rank);
     let mut index = I::into_repr(offer.index);
     let mut mask = 1u32;
-    while mask < PLANE_DIM {
+    while (mask as usize) < PLANE_DIM {
         let other = plane_shuffle_xor(rank, mask);
         let named = plane_shuffle_xor(index, mask);
         let take = beats(other, named, rank, index);
@@ -75,16 +75,15 @@ pub fn cube_argmax<
         mask *= 2;
     }
     if UNIT_POS_PLANE == 0 {
-        let plane = (UNIT_POS / PLANE_DIM) as usize;
-        ranks.store(plane, R::from_repr(rank));
-        indices.store(plane, I::from_repr(index));
+        ranks.store(PLANE_POS, R::from_repr(rank));
+        indices.store(PLANE_POS, I::from_repr(index));
     }
     sync_cube();
     let mut best = R::into_repr(ranks.load(0));
     let mut at = I::into_repr(indices.load(0));
     for plane in 1..CUBE_DIM.div_ceil(PLANE_DIM) {
-        let other = R::into_repr(ranks.load(plane as usize));
-        let named = I::into_repr(indices.load(plane as usize));
+        let other = R::into_repr(ranks.load(plane));
+        let named = I::into_repr(indices.load(plane));
         let take = beats(other, named, best, at);
         best = select(take, other, best);
         at = select(take, named, at);
@@ -101,7 +100,7 @@ pub fn cube_argmax<
 pub fn plane_or(bits: u32) -> u32 {
     let mut bits = bits;
     let mut mask = 1u32;
-    while mask < PLANE_DIM {
+    while (mask as usize) < PLANE_DIM {
         bits |= plane_shuffle_xor(bits, mask);
         mask *= 2;
     }

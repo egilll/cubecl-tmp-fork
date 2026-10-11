@@ -5,7 +5,7 @@ use cubecl_ir::{
     Scope, dialect::general::ReadBuiltinOp, pliron::builtin::op_interfaces::OneResultInterface,
 };
 
-use crate::prelude::CubePrimitive;
+use crate::prelude::{Cast, CubePrimitive};
 
 use super::NativeExpand;
 
@@ -25,6 +25,30 @@ macro_rules! constant {
                 let op = ReadBuiltinOp::new(scope.ctx_mut(), ty, $var);
                 scope.register(&op);
                 op.get_result(scope.ctx()).into()
+            }
+        }
+    };
+}
+
+/// A position or dimension, read at its native width and widened to the index
+/// type, so it indexes without a cast.
+macro_rules! constant_index {
+    ($ident:ident, $var:expr, $doc:expr) => {
+        #[doc = $doc]
+        pub const $ident: usize = 2;
+
+        #[allow(non_snake_case)]
+        #[doc = $doc]
+        pub mod $ident {
+            use super::*;
+
+            /// Expansion of the constant value.
+            pub fn expand(scope: &Scope) -> NativeExpand<usize> {
+                let ty = u32::__expand_as_type(scope);
+                let op = ReadBuiltinOp::new(scope.ctx_mut(), ty, $var);
+                scope.register(&op);
+                let value: NativeExpand<u32> = op.get_result(scope.ctx()).into();
+                usize::__expand_cast_from(scope, value)
             }
         }
     };
@@ -51,7 +75,7 @@ macro_rules! constant_usize {
     };
 }
 
-constant!(
+constant_index!(
     PLANE_DIM,
     crate::ir::Builtin::PlaneDim,
     r"
@@ -59,7 +83,7 @@ The total amount of working units in a plane.
 "
 );
 
-constant!(
+constant_index!(
     PLANE_POS,
     crate::ir::Builtin::PlanePos,
     r"
@@ -75,7 +99,7 @@ The relative position of the working unit inside the plane, without regards to c
 "
 );
 
-constant!(
+constant_index!(
     UNIT_POS,
     crate::ir::Builtin::UnitPos,
     r"
@@ -83,7 +107,7 @@ The position of the working unit inside the cube, without regards to axis.
 "
 );
 
-constant!(
+constant_index!(
     UNIT_POS_X,
     crate::ir::Builtin::UnitPosX,
     r"
@@ -91,7 +115,7 @@ The position of the working unit inside the cube along the X axis.
 "
 );
 
-constant!(
+constant_index!(
     UNIT_POS_Y,
     crate::ir::Builtin::UnitPosY,
     r"
@@ -99,7 +123,7 @@ The position of the working unit inside the cube along the Y axis.
 "
 );
 
-constant!(
+constant_index!(
     UNIT_POS_Z,
     crate::ir::Builtin::UnitPosZ,
     r"
@@ -139,7 +163,7 @@ The dimension of the cluster along the Z axis.
 "
 );
 
-constant!(
+constant_index!(
     CUBE_DIM,
     crate::ir::Builtin::CubeDim,
     r"
@@ -147,7 +171,7 @@ The total amount of working units in a cube.
 "
 );
 
-constant!(
+constant_index!(
     CUBE_DIM_X,
     crate::ir::Builtin::CubeDimX,
     r"
@@ -155,7 +179,7 @@ The dimension of the cube along the X axis.
 "
 );
 
-constant!(
+constant_index!(
     CUBE_DIM_Y,
     crate::ir::Builtin::CubeDimY,
     r"
@@ -163,7 +187,7 @@ The dimension of the cube along the Y axis.
 "
 );
 
-constant!(
+constant_index!(
     CUBE_DIM_Z,
     crate::ir::Builtin::CubeDimZ,
     r"
@@ -179,7 +203,7 @@ The cube position, without regards to axis.
 "
 );
 
-constant!(
+constant_index!(
     CUBE_POS_X,
     crate::ir::Builtin::CubePosX,
     r"
@@ -187,7 +211,7 @@ The cube position along the X axis.
 "
 );
 
-constant!(
+constant_index!(
     CUBE_POS_Y,
     crate::ir::Builtin::CubePosY,
     r"
@@ -195,7 +219,7 @@ The cube position along the Y axis.
 "
 );
 
-constant!(
+constant_index!(
     CUBE_POS_Z,
     crate::ir::Builtin::CubePosZ,
     r"
@@ -243,7 +267,7 @@ The number of cubes launched.
 "
 );
 
-constant!(
+constant_index!(
     CUBE_COUNT_X,
     crate::ir::Builtin::CubeCountX,
     r"
@@ -251,7 +275,7 @@ The number of cubes launched along the X axis.
 "
 );
 
-constant!(
+constant_index!(
     CUBE_COUNT_Y,
     crate::ir::Builtin::CubeCountY,
     r"
@@ -259,7 +283,7 @@ The number of cubes launched along the Y axis.
 "
 );
 
-constant!(
+constant_index!(
     CUBE_COUNT_Z,
     crate::ir::Builtin::CubeCountZ,
     r"
@@ -275,7 +299,7 @@ The position of the working unit in the whole cube kernel, without regards to cu
 "
 );
 
-constant!(
+constant_index!(
     ABSOLUTE_POS_X,
     crate::ir::Builtin::AbsolutePosX,
     r"
@@ -283,7 +307,7 @@ The index of the working unit in the whole cube kernel along the X axis, without
 "
 );
 
-constant!(
+constant_index!(
     ABSOLUTE_POS_Y,
     crate::ir::Builtin::AbsolutePosY,
     r"
@@ -291,7 +315,7 @@ The index of the working unit in the whole cube kernel along the Y axis, without
 "
 );
 
-constant!(
+constant_index!(
     ABSOLUTE_POS_Z,
     crate::ir::Builtin::AbsolutePosZ,
     r"

@@ -68,7 +68,7 @@ pub fn memory_direct_throughput<I: Numeric, N: Size>(
     #[define(I)] _dtype: ElemType,
 ) {
     let len = output.len();
-    let stride = CUBE_DIM as usize * CUBE_COUNT;
+    let stride = CUBE_DIM * CUBE_COUNT;
 
     // From `window` alone rather than from `window - ABSOLUTE_POS`, which
     // underflows for a thread past the end of a window smaller than the launch.

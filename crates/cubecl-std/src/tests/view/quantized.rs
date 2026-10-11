@@ -60,7 +60,7 @@ pub fn kernel_quantized_view<F: Float, N: Size>(
     output: &mut [Vector<F, N>],
     #[comptime] mode: ReadMode,
 ) {
-    let pos = UNIT_POS as usize;
+    let pos = UNIT_POS;
     if pos < lhs.shape() {
         output[pos] = match mode {
             ReadMode::Read => lhs.read(pos),
@@ -222,7 +222,7 @@ pub fn kernel_global_scale_quantized_view<F: Float, N: Size>(
         scheme,
     )
     .view();
-    let pos = UNIT_POS as usize;
+    let pos = UNIT_POS;
     if pos < view.shape() {
         output[pos] = view.read(pos);
     }
@@ -285,7 +285,7 @@ pub fn kernel_whole_scale_quantized_view<F: Float, N: Size>(
         scheme,
     )
     .view();
-    let pos = UNIT_POS as usize;
+    let pos = UNIT_POS;
     if pos < view.shape() {
         output[pos] = view.read(pos);
     }

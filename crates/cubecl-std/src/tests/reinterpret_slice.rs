@@ -8,7 +8,7 @@ use half::f16;
 #[cube(launch_unchecked)]
 fn kernel_read_global<N: Size>(input: &[Vector<i8, N>], output: &mut [f16]) {
     let list = ReinterpretSlice::<_, f16>::new(input);
-    output[UNIT_POS as usize] = list.read(UNIT_POS as usize);
+    output[UNIT_POS] = list.read(UNIT_POS);
 }
 
 pub fn run_test_read_global<R: Runtime>(client: Client, vector_size: usize) {
@@ -41,7 +41,7 @@ pub fn run_test_read_global<R: Runtime>(client: Client, vector_size: usize) {
 #[cube(launch_unchecked)]
 fn kernel_write_global<N: Size>(output: &mut [Vector<i8, N>], input: &[f16]) {
     let mut list = ReinterpretSliceMut::<_, f16>::new(output);
-    list.write(UNIT_POS as usize, input[UNIT_POS as usize]);
+    list.write(UNIT_POS, input[UNIT_POS]);
 }
 
 pub fn run_test_write_global<R: Runtime>(client: Client, vector_size: usize) {
@@ -84,7 +84,7 @@ fn kernel_read_shared_memory(output: &mut [f16]) {
     }
     sync_cube();
     let list = ReinterpretSlice::<_, f16>::new(mem.as_slice());
-    output[UNIT_POS as usize] = list.read(UNIT_POS as usize);
+    output[UNIT_POS] = list.read(UNIT_POS);
 }
 
 pub fn run_test_read_shared_memory<R: Runtime>(client: Client) {
@@ -115,7 +115,7 @@ pub fn run_test_read_shared_memory<R: Runtime>(client: Client) {
 fn kernel_write_shared_memory<N: Size>(output: &mut [Vector<i8, N>], input: &[f16]) {
     let mut mem = Shared::new_slice(1usize);
     let mut list = ReinterpretSliceMut::<_, f16>::new(mem.as_mut_slice());
-    let unit_pos = UNIT_POS as usize;
+    let unit_pos = UNIT_POS;
     list.write(unit_pos, input[unit_pos]);
     output[2 * unit_pos] = mem[2 * unit_pos];
     output[2 * unit_pos + 1] = mem[2 * unit_pos + 1];
