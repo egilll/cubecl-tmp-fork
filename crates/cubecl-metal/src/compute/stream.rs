@@ -279,6 +279,10 @@ pub struct MetalStream {
     pub max_submitted_ops: usize,
     /// Last committed command buffer, kept alive for back-pressure waits.
     pub last_command_buffer: Option<Retained<ProtocolObject<dyn MTLCommandBuffer>>>,
+    /// Committed command buffers not yet known complete, oldest first, with
+    /// the operations each carries.
+    pub in_flight:
+        std::collections::VecDeque<(Retained<ProtocolObject<dyn MTLCommandBuffer>>, usize)>,
     /// When `Some`, device profiling is active on this stream: each work-bearing command
     /// buffer committed during the window is collected here so its GPU timestamps
     /// (`GPUStartTime`/`GPUEndTime`) can be read after completion.
@@ -410,6 +414,7 @@ impl MetalStream {
         }
         // Everything submitted has run, so nothing is left to regulate.
         self.submitted_ops = 0;
+        self.in_flight.clear();
     }
 
     /// Record that the open command buffer writes `bindings`.
@@ -647,18 +652,27 @@ impl MetalStream {
             .relocate(&mut copier, reason, failures);
     }
 
-    /// Waits on a previously submitted command buffer if total queued ops
-    /// exceed `max_submitted_ops`, then resets the counter. The memory is
-    /// cleaned up by its reservations, not here.
-    pub fn regulate(&mut self, ops_in_batch: usize) {
+    /// Records `command_buffer`, just committed with `ops_in_batch`
+    /// operations, and while more than `max_submitted_ops` are in flight
+    /// waits on the oldest batches. Waiting on the oldest rather than the
+    /// newest bounds the queue without draining it: the device keeps
+    /// working on the batches behind while the host encodes the next. The
+    /// memory is cleaned up by its reservations, not here.
+    pub fn regulate(
+        &mut self,
+        command_buffer: Retained<ProtocolObject<dyn MTLCommandBuffer>>,
+        ops_in_batch: usize,
+    ) {
         self.submitted_ops += ops_in_batch;
-
-        if self.submitted_ops >= self.max_submitted_ops {
-            if let Some(cmd_buf) = self.last_command_buffer.take() {
-                (*cmd_buf).waitUntilCompleted();
-                std::sync::atomic::fence(std::sync::atomic::Ordering::Acquire);
-            }
-            self.submitted_ops = 0;
+        self.in_flight.push_back((command_buffer, ops_in_batch));
+        while self.submitted_ops > self.max_submitted_ops {
+            let Some((oldest, ops)) = self.in_flight.pop_front() else {
+                self.submitted_ops = 0;
+                break;
+            };
+            (*oldest).waitUntilCompleted();
+            std::sync::atomic::fence(std::sync::atomic::Ordering::Acquire);
+            self.submitted_ops -= ops;
         }
     }
 }
@@ -909,6 +923,7 @@ impl EventStreamBackend for MetalStreamBackend {
             submitted_ops: 0,
             max_submitted_ops,
             last_command_buffer: None,
+            in_flight: std::collections::VecDeque::new(),
             profiling: None,
             timestamps: TimestampProfiler::default(),
             fault: Arc::new(FaultState::default()),
@@ -1026,12 +1041,12 @@ fn flush_batch(stream: &mut MetalStream, _failures: &mut ErrorGraph) -> MetalEve
         buffers.push(command_buffer.clone());
     }
 
-    stream.last_command_buffer = Some(command_buffer);
+    stream.last_command_buffer = Some(command_buffer.clone());
 
     stream.batch_ops = 0;
     stream.batch_bytes = 0;
 
-    stream.regulate(ops_in_batch);
+    stream.regulate(command_buffer, ops_in_batch);
 
     MetalEvent::new(
         stream.shared_event.clone(),

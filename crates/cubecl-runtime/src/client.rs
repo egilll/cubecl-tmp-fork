@@ -303,9 +303,9 @@ impl Client {
     /// tagged batch holds only that tag's launches.
     pub fn set_tag(&self, tag: Option<&'static str>) {
         let stream_id = self.stream_id();
+        // An ordered stream operation like a launch: nothing to wait for.
         self.device
-            .submit_blocking(move |server| server.set_tag(stream_id, tag))
-            .unwrap_or_resume()
+            .submit(move |server| server.set_tag(stream_id, tag));
     }
 
     /// Measured GPU time of completed work by tag (see
