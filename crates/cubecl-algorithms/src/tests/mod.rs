@@ -3,6 +3,7 @@
 pub use test_log;
 
 pub mod fft;
+pub mod matmul;
 pub mod reduce;
 pub mod scan;
 pub mod sort;
@@ -17,6 +18,7 @@ macro_rules! testgen {
             cubecl_algorithms::testgen_sort!();
             cubecl_algorithms::testgen_reduce!();
             cubecl_algorithms::testgen_fft!();
+            cubecl_algorithms::testgen_matmul!();
         }
     };
 }
