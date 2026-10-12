@@ -124,15 +124,28 @@ fn max_total_threads_never_declaring_a_single_simdgroup(
 /// The buffer binding slots a Metal compute function may use.
 pub const MAX_BUFFER_BINDINGS: usize = 31;
 
-/// The buffer slots `func`'s arguments occupy: one past the highest.
+/// The buffer slots `func`'s arguments occupy: one past the highest bound,
+/// and one more per argument Metal places itself.
 pub fn buffer_slots(ctx: &Context, func: &FuncOp) -> usize {
     let block = func.get_entry_block(ctx);
     let arguments = block.deref(ctx).get_num_arguments();
-    (0..arguments)
+    let bound = (0..arguments)
         .filter_map(|i| func.get_arg_attr::<BufferBindingAttr>(ctx, i, &ATTR_BUFFER_BINDING))
         .map(|binding| binding.buffer_pos + 1)
         .max()
-        .unwrap_or(0)
+        .unwrap_or(0);
+    // Parameters with neither a binding nor a builtin attribute, such as the
+    // info struct, take the next free buffer slots.
+    let implicit = (0..arguments)
+        .filter(|&i| {
+            func.get_arg_attr::<BufferBindingAttr>(ctx, i, &ATTR_BUFFER_BINDING)
+                .is_none()
+                && func
+                    .get_arg_attr::<BuiltInAttr>(ctx, i, &ATTR_BUILTIN_ATTRIBUTE)
+                    .is_none()
+        })
+        .count();
+    bound + implicit
 }
 
 fn gen_param(ctx: &Context, func: &FuncOp, i: usize, arg: Value) -> String {
