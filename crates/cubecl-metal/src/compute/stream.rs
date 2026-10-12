@@ -346,15 +346,20 @@ impl MetalStream {
     /// Returns the active batch encoder, creating one if none is open.
     pub fn get_or_create_encoder(&mut self) -> &mut ActiveEncoder {
         if self.active_encoder.is_none() {
-            let command_buffer = (*self.queue)
-                .commandBuffer()
-                .expect("Failed to create command buffer");
-
-            // Concurrent: dispatches overlap unless a barrier orders them,
-            // which the launch inserts where [`Hazards`] finds a conflict.
-            let encoder = (*command_buffer)
-                .computeCommandEncoderWithDispatchType(MTLDispatchType::Concurrent)
-                .expect("Failed to create compute command encoder");
+            // Metal returns both autoreleased; the pool releases its claim
+            // here, on a thread that has no pool of its own.
+            let (command_buffer, encoder) = objc2::rc::autoreleasepool(|_| {
+                let command_buffer = (*self.queue)
+                    .commandBuffer()
+                    .expect("Failed to create command buffer");
+                // Concurrent: dispatches overlap unless a barrier orders
+                // them, which the launch inserts where [`Hazards`] finds a
+                // conflict.
+                let encoder = (*command_buffer)
+                    .computeCommandEncoderWithDispatchType(MTLDispatchType::Concurrent)
+                    .expect("Failed to create compute command encoder");
+                (command_buffer, encoder)
+            });
 
             self.batch_seq += 1;
             self.active_encoder = Some(ActiveEncoder {
@@ -529,56 +534,60 @@ impl MetalStream {
         regions: &[(crate::memory::MetalBufferHandle, u64, u64)],
     ) -> Result<(MetalEvent, Vec<Retained<ProtocolObject<dyn MTLBuffer>>>), ServerError> {
         use objc2_metal::{MTLBlitCommandEncoder, MTLCommandEncoder, MTLResourceOptions};
-
-        let command_buffer = (*self.queue)
-            .commandBuffer()
-            .expect("Failed to create command buffer");
-        let blit = command_buffer
-            .blitCommandEncoder()
-            .expect("Failed to create blit command encoder");
-        let mut stagings = Vec::with_capacity(regions.len());
-        for (resource, offset, size) in regions {
-            let staging = (*self.device)
-                .newBufferWithLength_options(*size as usize, MTLResourceOptions::StorageModeShared)
-                .ok_or_else(|| ServerError::Generic {
-                    reason: format!("failed to allocate a {size} B staging buffer for a read"),
-                    backtrace: cubecl_environment::backtrace::BackTrace::capture(),
-                })?;
-            let source: &ProtocolObject<dyn MTLBuffer> = resource.inner().as_ref();
-            unsafe {
-                blit.copyFromBuffer_sourceOffset_toBuffer_destinationOffset_size(
-                    source,
-                    *offset as usize,
-                    &staging,
-                    0,
-                    *size as usize,
-                );
+        objc2::rc::autoreleasepool(|_| {
+            let command_buffer = (*self.queue)
+                .commandBuffer()
+                .expect("Failed to create command buffer");
+            let blit = command_buffer
+                .blitCommandEncoder()
+                .expect("Failed to create blit command encoder");
+            let mut stagings = Vec::with_capacity(regions.len());
+            for (resource, offset, size) in regions {
+                let staging = (*self.device)
+                    .newBufferWithLength_options(
+                        *size as usize,
+                        MTLResourceOptions::StorageModeShared,
+                    )
+                    .ok_or_else(|| ServerError::Generic {
+                        reason: format!("failed to allocate a {size} B staging buffer for a read"),
+                        backtrace: cubecl_environment::backtrace::BackTrace::capture(),
+                    })?;
+                let source: &ProtocolObject<dyn MTLBuffer> = resource.inner().as_ref();
+                unsafe {
+                    blit.copyFromBuffer_sourceOffset_toBuffer_destinationOffset_size(
+                        source,
+                        *offset as usize,
+                        &staging,
+                        0,
+                        *size as usize,
+                    );
+                }
+                stagings.push(staging);
             }
-            stagings.push(staging);
-        }
-        blit.endEncoding();
+            blit.endEncoding();
 
-        // Signaled by the completion handler rather than the GPU: handlers
-        // run in queue order, so by then a fault of any earlier buffer of
-        // this stream is recorded, and the read fails on it instead of
-        // returning bytes the faulted work never wrote.
-        self.event_counter += 1;
-        let value = self.event_counter;
-        install_completion_handler_signaling(
-            &command_buffer,
-            Vec::new(),
-            Some((self.shared_event.clone(), value)),
-            self.fault.clone(),
-            0,
-            false,
-            true,
-        );
-        command_buffer.commit();
-        self.last_command_buffer = Some(command_buffer);
-        Ok((
-            MetalEvent::new(self.shared_event.clone(), value, self.fault.clone()),
-            stagings,
-        ))
+            // Signaled by the completion handler rather than the GPU: handlers
+            // run in queue order, so by then a fault of any earlier buffer of
+            // this stream is recorded, and the read fails on it instead of
+            // returning bytes the faulted work never wrote.
+            self.event_counter += 1;
+            let value = self.event_counter;
+            install_completion_handler_signaling(
+                &command_buffer,
+                Vec::new(),
+                Some((self.shared_event.clone(), value)),
+                self.fault.clone(),
+                0,
+                false,
+                true,
+            );
+            command_buffer.commit();
+            self.last_command_buffer = Some(command_buffer);
+            Ok((
+                MetalEvent::new(self.shared_event.clone(), value, self.fault.clone()),
+                stagings,
+            ))
+        })
     }
 
     /// The newest command buffer that writes into any of `bindings` and
@@ -737,28 +746,31 @@ impl MetalEvent {
             return;
         }
 
-        if let Some(active) = stream.active_encoder.take() {
-            (*active.encoder).endEncoding();
-            stream.account_batch(&active);
-            install_completion_handler(
-                &active.command_buffer,
-                active.temporaries,
-                None,
-                stream.fault.clone(),
-                active.seq,
-                active.inject_fault,
-            );
-            (*active.command_buffer).commit();
-        }
+        // Releases the autoreleased command buffers on the server's thread.
+        objc2::rc::autoreleasepool(|_| {
+            if let Some(active) = stream.active_encoder.take() {
+                (*active.encoder).endEncoding();
+                stream.account_batch(&active);
+                install_completion_handler(
+                    &active.command_buffer,
+                    active.temporaries,
+                    None,
+                    stream.fault.clone(),
+                    active.seq,
+                    active.inject_fault,
+                );
+                (*active.command_buffer).commit();
+            }
 
-        let command_buffer = (*stream.queue)
-            .commandBuffer()
-            .expect("Failed to create command buffer");
+            let command_buffer = (*stream.queue)
+                .commandBuffer()
+                .expect("Failed to create command buffer");
 
-        let event_ref: &ProtocolObject<dyn MTLEvent> =
-            ProtocolObject::from_ref(&*self.shared_event);
-        (*command_buffer).encodeWaitForEvent_value(event_ref, self.value);
-        (*command_buffer).commit();
+            let event_ref: &ProtocolObject<dyn MTLEvent> =
+                ProtocolObject::from_ref(&*self.shared_event);
+            (*command_buffer).encodeWaitForEvent_value(event_ref, self.value);
+            (*command_buffer).commit();
+        });
     }
 }
 
@@ -916,87 +928,11 @@ impl EventStreamBackend for MetalStreamBackend {
         })
     }
 
-    fn flush(stream: &mut Self::Stream, _failures: &mut ErrorGraph) -> Self::Event {
-        use objc2_metal::{MTLCommandBuffer, MTLCommandEncoder, MTLEvent};
-
-        stream.event_counter += 1;
-        let signal_value = stream.event_counter;
-
-        let signal = Some((stream.shared_event.clone(), signal_value));
-
-        let command_buffer = if let Some(active) = stream.active_encoder.take() {
-            (*active.encoder).endEncoding();
-            stream.account_batch(&active);
-
-            // Metal never signals a faulted command buffer's event; its
-            // completion handler does, after recording the fault. An injected
-            // fault has to look the same, or a wait could see the signal
-            // before the fault.
-            if !active.inject_fault {
-                let event_ref: &ProtocolObject<dyn MTLEvent> =
-                    ProtocolObject::from_ref(&*stream.shared_event);
-                (*active.command_buffer).encodeSignalEvent_value(event_ref, signal_value);
-            }
-
-            if !active.inject_fault {
-                stream.batch_events.push_back((active.seq, signal_value));
-                if stream.batch_events.len() > 512 {
-                    stream.batch_events.pop_front();
-                }
-            }
-            install_completion_handler(
-                &active.command_buffer,
-                active.temporaries,
-                signal,
-                stream.fault.clone(),
-                active.seq,
-                active.inject_fault,
-            );
-            (*active.command_buffer).commit();
-            active.command_buffer
-        } else {
-            let signal_buffer = (*stream.queue)
-                .commandBuffer()
-                .expect("Failed to create command buffer");
-
-            let event_ref: &ProtocolObject<dyn MTLEvent> =
-                ProtocolObject::from_ref(&*stream.shared_event);
-            (*signal_buffer).encodeSignalEvent_value(event_ref, signal_value);
-            // Carries no work, so it confirms nothing.
-            install_completion_handler(
-                &signal_buffer,
-                Vec::new(),
-                signal,
-                stream.fault.clone(),
-                0,
-                false,
-            );
-            (*signal_buffer).commit();
-            signal_buffer
-        };
-
-        let ops_in_batch = stream.batch_ops;
-
-        // While profiling, collect command buffers that actually carried dispatches; skip
-        // empty signal-only buffers (ops_in_batch == 0) so they don't widen the measured span.
-        if ops_in_batch > 0
-            && let Some(buffers) = stream.profiling.as_mut()
-        {
-            buffers.push(command_buffer.clone());
-        }
-
-        stream.last_command_buffer = Some(command_buffer);
-
-        stream.batch_ops = 0;
-        stream.batch_bytes = 0;
-
-        stream.regulate(ops_in_batch);
-
-        MetalEvent::new(
-            stream.shared_event.clone(),
-            signal_value,
-            stream.fault.clone(),
-        )
+    fn flush(stream: &mut Self::Stream, failures: &mut ErrorGraph) -> Self::Event {
+        // The server's thread has no autorelease pool of its own: without
+        // one per batch, every command buffer and encoder Metal hands back
+        // autoreleased stays alive for the life of the process.
+        objc2::rc::autoreleasepool(|_| flush_batch(stream, failures))
     }
 
     fn handle_cursor(stream: &Self::Stream, handle: &BufferBinding) -> u64 {
@@ -1017,6 +953,91 @@ impl EventStreamBackend for MetalStreamBackend {
     fn wait_event_sync(event: Self::Event) -> Result<(), ServerError> {
         event.wait_sync()
     }
+}
+
+/// Ends the active batch, if any, commits it with a signal of the stream's
+/// next event value, and returns that event.
+fn flush_batch(stream: &mut MetalStream, _failures: &mut ErrorGraph) -> MetalEvent {
+    use objc2_metal::{MTLCommandBuffer, MTLCommandEncoder, MTLEvent};
+
+    stream.event_counter += 1;
+    let signal_value = stream.event_counter;
+
+    let signal = Some((stream.shared_event.clone(), signal_value));
+
+    let command_buffer = if let Some(active) = stream.active_encoder.take() {
+        (*active.encoder).endEncoding();
+        stream.account_batch(&active);
+
+        // Metal never signals a faulted command buffer's event; its
+        // completion handler does, after recording the fault. An injected
+        // fault has to look the same, or a wait could see the signal
+        // before the fault.
+        if !active.inject_fault {
+            let event_ref: &ProtocolObject<dyn MTLEvent> =
+                ProtocolObject::from_ref(&*stream.shared_event);
+            (*active.command_buffer).encodeSignalEvent_value(event_ref, signal_value);
+        }
+
+        if !active.inject_fault {
+            stream.batch_events.push_back((active.seq, signal_value));
+            if stream.batch_events.len() > 512 {
+                stream.batch_events.pop_front();
+            }
+        }
+        install_completion_handler(
+            &active.command_buffer,
+            active.temporaries,
+            signal,
+            stream.fault.clone(),
+            active.seq,
+            active.inject_fault,
+        );
+        (*active.command_buffer).commit();
+        active.command_buffer
+    } else {
+        let signal_buffer = (*stream.queue)
+            .commandBuffer()
+            .expect("Failed to create command buffer");
+
+        let event_ref: &ProtocolObject<dyn MTLEvent> =
+            ProtocolObject::from_ref(&*stream.shared_event);
+        (*signal_buffer).encodeSignalEvent_value(event_ref, signal_value);
+        // Carries no work, so it confirms nothing.
+        install_completion_handler(
+            &signal_buffer,
+            Vec::new(),
+            signal,
+            stream.fault.clone(),
+            0,
+            false,
+        );
+        (*signal_buffer).commit();
+        signal_buffer
+    };
+
+    let ops_in_batch = stream.batch_ops;
+
+    // While profiling, collect command buffers that actually carried dispatches; skip
+    // empty signal-only buffers (ops_in_batch == 0) so they don't widen the measured span.
+    if ops_in_batch > 0
+        && let Some(buffers) = stream.profiling.as_mut()
+    {
+        buffers.push(command_buffer.clone());
+    }
+
+    stream.last_command_buffer = Some(command_buffer);
+
+    stream.batch_ops = 0;
+    stream.batch_bytes = 0;
+
+    stream.regulate(ops_in_batch);
+
+    MetalEvent::new(
+        stream.shared_event.clone(),
+        signal_value,
+        stream.fault.clone(),
+    )
 }
 
 #[cfg(test)]
