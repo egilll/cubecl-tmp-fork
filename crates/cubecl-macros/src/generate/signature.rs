@@ -4,7 +4,7 @@ use syn::Type;
 
 use crate::{
     parse::{kernel::expand_kernel_ty, signature::*},
-    paths::prelude_type,
+    paths::{frontend_type, prelude_type},
 };
 
 impl ToTokens for KernelSignature {
@@ -51,8 +51,14 @@ impl ToTokens for KernelSignature {
 impl ToTokens for KernelParam {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let name = &self.name;
-        let ty = &self.normalized_ty;
         let mut_ = &self.mutability;
-        tokens.extend(quote![#mut_ #name: #ty]);
+        if self.expand_arg {
+            let expand_arg = frontend_type("ExpandArg");
+            let ty = &self.ty;
+            tokens.extend(quote![#mut_ #name: #expand_arg<#ty>]);
+        } else {
+            let ty = &self.normalized_ty;
+            tokens.extend(quote![#mut_ #name: #ty]);
+        }
     }
 }

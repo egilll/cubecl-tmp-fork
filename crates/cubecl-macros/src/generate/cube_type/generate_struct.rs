@@ -5,7 +5,10 @@ use syn::{Ident, Member, Type, Visibility, WhereClause};
 use super::generate::reference_impls;
 use crate::{
     generate::bounded_where_clause,
-    parse::cube_type::{CubeTypeStruct, TypeField},
+    parse::{
+        cube_type::{CubeTypeStruct, TypeField},
+        kernel::names_generic,
+    },
     paths::{frontend_type, prelude_type},
 };
 
@@ -42,7 +45,7 @@ impl CubeTypeStruct {
 
     /// The expanded tuple constructor, reachable through the struct's own
     /// path, so `Name(a, b)` in a kernel needs no import of the expand type
-    /// and infers generics the fields determine.
+    /// and infers generics from its arguments as in Rust.
     fn tuple_constructor(&self) -> TokenStream {
         if !self.tuple {
             return TokenStream::new();
@@ -51,7 +54,6 @@ impl CubeTypeStruct {
         let expand = self.name_expand.as_ref().unwrap();
         let vis = &self.vis;
         let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
-        let cube_type = prelude_type("CubeType");
         // Phantom markers carry no value, so the constructor takes none for
         // them: a marker-free function named after the type, such as one
         // behind a type alias, expands through it too.
@@ -63,12 +65,18 @@ impl CubeTypeStruct {
             }
             let param = quote::format_ident!("field_{index}");
             let ty = &field.ty;
-            types.push(if field.comptime.is_present() {
-                quote![#ty]
-            } else {
-                quote![<#ty as #cube_type>::ExpandType]
-            });
             params.push(param.clone());
+            if field.comptime.is_present() {
+                types.push(quote![#ty]);
+                return quote![#param];
+            }
+            if names_generic(ty, &self.generics) {
+                let expand_arg = frontend_type("ExpandArg");
+                types.push(quote![#expand_arg<#ty>]);
+                return quote![#param.into_inner()];
+            }
+            let cube_type = prelude_type("CubeType");
+            types.push(quote![<#ty as #cube_type>::ExpandType]);
             quote![#param]
         });
         let values: Vec<_> = values.collect();

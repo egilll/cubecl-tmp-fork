@@ -187,7 +187,7 @@ impl<'a, Q: Scalar, NQ: Size, S: Scalar, F: Numeric, NF: Size, C: Coordinates + 
                 dequantize_aligned::expand::<Q, S, F, NQ, NF>(
                     scope,
                     value,
-                    scale,
+                    scale.into(),
                     self.table.clone(),
                     self.scheme,
                 )
@@ -200,7 +200,7 @@ impl<'a, Q: Scalar, NQ: Size, S: Scalar, F: Numeric, NF: Size, C: Coordinates + 
                 );
                 check_global_levels(&self.scheme);
                 let scale = read_scale(scope);
-                let scale = multiply_global_scale::expand::<S>(scope, global_scale, scale);
+                let scale = multiply_global_scale::expand::<S>(scope, global_scale, scale.into());
                 dequantize_aligned_wide::expand::<Q, F, NQ, NF>(
                     scope,
                     value,

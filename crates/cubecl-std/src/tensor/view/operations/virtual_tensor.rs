@@ -38,7 +38,7 @@ impl<T: Numeric, N: Size, IO: Clone> ViewOperationsExpand<Vector<T, N>, Coords1d
     ) -> <Vector<T, N> as CubeType>::ExpandType {
         let in_bounds = self.__expand_is_in_bounds_method(scope, pos);
         let slice = self.__expand_as_slice_method(scope);
-        read_masked::expand::<Vector<T, N>>(scope, in_bounds, slice, pos, mask_value)
+        read_masked::expand::<Vector<T, N>>(scope, in_bounds, slice, pos, mask_value.into())
     }
 
     fn __expand_read_unchecked_method(

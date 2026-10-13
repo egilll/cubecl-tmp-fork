@@ -97,10 +97,17 @@ impl KernelFn {
             .analysis
             .register_types(mappings, quote![scope], false, false);
 
+        let expand_args = sig
+            .parameters
+            .iter()
+            .filter(|param| param.expand_arg)
+            .map(|param| &param.name);
+
         let out = quote! {
             #[allow(unused_mut)]
             #(#attrs)*
             #vis #sig {
+                #(let #expand_args = #expand_args.into_inner();)*
                 #debug_source;
                 #(#debug_params)*
                 #imports;

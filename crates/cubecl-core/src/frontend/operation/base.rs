@@ -109,7 +109,7 @@ pub trait DivCeilExpand<E: Int> {
 
 impl<E: DivCeil> DivCeilExpand<E> for NativeExpand<E> {
     fn __expand_div_ceil_method(self, scope: &Scope, divisor: NativeExpand<E>) -> NativeExpand<E> {
-        div_ceil::expand::<E>(scope, self, divisor)
+        div_ceil::expand::<E>(scope, self.into(), divisor.into())
     }
 }
 

@@ -21,7 +21,7 @@ impl<T: CubePrimitive> ViewOperationsExpand<T, Coords1d> for SliceExpand<T> {
         let len = self.__expand_len_method(scope);
         let in_bounds = pos.__expand_lt_method(scope, &len);
         let zero = T::__expand_cast_from(scope, 0.into());
-        read_masked::expand::<T>(scope, in_bounds, self, pos, zero)
+        read_masked::expand::<T>(scope, in_bounds, self, pos, zero.into())
     }
 
     fn __expand_read_masked_method(
@@ -32,7 +32,7 @@ impl<T: CubePrimitive> ViewOperationsExpand<T, Coords1d> for SliceExpand<T> {
     ) -> <T>::ExpandType {
         let len = self.__expand_len_method(scope);
         let in_bounds = pos.__expand_lt_method(scope, &len);
-        read_masked::expand::<T>(scope, in_bounds, self, pos, mask_value)
+        read_masked::expand::<T>(scope, in_bounds, self, pos, mask_value.into())
     }
 
     fn __expand_read_unchecked_method(

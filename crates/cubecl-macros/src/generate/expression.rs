@@ -996,23 +996,30 @@ fn split_generics(path: &Expression, context: &mut Context) -> (PathArguments, T
 }
 
 fn map_args(args: &[Expression], context: &mut Context) -> Vec<TokenStream> {
-    args.iter()
-        .map(|value| {
-            let is_closure = is_closure(value);
-            let tokens = if matches!(value, Expression::Variable(var) if var.is_mut_owned && !var.is_const) {
-                read_expand(value.to_tokens(context))
-            } else {
-                value
-                    .as_const(context)
-                    .unwrap_or_else(|| value.to_tokens(context))
-            };
-            if is_closure {
-                tokens
-            } else {
-                quote_spanned![tokens.span()=> (#tokens).into()]
+    args.iter().map(|value| argument(value, context)).collect()
+}
+
+/// An argument as a call passes it: converted with `Into` to the parameter's
+/// type. An untyped literal is marked, so it keeps its own type and decides a
+/// generic parameter's as it would in Rust.
+fn argument(value: &Expression, context: &mut Context) -> TokenStream {
+    if is_closure(value) {
+        return value.to_tokens(context);
+    }
+    let tokens = if matches!(value, Expression::Variable(var) if var.is_mut_owned && !var.is_const)
+    {
+        read_expand(value.to_tokens(context))
+    } else {
+        match value.as_const(context) {
+            Some(constant) if is_untyped_literal(&constant) => {
+                let literal = frontend_type("LiteralArg");
+                quote_spanned![constant.span()=> #literal(#constant)]
             }
-        })
-        .collect()
+            Some(constant) => constant,
+            None => value.to_tokens(context),
+        }
+    };
+    quote_spanned![tokens.span()=> (#tokens).into()]
 }
 
 fn is_closure(expr: &Expression) -> bool {
@@ -1023,23 +1030,17 @@ fn is_closure(expr: &Expression) -> bool {
     }
 }
 
-/// The values of a tuple struct literal, in field order.
+/// The values of a tuple struct literal, in field order, as constructor
+/// arguments.
 fn tuple_values(fields: &[(Member, Expression)], context: &mut Context) -> Vec<TokenStream> {
     let mut ordered: Vec<_> = fields
         .iter()
-        .map(|(member, it)| {
+        .map(|(member, value)| {
             let index = match member {
                 Member::Unnamed(index) => index.index,
                 Member::Named(_) => unreachable!("a tuple struct literal"),
             };
-            let value = match it.as_const(context) {
-                Some(as_const) => {
-                    let it = quote_spanned![as_const.span()=> #as_const];
-                    quote![#it.into()]
-                }
-                None => it.to_tokens(context),
-            };
-            (index, value)
+            (index, argument(value, context))
         })
         .collect();
     ordered.sort_by_key(|(index, _)| *index);

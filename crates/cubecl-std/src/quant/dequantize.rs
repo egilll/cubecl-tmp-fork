@@ -241,7 +241,7 @@ mod tests {
             dequantize_aligned::expand::<f32, f32, f32, N1, N1>(
                 &scope,
                 value,
-                one,
+                one.into(),
                 ComptimeOptionExpand::None,
                 scheme,
             );

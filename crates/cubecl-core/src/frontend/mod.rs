@@ -1,3 +1,4 @@
+mod argument;
 pub mod asm;
 pub mod barrier;
 pub mod branch;
@@ -31,6 +32,7 @@ mod topology;
 pub mod trigonometry;
 mod validation;
 
+pub use argument::*;
 pub use asm::*;
 pub use base::*;
 pub use branch::*;

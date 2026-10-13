@@ -12,7 +12,7 @@ use crate::{
     RemoveHelpers,
     parse::{
         helpers::{is_comptime_attr, is_define_attribute},
-        kernel::{DefinedGeneric, KernelArgs, expand_kernel_ty},
+        kernel::{DefinedGeneric, KernelArgs, expand_kernel_ty, names_generic},
         statement::parse_pat,
     },
     paths::prelude_type,
@@ -190,6 +190,14 @@ impl KernelSignature {
         }
     }
 
+    /// Runtime parameters whose type names a generic are taken as
+    /// `ExpandArg`s, so a call infers the generic from its argument.
+    pub fn take_expand_args(&mut self) {
+        for param in self.parameters.iter_mut() {
+            param.expand_arg = !param.is_const && names_generic(&param.ty, &self.generics);
+        }
+    }
+
     pub fn runtime_params(&self) -> impl Iterator<Item = &KernelParam> {
         self.parameters.iter().filter(|it| !it.is_const)
     }
@@ -249,6 +257,8 @@ pub struct KernelParam {
     pub defines: Vec<DefinedGeneric>,
     pub is_const: bool,
     pub mutability: Option<Mut>,
+    /// Taken as an `ExpandArg`, which the body unwraps.
+    pub expand_arg: bool,
 }
 
 impl KernelParam {
@@ -268,6 +278,7 @@ impl KernelParam {
                             defines: Vec::new(),
                             is_const: false,
                             mutability: param.mutability,
+                            expand_arg: false,
                         });
                     }
                     ReceiverKind::Reference(and, lifetime, mut_) => {
@@ -281,6 +292,7 @@ impl KernelParam {
                             defines: Vec::new(),
                             is_const: false,
                             mutability: None,
+                            expand_arg: false,
                         });
                     }
                     ReceiverKind::Typed(_, ty) => {
@@ -293,6 +305,7 @@ impl KernelParam {
                             defines: Vec::new(),
                             is_const: false,
                             mutability: param.mutability,
+                            expand_arg: false,
                         });
                     }
                     _ => todo!(),
@@ -343,6 +356,7 @@ impl KernelParam {
             normalized_ty,
             is_const,
             mutability: mut_token,
+            expand_arg: false,
         })
     }
 

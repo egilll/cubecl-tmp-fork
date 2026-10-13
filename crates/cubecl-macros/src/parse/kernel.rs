@@ -478,6 +478,9 @@ impl Launch {
             full_name,
             &args,
         )?;
+        if !args.is_launch() {
+            func.sig.take_expand_args();
+        }
 
         // Bail early if the user tries to have a return type in a launch kernel.
         if args.is_launch()
@@ -538,6 +541,23 @@ pub fn expand_kernel_ty(mut ty: Type, is_const: bool) -> syn::Result<Type> {
         let cube_type = prelude_type("CubeType");
         map_type_normalized(&mut ty, &|ty| parse_quote![<#ty as #cube_type>::ExpandType])?;
         Ok(ty)
+    }
+}
+
+/// Whether `ty` is one of `generics`' type parameters or a path through one,
+/// like `T` or `T::Elem`. Its expand type is then a projection, which Rust
+/// can't infer `T` from, so a parameter of the type is an `ExpandArg`.
+pub fn names_generic(ty: &Type, generics: &Generics) -> bool {
+    match ty {
+        Type::Group(group) => names_generic(&group.elem, generics),
+        Type::Paren(paren) => names_generic(&paren.elem, generics),
+        Type::Path(path) if path.qself.is_some() => true,
+        Type::Path(path) => path.path.segments.first().is_some_and(|first| {
+            generics
+                .type_params()
+                .any(|param| param.ident == first.ident)
+        }),
+        _ => false,
     }
 }
 

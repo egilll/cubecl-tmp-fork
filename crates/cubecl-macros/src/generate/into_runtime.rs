@@ -89,12 +89,21 @@ impl IntoRuntime {
         let fields: Vec<_> = fields.collect();
         // The concrete expansion, so the impl cannot overlap a blanket one.
         let name_expand = quote::format_ident!("{}Expand", name);
+        let expand_arg = frontend_type("ExpandArg");
         quote! {
             impl #generics From<#name #generic_names> for #name_expand #generic_names
             where #(#bounds,)*
             {
                 fn from(value: #name #generic_names) -> Self {
                     Self { #(#fields,)* }
+                }
+            }
+
+            impl #generics From<#name #generic_names> for #expand_arg<#name #generic_names>
+            where #(#bounds,)*
+            {
+                fn from(value: #name #generic_names) -> Self {
+                    #name_expand::from(value).into()
                 }
             }
         }
