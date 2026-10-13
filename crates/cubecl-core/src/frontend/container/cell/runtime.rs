@@ -39,6 +39,10 @@ impl<T: CubeType> cubecl::prelude::CubeType for RuntimeCell<T> {
     type ExpandType = RuntimeCellExpand<T>;
 }
 
+impl<T: CubeType> cubecl::prelude::Expanded for RuntimeCellExpand<T> {
+    type Host = RuntimeCell<T>;
+}
+
 impl<T: CubeType> cubecl::prelude::IntoMut for RuntimeCellExpand<T> {
     fn into_mut(self, _scope: &Scope) -> Self {
         Self {

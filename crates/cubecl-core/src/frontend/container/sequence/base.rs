@@ -274,6 +274,10 @@ impl<T: CubeType> CubeType for Sequence<T> {
     type ExpandType = SequenceExpand<T>;
 }
 
+impl<T: CubeType> Expanded for SequenceExpand<T> {
+    type Host = Sequence<T>;
+}
+
 impl<T: CubeType> SequenceExpand<T> {
     #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {

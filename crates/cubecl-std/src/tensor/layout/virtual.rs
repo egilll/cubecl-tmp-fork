@@ -82,6 +82,10 @@ impl<C: Coordinates, S: Coordinates> CubeType for VirtualLayout<C, S> {
     type ExpandType = VirtualLayoutExpand<C, S>;
 }
 
+impl<C: Coordinates, S: Coordinates> Expanded for VirtualLayoutExpand<C, S> {
+    type Host = VirtualLayout<C, S>;
+}
+
 impl<C: Coordinates, S: Coordinates> IntoExpand for VirtualLayoutExpand<C, S> {
     type Expand = VirtualLayoutExpand<C, S>;
 

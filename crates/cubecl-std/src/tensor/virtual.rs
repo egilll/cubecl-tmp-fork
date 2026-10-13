@@ -352,6 +352,10 @@ mod __cube_type {
         type ExpandType = VirtualTensorExpand<E, N, IO>;
     }
 
+    impl<E: Numeric, N: Size, IO: Clone> Expanded for VirtualTensorExpand<E, N, IO> {
+        type Host = VirtualTensor<E, N, IO>;
+    }
+
     impl<E: Numeric, N: Size, IO: Clone> IntoExpand for VirtualTensorExpand<E, N, IO> {
         type Expand = VirtualTensorExpand<E, N, IO>;
 

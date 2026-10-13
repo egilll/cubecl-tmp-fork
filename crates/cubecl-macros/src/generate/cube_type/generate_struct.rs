@@ -206,6 +206,7 @@ impl CubeTypeStruct {
     }
 
     fn cube_type_impl(&self) -> proc_macro2::TokenStream {
+        let expanded = prelude_type("Expanded");
         let cube_type = prelude_type("CubeType");
         let name = &self.ident;
         let name_expand = &self.name_expand;
@@ -215,6 +216,9 @@ impl CubeTypeStruct {
         quote! {
             impl #generics #cube_type for #name #generic_names #where_clause {
                 type ExpandType = #name_expand #generic_names;
+            }
+            impl #generics #expanded for #name_expand #generic_names #where_clause {
+                type Host = #name #generic_names;
             }
         }
     }

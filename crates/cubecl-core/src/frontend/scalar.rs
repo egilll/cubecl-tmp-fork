@@ -29,6 +29,10 @@ impl CubeType for InputScalar {
     type ExpandType = InputScalarExpand;
 }
 
+impl Expanded for InputScalarExpand {
+    type Host = InputScalar;
+}
+
 impl ExpandTypeClone for InputScalarExpand {
     fn clone_unchecked(&self) -> Self {
         self.clone()

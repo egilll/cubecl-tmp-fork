@@ -16,26 +16,26 @@ use super::*;
 
 /// A kernel value as an operator operand: the expand type of `Host`, or a
 /// reference to one, which the operator reads.
-pub trait Expanded {
+pub trait Operand {
     type Host: CubeType + ?Sized;
     fn __expand_operand(self, scope: &Scope) -> <Self::Host as CubeType>::ExpandType;
 }
 
-impl<T: CubeType<ExpandType = NativeExpand<T>>> Expanded for NativeExpand<T> {
+impl<T: CubeType<ExpandType = NativeExpand<T>>> Operand for NativeExpand<T> {
     type Host = T;
     fn __expand_operand(self, _: &Scope) -> NativeExpand<T> {
         self
     }
 }
 
-impl<T: CubeType<ExpandType = NativeExpand<T>>> Expanded for &NativeExpand<T> {
+impl<T: CubeType<ExpandType = NativeExpand<T>>> Operand for &NativeExpand<T> {
     type Host = T;
     fn __expand_operand(self, _: &Scope) -> NativeExpand<T> {
         self.clone_unchecked()
     }
 }
 
-impl<T: CubeType<ExpandType = NativeExpand<T>>> Expanded for &mut NativeExpand<T> {
+impl<T: CubeType<ExpandType = NativeExpand<T>>> Operand for &mut NativeExpand<T> {
     type Host = T;
     fn __expand_operand(self, _: &Scope) -> NativeExpand<T> {
         (*self).clone_unchecked()
@@ -44,17 +44,17 @@ impl<T: CubeType<ExpandType = NativeExpand<T>>> Expanded for &mut NativeExpand<T
 
 /// A kernel value a compound assignment writes: the expand type of `Host`,
 /// or a mutable reference to one.
-pub trait ExpandedPlace: Expanded {
+pub trait OperandPlace: Operand {
     fn __expand_place(&mut self) -> &mut <Self::Host as CubeType>::ExpandType;
 }
 
-impl<T: CubeType<ExpandType = NativeExpand<T>>> ExpandedPlace for NativeExpand<T> {
+impl<T: CubeType<ExpandType = NativeExpand<T>>> OperandPlace for NativeExpand<T> {
     fn __expand_place(&mut self) -> &mut NativeExpand<T> {
         self
     }
 }
 
-impl<T: CubeType<ExpandType = NativeExpand<T>>> ExpandedPlace for &mut NativeExpand<T> {
+impl<T: CubeType<ExpandType = NativeExpand<T>>> OperandPlace for &mut NativeExpand<T> {
     fn __expand_place(&mut self) -> &mut NativeExpand<T> {
         self
     }
@@ -64,7 +64,7 @@ macro_rules! binary_operator {
     ($trait: ident, $method: ident) => {
         paste::paste! {
             #[doc = concat!("The kernel implementation of `core::ops::", stringify!($trait), "<Rhs>`, for the same types.")]
-            pub trait [<Cube $trait>]<Rhs: CubeType = Self>: CubeType<ExpandType: Expanded<Host = Self>> + Sized + $trait<Rhs, Output: CubeType> {
+            pub trait [<Cube $trait>]<Rhs: CubeType = Self>: CubeType<ExpandType: Operand<Host = Self>> + Sized + $trait<Rhs, Output: CubeType> {
                 fn [<__expand_ $method>](
                     scope: &Scope,
                     lhs: Self::ExpandType,
@@ -78,7 +78,7 @@ macro_rules! binary_operator {
                 fn [<__expand_ $method _method>](self, scope: &Scope, rhs: Rhs) -> Self::Output;
             }
 
-            impl<L: Expanded, R: Expanded<Host: Sized>> [<$trait Expand>]<R> for L
+            impl<L: Operand, R: Operand<Host: Sized>> [<$trait Expand>]<R> for L
             where
                 L::Host: [<Cube $trait>]<R::Host>,
             {
@@ -114,7 +114,7 @@ macro_rules! assign_operator {
     ($trait: ident, $base_trait: ident, $method: ident, $base_method: ident) => {
         paste::paste! {
             #[doc = concat!("The kernel implementation of `core::ops::", stringify!($trait), "<Rhs>`, for the same types.")]
-            pub trait [<Cube $trait>]<Rhs: CubeType = Self>: CubeType<ExpandType: ExpandedPlace<Host = Self>> + Sized + $trait<Rhs> {
+            pub trait [<Cube $trait>]<Rhs: CubeType = Self>: CubeType<ExpandType: OperandPlace<Host = Self>> + Sized + $trait<Rhs> {
                 fn [<__expand_ $method>](scope: &Scope, lhs: &mut Self::ExpandType, rhs: Rhs::ExpandType);
             }
 
@@ -123,7 +123,7 @@ macro_rules! assign_operator {
                 fn [<__expand_ $method _method>](&mut self, scope: &Scope, rhs: Rhs);
             }
 
-            impl<L: ExpandedPlace, R: Expanded<Host: Sized>> [<$trait Expand>]<R> for L
+            impl<L: OperandPlace, R: Operand<Host: Sized>> [<$trait Expand>]<R> for L
             where
                 L::Host: [<Cube $trait>]<R::Host>,
             {
@@ -158,7 +158,7 @@ macro_rules! unary_operator {
     ($trait: ident, $method: ident, $native: expr) => {
         paste::paste! {
             #[doc = concat!("The kernel implementation of `core::ops::", stringify!($trait), "`, for the same types.")]
-            pub trait [<Cube $trait>]: CubeType<ExpandType: Expanded<Host = Self>> + $trait<Output: CubeType> {
+            pub trait [<Cube $trait>]: CubeType<ExpandType: Operand<Host = Self>> + $trait<Output: CubeType> {
                 fn [<__expand_ $method>](
                     scope: &Scope,
                     input: Self::ExpandType,
@@ -171,7 +171,7 @@ macro_rules! unary_operator {
                 fn [<__expand_ $method _method>](self, scope: &Scope) -> Self::Output;
             }
 
-            impl<X: Expanded> [<$trait Expand>] for X
+            impl<X: Operand> [<$trait Expand>] for X
             where
                 X::Host: [<Cube $trait>],
             {

@@ -31,7 +31,8 @@ use variadics_please::{all_tuples, all_tuples_enumerated};
 /// the generated code.
 #[diagnostic::on_unimplemented(note = "Consider using `#[derive(CubeType)]` on `{Self}`")]
 pub trait CubeType {
-    type ExpandType: IntoExpand<Expand = Self::ExpandType>
+    type ExpandType: Expanded<Host = Self>
+        + IntoExpand<Expand = Self::ExpandType>
         + ExpandTypeClone
         + IntoMut
         + CubeDebug
@@ -40,22 +41,48 @@ pub trait CubeType {
         + AsMutExpand;
 }
 
+/// An expand type, and the one type it expands.
+///
+/// The inverse of [`CubeType::ExpandType`]: since every expand type names its
+/// host, a kernel value determines the host type behind it, so a generic
+/// parameter can be inferred from an argument as it is in Rust.
+#[diagnostic::on_unimplemented(note = "Consider using `#[derive(CubeType)]` on its host type")]
+pub trait Expanded {
+    type Host: CubeType<ExpandType = Self> + ?Sized;
+}
+
 pub trait NativeCubeType: CubeType<ExpandType = NativeExpand<Self>> {}
 
 impl<'a, T: CubeType + ?Sized> CubeType for &'a T {
     type ExpandType = &'a T::ExpandType;
 }
 
+impl<'a, E: Expanded + ?Sized> Expanded for &'a E {
+    type Host = &'a E::Host;
+}
+
 impl<'a, T: CubeType + ?Sized> CubeType for &'a mut T {
     type ExpandType = &'a mut T::ExpandType;
+}
+
+impl<'a, E: Expanded + ?Sized> Expanded for &'a mut E {
+    type Host = &'a mut E::Host;
 }
 
 impl<T: CubeType + ?Sized> CubeType for *const T {
     type ExpandType = *const T::ExpandType;
 }
 
+impl<E: Expanded + ?Sized> Expanded for *const E {
+    type Host = *const E::Host;
+}
+
 impl<T: CubeType + ?Sized> CubeType for *mut T {
     type ExpandType = *mut T::ExpandType;
+}
+
+impl<E: Expanded + ?Sized> Expanded for *mut E {
+    type Host = *mut E::Host;
 }
 
 impl<T: CubeType<ExpandType = NativeExpand<T>> + ?Sized> NativeCubeType for T {}
@@ -693,6 +720,10 @@ pub struct NativeExpand<T: ?Sized> {
     pub(crate) _type: PhantomData<T>,
 }
 
+impl<T: NativeCubeType + ?Sized> Expanded for NativeExpand<T> {
+    type Host = T;
+}
+
 impl<T: ?Sized> IntoExpand for NativeExpand<T> {
     type Expand = Self;
 
@@ -853,6 +884,10 @@ macro_rules! tuple_cube_type {
     ($($P:ident),*) => {
         impl<$($P: CubeType),*> CubeType for ($($P,)*) {
             type ExpandType = ($($P::ExpandType,)*);
+        }
+
+        impl<$($P: Expanded<Host: Sized>),*> Expanded for ($($P,)*) {
+            type Host = ($($P::Host,)*);
         }
 
         impl<$($P: IntoExpand),*> IntoExpand for ($($P,)*) {
@@ -1026,6 +1061,10 @@ impl<T: CubeType> CubeType for Vec<T> {
     type ExpandType = Vec<T::ExpandType>;
 }
 
+impl<E: Expanded<Host: Sized>> Expanded for Vec<E> {
+    type Host = Vec<E::Host>;
+}
+
 impl<T: IntoExpand> IntoExpand for Vec<T> {
     type Expand = Self;
 
@@ -1067,6 +1106,10 @@ pub(crate) fn __expand_new<C: Numeric, Out: Numeric>(scope: &Scope, val: C) -> N
 
 impl CubeType for () {
     type ExpandType = ();
+}
+
+impl Expanded for () {
+    type Host = ();
 }
 
 impl LaunchArg for () {

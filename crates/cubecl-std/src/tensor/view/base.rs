@@ -47,6 +47,10 @@ macro_rules! impl_cube_type {
             type ExpandType = $expand<'a, E, C>;
         }
 
+        impl<'a, E: CubePrimitive, C: Coordinates + 'a> Expanded for $expand<'a, E, C> {
+            type Host = $ty<'a, E, C>;
+        }
+
         impl<'a, E: CubePrimitive, C: Coordinates> IntoExpand for $expand<'a, E, C> {
             type Expand = $expand<'a, E, C>;
 

@@ -18,7 +18,7 @@ use cubecl_core as cubecl;
 /// `*sequence.index(i)` reads an `R` back out.
 pub trait Real:
     CubeType<
-        ExpandType: Expanded<Host = Self>
+        ExpandType: Operand<Host = Self>
                         + Assign
                         + RuntimeAssign
                         + DerefExpand<Target = <Self as CubeType>::ExpandType>

@@ -22,8 +22,8 @@ pub(crate) fn reference_impls(
     generics: &Generics,
 ) -> TokenStream {
     let scope = prelude_type("Scope");
-    let expanded = prelude_type("Expanded");
-    let expanded_place = prelude_type("ExpandedPlace");
+    let operand = prelude_type("Operand");
+    let operand_place = prelude_type("OperandPlace");
     let deref = prelude_type("DerefExpand");
     let clone = prelude_type("ExpandTypeClone");
     let into_mut = prelude_type("IntoMut");
@@ -42,7 +42,7 @@ pub(crate) fn reference_impls(
             }
         }
 
-        impl #impl_generics #expanded for #name_expand #generic_names #where_clause {
+        impl #impl_generics #operand for #name_expand #generic_names #where_clause {
             type Host = #name #generic_names;
 
             fn __expand_operand(self, _: &#scope) -> Self {
@@ -50,13 +50,13 @@ pub(crate) fn reference_impls(
             }
         }
 
-        impl #impl_generics #expanded_place for #name_expand #generic_names #where_clause {
+        impl #impl_generics #operand_place for #name_expand #generic_names #where_clause {
             fn __expand_place(&mut self) -> &mut Self {
                 self
             }
         }
 
-        impl #ref_impl_generics #expanded for &'__a mut #name_expand #generic_names #where_clause {
+        impl #ref_impl_generics #operand for &'__a mut #name_expand #generic_names #where_clause {
             type Host = #name #generic_names;
 
             fn __expand_operand(self, _: &#scope) -> #name_expand #generic_names {
@@ -64,13 +64,13 @@ pub(crate) fn reference_impls(
             }
         }
 
-        impl #ref_impl_generics #expanded_place for &'__a mut #name_expand #generic_names #where_clause {
+        impl #ref_impl_generics #operand_place for &'__a mut #name_expand #generic_names #where_clause {
             fn __expand_place(&mut self) -> &mut #name_expand #generic_names {
                 self
             }
         }
 
-        impl #ref_impl_generics #expanded for &'__a #name_expand #generic_names #where_clause {
+        impl #ref_impl_generics #operand for &'__a #name_expand #generic_names #where_clause {
             type Host = #name #generic_names;
 
             fn __expand_operand(self, _: &#scope) -> #name_expand #generic_names {

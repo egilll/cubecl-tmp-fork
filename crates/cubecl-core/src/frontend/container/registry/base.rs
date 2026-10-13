@@ -180,6 +180,10 @@ impl<K: PartialOrd + Ord, V: CubeType<ExpandType: Clone>> CubeType for Registry<
     type ExpandType = Registry<K, V::ExpandType>;
 }
 
+impl<K: PartialOrd + Ord, E: Expanded<Host: Sized> + Clone> Expanded for Registry<K, E> {
+    type Host = Registry<K, E::Host>;
+}
+
 impl<K: PartialOrd + Ord, V: IntoMut + Clone> IntoMut for Registry<K, V> {
     fn into_mut(self, scope: &Scope) -> Self {
         let mut map = self.map.borrow_mut();

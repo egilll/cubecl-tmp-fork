@@ -542,6 +542,10 @@ mod __cube_type {
         type ExpandType = ErasedTensorExpand<E, IO>;
     }
 
+    impl<E: Numeric, IO: ErasedIo> Expanded for ErasedTensorExpand<E, IO> {
+        type Host = ErasedTensor<E, IO>;
+    }
+
     impl<E: Numeric, IO> IntoExpand for ErasedTensorExpand<E, IO> {
         type Expand = ErasedTensorExpand<E, IO>;
 

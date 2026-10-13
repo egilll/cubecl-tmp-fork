@@ -182,8 +182,16 @@ impl<C: CubeType, S: MatrixScope> CubeType for Matrix<C, S> {
     type ExpandType = MatrixExpand<C, S>;
 }
 
+impl<C: CubeType, S: MatrixScope> Expanded for MatrixExpand<C, S> {
+    type Host = Matrix<C, S>;
+}
+
 impl<A: CubeType, B: CubeType, CD: CubeType> CubeType for MmaDefinition<A, B, CD> {
     type ExpandType = MmaDefinitionExpand<A, B, CD>;
+}
+
+impl<A: CubeType, B: CubeType, CD: CubeType> Expanded for MmaDefinitionExpand<A, B, CD> {
+    type Host = MmaDefinition<A, B, CD>;
 }
 
 impl<C: CubeType, S: MatrixScope> IntoExpand for MatrixExpand<C, S> {
@@ -1221,6 +1229,10 @@ pub mod cast_with_ident {
 
 impl CubeType for MatrixLayout {
     type ExpandType = Self;
+}
+
+impl Expanded for MatrixLayout {
+    type Host = Self;
 }
 
 impl IntoExpand for MatrixLayout {

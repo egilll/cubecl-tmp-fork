@@ -37,6 +37,10 @@ impl<T: CubeType> CubeType for ComptimeCell<T> {
     type ExpandType = ComptimeCellExpand<T>;
 }
 
+impl<T: CubeType> Expanded for ComptimeCellExpand<T> {
+    type Host = ComptimeCell<T>;
+}
+
 impl<T: CubeType<ExpandType: Clone> + Clone> ComptimeCell<T> {
     pub fn new(value: T) -> Self {
         Self {
