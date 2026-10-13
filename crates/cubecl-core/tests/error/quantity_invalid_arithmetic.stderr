@@ -17,7 +17,23 @@ note: the trait `std::ops::Add` must be implemented
    | pub const trait Add<Rhs = Self> {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error[E0277]: the trait bound `MetersExpand: AddExpand<_>` is not satisfied
+error[E0277]: cannot add `_` to `Meters`
+  --> tests/error/quantity_invalid_arithmetic.rs:11:5
+   |
+ 9 | #[cube]
+   | ------- in this attribute macro expansion
+10 | fn invalid(distance: Meters, duration: Seconds) -> Meters {
+11 |     distance + duration
+   |     ^^^^^^^^^^^^^^^^^^^ no implementation for `Meters + _`
+   |
+help: the trait `std::ops::Add<_>` is not implemented for `Meters`
+  --> tests/error/quantity_invalid_arithmetic.rs:5:1
+   |
+ 5 | struct Meters(f32);
+   | ^^^^^^^^^^^^^
+   = note: this error originates in the attribute macro `cube` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `Meters: CubePrimitive` is not satisfied
   --> tests/error/quantity_invalid_arithmetic.rs:11:5
    |
  9 | #[cube]
@@ -26,26 +42,55 @@ error[E0277]: the trait bound `MetersExpand: AddExpand<_>` is not satisfied
 11 |     distance + duration
    |     ^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
    |
-help: the trait `AddExpand<_>` is not implemented for `MetersExpand`
-  --> tests/error/quantity_invalid_arithmetic.rs:4:10
+help: the trait `CubePrimitive` is not implemented for `Meters`
+  --> tests/error/quantity_invalid_arithmetic.rs:5:1
    |
- 4 | #[derive(CubeType)]
-   |          ^^^^^^^^
-help: the following other types implement trait `AddExpand<Rhs>`
-  --> src/frontend/operation/binary.rs
+ 5 | struct Meters(f32);
+   | ^^^^^^^^^^^^^
+   = help: the following other types implement trait `CubePrimitive`:
+             DynamicScalar<Marker>
+             TensorReinterpret
+             bool
+             cubecl_core::frontend::Atomic<Inner>
+             cubecl_core::frontend::TensorLayout
+             cubecl_core::frontend::Vector<P, N>
+             cubecl_core::frontend::barrier::Barrier
+             e2m1
+           and $N others
+   = note: required for `Meters` to implement `CubeAdd`
+   = note: required for `MetersExpand` to implement `AddExpand<_>`
+   = note: this error originates in the attribute macro `cube` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0271]: type mismatch resolving `<SecondsExpand as Operand>::Host == Meters`
+  --> tests/error/quantity_invalid_arithmetic.rs:11:5
    |
-   |         impl<T: $bound> $trait<&NativeExpand<T>> for NativeExpand<T> {
-   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `NativeExpand<T>` implements `AddExpand<&NativeExpand<T>>`
-...
-   |         impl<T: $bound> $trait<NativeExpand<T>> for &NativeExpand<T> {
-   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&NativeExpand<T>` implements `AddExpand<NativeExpand<T>>`
-...
-   |         impl<T: $bound> $trait<&NativeExpand<T>> for &NativeExpand<T> {
-   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&NativeExpand<T>` implements `AddExpand<&NativeExpand<T>>`
-...
-   |             impl<T: [<Cube $trait>]> [<$trait Expand>] for NativeExpand<T> {
-   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `NativeExpand<T>` implements `AddExpand`
-...
-   | define_core_binop!(Add, add);
-   | ---------------------------- in this macro invocation
-   = note: this error originates in the attribute macro `cube` which comes from the expansion of the macro `define_core_binop` (in Nightly builds, run with -Z macro-backtrace for more info)
+ 9 | #[cube]
+   | ------- in this attribute macro expansion
+10 | fn invalid(distance: Meters, duration: Seconds) -> Meters {
+11 |     distance + duration
+   |     ^^^^^^^^^^^^^^^^^^^ type mismatch resolving `<SecondsExpand as Operand>::Host == Meters`
+   |
+note: expected this to be `Meters`
+  --> tests/error/quantity_invalid_arithmetic.rs:7:8
+   |
+ 7 | struct Seconds(f32);
+   |        ^^^^^^^
+   = note: required for `MetersExpand` to implement `AddExpand<SecondsExpand>`
+   = note: this error originates in the attribute macro `cube` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `Meters: CubeAdd<Seconds>` is not satisfied
+  --> tests/error/quantity_invalid_arithmetic.rs:11:5
+   |
+ 9 | #[cube]
+   | ------- in this attribute macro expansion
+10 | fn invalid(distance: Meters, duration: Seconds) -> Meters {
+11 |     distance + duration
+   |     ^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `CubeAdd<Seconds>` is not implemented for `Meters`
+  --> tests/error/quantity_invalid_arithmetic.rs:5:1
+   |
+ 5 | struct Meters(f32);
+   | ^^^^^^^^^^^^^
+   = note: required for `MetersExpand` to implement `AddExpand<SecondsExpand>`
+   = note: this error originates in the attribute macro `cube` (in Nightly builds, run with -Z macro-backtrace for more info)

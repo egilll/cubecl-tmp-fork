@@ -7,37 +7,43 @@ error[E0308]: mismatched types
    = note: expected struct `Displacement<Room>`
               found struct `Displacement<World>`
 
-error[E0308]: mismatched types
+error[E0271]: type mismatch resolving `<DisplacementExpand<World> as Operand>::Host == Displacement<Room>`
   --> tests/error/frame_mismatch.rs:28:5
    |
 26 | #[cube]
    | ------- in this attribute macro expansion
 27 | fn moved(point: Point<Room>, step: Displacement<World>) -> Point<Room> {
 28 |     point + step
-   |     ^^^^^^^^^^^^
-   |     |
-   |     expected `DisplacementExpand<Room>`, found `DisplacementExpand<World>`
-   |     arguments to this function are incorrect
+   |     ^^^^^^^^^^^^ type mismatch resolving `<DisplacementExpand<World> as Operand>::Host == Displacement<Room>`
    |
-   = note: expected struct `DisplacementExpand<Room>`
-              found struct `DisplacementExpand<World>`
-help: the return type of this call is `DisplacementExpand<World>` due to the type of the argument passed
+note: expected this to be `Displacement<Room>`
+  --> tests/error/frame_mismatch.rs:16:8
+   |
+16 | struct Displacement<F: 'static>(f32, #[cube(comptime)] PhantomData<F>);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: expected struct `Displacement<Room>`
+              found struct `Displacement<World>`
+   = note: required for `PointExpand<Room>` to implement `AddExpand<DisplacementExpand<World>>`
+   = note: this error originates in the attribute macro `cube` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `Point<Room>: CubeAdd<Displacement<World>>` is not satisfied
   --> tests/error/frame_mismatch.rs:28:5
    |
 26 | #[cube]
    | ------- in this attribute macro expansion
 27 | fn moved(point: Point<Room>, step: Displacement<World>) -> Point<Room> {
 28 |     point + step
-   |     ^^^^^^^^^^^^ this argument influences the return type of `__expand_add_method`
-note: method defined here
-  --> src/frontend/operation/binary.rs
+   |     ^^^^^^^^^^^^ unsatisfied trait bound
    |
-   |                 fn [<__expand_ $method _method>](self, scope: &Scope, rhs: Rhs) -> Self::Output;
-   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-...
-   | define_core_binop!(Add, add);
-   | ---------------------------- in this macro invocation
-   = note: this error originates in the attribute macro `cube` which comes from the expansion of the macro `define_core_binop` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: the trait `CubeAdd<Displacement<World>>` is not implemented for `Point<Room>`
+      but trait `CubeAdd<Displacement<Room>>` is implemented for it
+  --> tests/error/frame_mismatch.rs:18:1
+   |
+18 | #[cube]
+   | ^^^^^^^
+   = help: for that trait implementation, expected `Room`, found `World`
+   = note: required for `PointExpand<Room>` to implement `AddExpand<DisplacementExpand<World>>`
+   = note: this error originates in the attribute macro `cube` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0308]: mismatched types
   --> tests/error/frame_mismatch.rs:33:9
@@ -48,34 +54,67 @@ error[E0308]: mismatched types
    = note: expected struct `Displacement<Room>`
               found struct `Point<Room>`
 
-error[E0308]: mismatched types
+error[E0271]: type mismatch resolving `<PointExpand<Room> as Operand>::Host == Displacement<Room>`
   --> tests/error/frame_mismatch.rs:33:5
    |
 31 | #[cube]
    | ------- in this attribute macro expansion
 32 | fn summed(a: Point<Room>, b: Point<Room>) -> Point<Room> {
 33 |     a + b
-   |     ^^^^^
-   |     |
-   |     expected `DisplacementExpand<Room>`, found `PointExpand<Room>`
-   |     arguments to this function are incorrect
+   |     ^^^^^ type mismatch resolving `<PointExpand<Room> as Operand>::Host == Displacement<Room>`
    |
-   = note: expected struct `DisplacementExpand<Room>`
-              found struct `PointExpand<Room>`
-help: the return type of this call is `PointExpand<Room>` due to the type of the argument passed
+note: expected this to be `Displacement<Room>`
+  --> tests/error/frame_mismatch.rs:11:8
+   |
+11 | struct Point<F: 'static>(f32, #[cube(comptime)] PhantomData<F>);
+   |        ^^^^^^^^^^^^^^^^^
+   = note: expected struct `Displacement<Room>`
+              found struct `Point<Room>`
+   = note: required for `PointExpand<Room>` to implement `AddExpand<PointExpand<Room>>`
+   = note: this error originates in the attribute macro `cube` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: cannot add `Point<Room>` to `Point<Room>`
   --> tests/error/frame_mismatch.rs:33:5
    |
 31 | #[cube]
    | ------- in this attribute macro expansion
 32 | fn summed(a: Point<Room>, b: Point<Room>) -> Point<Room> {
 33 |     a + b
-   |     ^^^^^ this argument influences the return type of `__expand_add_method`
-note: method defined here
-  --> src/frontend/operation/binary.rs
+   |     ^^^^^ no implementation for `Point<Room> + Point<Room>`
    |
-   |                 fn [<__expand_ $method _method>](self, scope: &Scope, rhs: Rhs) -> Self::Output;
-   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-...
-   | define_core_binop!(Add, add);
-   | ---------------------------- in this macro invocation
-   = note: this error originates in the attribute macro `cube` which comes from the expansion of the macro `define_core_binop` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: the trait `Add<Point<Room>>` is not implemented for `Point<Room>`
+      but trait `Add<Displacement<Room>>` is implemented for it
+  --> tests/error/frame_mismatch.rs:18:1
+   |
+18 | #[cube]
+   | ^^^^^^^
+   = help: for that trait implementation, expected `Displacement<Room>`, found `Point<Room>`
+   = note: this error originates in the attribute macro `cube` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `Point<Room>: CubeAdd` is not satisfied
+  --> tests/error/frame_mismatch.rs:33:5
+   |
+31 | #[cube]
+   | ------- in this attribute macro expansion
+32 | fn summed(a: Point<Room>, b: Point<Room>) -> Point<Room> {
+33 |     a + b
+   |     ^^^^^ unsatisfied trait bound
+   |
+help: the trait `CubePrimitive` is not implemented for `Point<Room>`
+  --> tests/error/frame_mismatch.rs:11:1
+   |
+11 | struct Point<F: 'static>(f32, #[cube(comptime)] PhantomData<F>);
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: the following other types implement trait `CubePrimitive`:
+             DynamicScalar<Marker>
+             TensorReinterpret
+             bool
+             cubecl_core::frontend::Atomic<Inner>
+             cubecl_core::frontend::TensorLayout
+             cubecl_core::frontend::Vector<P, N>
+             cubecl_core::frontend::barrier::Barrier
+             e2m1
+           and $N others
+   = note: required for `Point<Room>` to implement `CubeAdd`
+   = note: required for `PointExpand<Room>` to implement `AddExpand<PointExpand<Room>>`
+   = note: this error originates in the attribute macro `cube` (in Nightly builds, run with -Z macro-backtrace for more info)
