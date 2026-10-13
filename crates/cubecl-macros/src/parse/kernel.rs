@@ -479,7 +479,7 @@ impl Launch {
             &args,
         )?;
         if !args.is_launch() {
-            func.sig.take_expand_args();
+            func.sig.take_expand_args(&Generics::default());
         }
 
         // Bail early if the user tries to have a return type in a launch kernel.

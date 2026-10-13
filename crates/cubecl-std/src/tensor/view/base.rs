@@ -123,7 +123,7 @@ impl<'a, E: CubePrimitive, C: Coordinates + 'a> View<'a, E, C> {
     ) -> ViewExpand<'a, E, C> {
         ViewExpand::new(
             scope,
-            VirtualView::<E, C, S, V>::__expand_new(scope, view, layout),
+            VirtualView::<E, C, S, V>::__expand_new(scope, view.into(), layout),
         )
     }
 }
@@ -151,7 +151,7 @@ impl<'a, E: CubePrimitive, C: Coordinates + 'a> ViewMut<'a, E, C> {
     ) -> ViewMutExpand<'a, E, C> {
         ViewMutExpand::new(
             scope,
-            VirtualViewMut::<E, C, S, V>::__expand_new(scope, view, layout),
+            VirtualViewMut::<E, C, S, V>::__expand_new(scope, view.into(), layout),
         )
     }
 }
@@ -297,7 +297,7 @@ macro_rules! impl_read {
                 let pos = C::__expand_min(scope, pos, shape.clone_unchecked());
                 let max_size = C::__expand_sub(scope, shape, pos.clone_unchecked());
                 let size = C::__expand_min(scope, size, max_size);
-                let layout = SliceLayout::__expand_new(scope, pos, size, checked);
+                let layout = SliceLayout::__expand_new(scope, pos.into(), size.into(), checked);
                 $ty::__expand_new::<$ty<'a, E, C>, _>(scope, self, layout.into())
             }
         }
@@ -468,7 +468,7 @@ impl<'a, E: CubePrimitive, C: Coordinates + 'static> ViewMutExpand<'a, E, C> {
         let pos = C::__expand_min(scope, pos, shape.clone_unchecked());
         let max_size = C::__expand_sub(scope, shape, pos.clone_unchecked());
         let size = C::__expand_min(scope, size, max_size);
-        let layout = SliceLayout::__expand_new(scope, pos, size, checked);
+        let layout = SliceLayout::__expand_new(scope, pos.into(), size.into(), checked);
         self.clone().__expand_view_mut_method(scope, layout.into())
     }
 }

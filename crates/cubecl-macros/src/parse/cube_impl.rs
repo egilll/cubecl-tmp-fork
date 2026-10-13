@@ -67,6 +67,7 @@ pub(crate) fn take_method_args(
 impl CubeImplItem {
     pub fn from_impl_item(
         struct_ty_name: &Type,
+        impl_generics: &Generics,
         item: ImplItem,
         args: &KernelArgs,
     ) -> syn::Result<Vec<Self>> {
@@ -97,7 +98,9 @@ impl CubeImplItem {
                         CubeImplItem::FnExpand(func_expand),
                     ]
                 } else {
+                    // Only the arguments fix an associated function's generics.
                     func.sig.name = func_name_expand;
+                    func.sig.take_expand_args(impl_generics);
 
                     let func_expand = Self::create_func_expand(struct_ty_name, &func, false);
                     vec![CubeImplItem::Fn(func), CubeImplItem::FnExpand(func_expand)]
@@ -219,7 +222,13 @@ impl CubeImplItem {
         }
         func_sig.plain_self();
 
-        let args = func_sig.parameters.iter().map(|param| &param.name);
+        let args = func_sig.parameters.iter().map(|param| {
+            let name = &param.name;
+            match param.expand_arg {
+                true => quote![#name.into()],
+                false => quote![#name],
+            }
+        });
         let struct_name = format_type_with_turbofish(struct_ty_name);
         let fn_name = &func_sig.name;
 
@@ -271,7 +280,12 @@ impl CubeImpl {
             .items
             .iter_mut()
             .map(|item| {
-                let expands = CubeImplItem::from_impl_item(&struct_name, item.clone(), args)?;
+                let expands = CubeImplItem::from_impl_item(
+                    &struct_name,
+                    &item_impl.generics,
+                    item.clone(),
+                    args,
+                )?;
                 // A method's own `#[cube(...)]` is read above, and the plain
                 // method emitted next to the expansion must not expand again.
                 if let syn::ImplItem::Fn(func) = item {

@@ -1,7 +1,7 @@
-//! Arguments determine generics in kernels as in Rust: a tuple constructor or
-//! a generic function infers its parameters from a kernel value's host type
-//! or a literal's own type, even where the operators that use the result
-//! would admit another representation.
+//! Arguments determine generics in kernels as in Rust: a tuple constructor, a
+//! generic function or an associated function infers its parameters from a
+//! kernel value's host type or a literal's own type, even where the operators
+//! that use the result would admit another representation.
 use cubecl::prelude::*;
 use cubecl_core as cubecl;
 
@@ -33,6 +33,13 @@ impl<R: Float> core::ops::Div<Amount<R>> for Amount<Pair<R>> {
 }
 
 #[cube]
+impl<R: CubeType> Amount<R> {
+    fn new(value: R) -> Self {
+        Amount(value)
+    }
+}
+
+#[cube]
 fn twice<F: Float>(x: F) -> F {
     x + x
 }
@@ -49,8 +56,10 @@ fn kernel(amount: Amount<f32>, x: f32, output: &mut [f32]) {
     let typed = Amount(2.0f32) / Amount(a);
     let runtime = Amount(x) / Amount(a);
     let bound = Amount(4.0f32);
+    let associated = Amount::new(x) / Amount(a);
+    let associated_literal = Amount::new(8.0) / Amount(a);
     output[0] = untyped.0 + typed.0 + runtime.0 + (bound / Amount(a)).0 + Wide::<f32>(a).0;
-    output[1] = twice(x) + twice(2.0f32) + wrap(x).0;
+    output[1] = twice(x) + twice(2.0f32) + wrap(x).0 + associated.0 + associated_literal.0;
 }
 
 fn main() {

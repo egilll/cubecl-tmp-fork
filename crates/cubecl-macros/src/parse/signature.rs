@@ -190,11 +190,13 @@ impl KernelSignature {
         }
     }
 
-    /// Runtime parameters whose type names a generic are taken as
-    /// `ExpandArg`s, so a call infers the generic from its argument.
-    pub fn take_expand_args(&mut self) {
+    /// Runtime parameters whose type names a generic, of the function or of
+    /// `outer`, are taken as `ExpandArg`s, so a call infers the generic from
+    /// its argument.
+    pub fn take_expand_args(&mut self, outer: &Generics) {
         for param in self.parameters.iter_mut() {
-            param.expand_arg = !param.is_const && names_generic(&param.ty, &self.generics);
+            param.expand_arg = !param.is_const
+                && (names_generic(&param.ty, &self.generics) || names_generic(&param.ty, outer));
         }
     }
 
