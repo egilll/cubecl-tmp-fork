@@ -1,11 +1,11 @@
 use crate::MetalCompiler;
-use cubecl_common::hash::StableHash;
+use cubecl_common::hash::{StableHash, StableHasher};
 use cubecl_core::prelude::*;
 use cubecl_core::server::{LaunchError, ResourceLimitError};
 use cubecl_environment::backtrace::BackTrace;
-use cubecl_server::kernel::{BufferIOAttr, DebugInformation};
+use cubecl_server::kernel::{BufferIOAttr, DebugInformation, KernelDefinition};
 use cubecl_server::{
-    compiler::{CompilationRecording, KernelCacheKey, build_id_hash},
+    compiler::{CompilationRecording, KernelCacheKey},
     kernel::CubeKernel,
     logging::ServerLogger,
 };
@@ -16,7 +16,7 @@ use objc2_metal::{
     MTLCompileOptions, MTLComputePipelineState, MTLDevice, MTLLanguageVersion, MTLLibrary,
     MTLMathFloatingPointFunctions, MTLMathMode,
 };
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, hash::Hash, sync::Arc};
 
 use cubecl_environment::persistence::Store;
 use cubecl_server::compiler::{CompilationCache, compilation_store, store_compiled};
@@ -58,7 +58,6 @@ pub struct MetalContext {
     /// ids differ only in types that don't change the code, such as unit
     /// brands, share one driver compilation.
     pipelines_by_source: HashMap<(String, (u32, u32, u32)), CompiledKernel>,
-    build_id: StableHash,
     compilation_options: cubecl_cpp::shared::CompilationOptions,
     msl_compile_options: Retained<MTLCompileOptions>,
 }
@@ -89,7 +88,6 @@ impl MetalContext {
             compiled_kernels: CompilationCache::mirroring(&msl_cache),
             msl_cache,
             pipelines_by_source: HashMap::new(),
-            build_id: build_id_hash(),
             device,
             compilation_options,
             msl_compile_options,
@@ -109,7 +107,8 @@ impl MetalContext {
         }
 
         let mut recording = CompilationRecording::new(kernel_id);
-        let cache_key = KernelCacheKey::new(kernel_id, self.build_id);
+        let (definition, define_micros) = cubecl_core::define_kernel_timed(&*kernel)?;
+        let cache_key = self.source_key(&*kernel, &definition);
 
         if let Some(cache) = self.msl_cache.as_mut()
             && let Some(entry) = cache.remove(&cache_key)
@@ -131,7 +130,6 @@ impl MetalContext {
 
         log::trace!("Compiling kernel to MSL");
 
-        let (definition, define_micros) = cubecl_core::define_kernel_timed(&*kernel)?;
         recording.defined(&definition);
         let mut kernel_compiled = cubecl_server::kernel::CompiledKernel::compile(
             &*kernel,
@@ -196,6 +194,28 @@ impl MetalContext {
         self.compiled_kernels
             .insert(kernel_id.clone(), compiled.clone());
         Ok(compiled)
+    }
+
+    /// The MSL cache key: what the kernel compiles from, rather than the binary that traced it,
+    /// so a rebuild that leaves a kernel and the compiler unchanged reuses its source.
+    fn source_key(&self, kernel: &dyn CubeKernel, definition: &KernelDefinition) -> KernelCacheKey {
+        let mut hasher = StableHasher::new();
+        let mut writer = HashWriter(&mut hasher);
+        core::fmt::write(
+            &mut writer,
+            format_args!("{}{:?}", definition.body, self.compilation_options),
+        )
+        .expect("hashing never fails");
+        definition.info.hash(&mut hasher);
+        definition.settings.hash(&mut hasher);
+        if let Some(precompiled) = kernel.source() {
+            precompiled.source.hash(&mut hasher);
+            precompiled.entrypoint_name.hash(&mut hasher);
+        }
+        KernelCacheKey {
+            id: hasher.finalize(),
+            build_id: CODEGEN_FINGERPRINT,
+        }
     }
 
     /// Creates a compute pipeline from MSL source code, reusing one built
@@ -290,6 +310,20 @@ impl MetalContext {
     /// environment switched.
     pub fn get_kernel(&mut self, kernel_id: &KernelId) -> Option<&CompiledKernel> {
         self.compiled_kernels.get(kernel_id)
+    }
+}
+
+/// The sources that lower IR to MSL, as `build.rs` fingerprints them.
+const CODEGEN_FINGERPRINT: StableHash =
+    StableHasher::const_hash(env!("CUBECL_METAL_CODEGEN_FINGERPRINT").as_bytes());
+
+/// Feeds formatted text to a hasher without building the string.
+struct HashWriter<'a>(&'a mut StableHasher);
+
+impl core::fmt::Write for HashWriter<'_> {
+    fn write_str(&mut self, text: &str) -> core::fmt::Result {
+        core::hash::Hasher::write(self.0, text.as_bytes());
+        Ok(())
     }
 }
 

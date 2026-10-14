@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use cubecl_core::{
     frontend::HasValue,
@@ -102,12 +102,16 @@ impl MetalBuiltin for Builtin {
 
 pub fn append_msl_builtins(ctx: &mut Context, entry_func: FuncOp) {
     let op = entry_func.get_operation();
-    let mut used = HashSet::new();
-    let mut read_ops = HashSet::new();
+    // Ordered by first use, so the parameters and their names are the same every run.
+    let mut used = Vec::new();
+    let mut read_ops = Vec::new();
     let state = &mut (&mut used, &mut read_ops);
     visit_all_ops_of_type::<ReadBuiltinOp, _>(ctx, state, op, |ctx, (used, ops), op| {
-        ops.insert(op);
-        used.insert(built_in_attr(op.builtin(ctx).0));
+        ops.push(op);
+        let attr = built_in_attr(op.builtin(ctx).0);
+        if !used.contains(&attr) {
+            used.push(attr);
+        }
     });
 
     let values = used

@@ -2,7 +2,7 @@ use alloc::format;
 use alloc::string::String;
 use alloc::sync::Arc;
 use core::{
-    any::{Any, TypeId},
+    any::Any,
     fmt::Display,
     hash::{Hash, Hasher},
 };
@@ -248,7 +248,7 @@ impl Info {
 /// [`core::hash::Hash`] function. The provided [Hasher] will be modified, but only based on the
 /// result of the hash from the [`DefaultHasher`].
 trait DynKey: core::fmt::Debug + Send + Sync {
-    fn dyn_type_id(&self) -> TypeId;
+    fn dyn_type_name(&self) -> &'static str;
     fn dyn_eq(&self, other: &dyn DynKey) -> bool;
     fn dyn_hash(&self, state: &mut dyn Hasher);
     fn dyn_hash_one(&self) -> StableHash;
@@ -270,7 +270,9 @@ impl Eq for Info {}
 
 impl Hash for Info {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.value.dyn_type_id().hash(state);
+        // The name rather than the `TypeId`, which changes between compilations and would make
+        // `KernelId::stable_hash` unstable.
+        self.value.dyn_type_name().hash(state);
         self.value.dyn_hash(state)
     }
 }
@@ -284,8 +286,8 @@ impl<T: 'static + PartialEq + Eq + Hash + core::fmt::Debug + Send + Sync> DynKey
         }
     }
 
-    fn dyn_type_id(&self) -> TypeId {
-        TypeId::of::<T>()
+    fn dyn_type_name(&self) -> &'static str {
+        core::any::type_name::<T>()
     }
 
     fn dyn_hash(&self, state: &mut dyn Hasher) {
