@@ -267,3 +267,8 @@ impl StorageKey for u32 {
 pub trait WithRepr<R: CubePrimitive>: DeviceRepr {
     type Output: DeviceRepr<Repr = R>;
 }
+
+/// A buffer of a plain scalar, read as vectors of it.
+impl<S: Scalar, N: Size> WithRepr<Vector<S, N>> for S {
+    type Output = Vector<S, N>;
+}
