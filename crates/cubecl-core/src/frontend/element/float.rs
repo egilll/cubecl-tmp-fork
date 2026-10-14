@@ -15,6 +15,29 @@ mod fp8;
 mod relaxed;
 mod tensor_float;
 
+/// Refuses `f64` in a kernel traced for a device with no use of it at all,
+/// once per kernel. Without the refusal the backend's own compiler fails
+/// later, far from the cause, which is most often an untyped float literal
+/// that nothing typed met, so that Rust settled it as `f64`.
+fn refuse_unsupported(scope: &Scope, kind: FloatKind) {
+    if kind != FloatKind::F64 {
+        return;
+    }
+    let ty = ElemType::Float(kind);
+    let Some(properties) = scope.state().device_properties.clone() else {
+        return;
+    };
+    if !properties.type_usage(ty).is_empty() || scope.state().unsupported_types.contains(&ty) {
+        return;
+    }
+    scope.state_mut().unsupported_types.push(ty);
+    scope.push_error(
+        "this device has no f64, but the kernel uses it: an untyped float literal that \
+         meets nothing typed, such as `let mut sum = 0.0;` read only by literals, settles as \
+         f64; give it a type (`0.0f32`) or combine it with a typed value",
+    );
+}
+
 /// Floating point numbers. Used as input in float kernels
 pub trait Float:
     Numeric
@@ -125,6 +148,10 @@ macro_rules! impl_float {
         impl CubeDebug for $primitive {}
         impl crate::frontend::call::CallArg for $primitive {}
         impl Scalar for $primitive {
+            fn elem_type(scope: &Scope) -> ElemType {
+                refuse_unsupported(scope, FloatKind::$kind);
+                FloatKind::$kind.into()
+            }
             fn elem_type_native() -> ElemType {
                 FloatKind::$kind.into()
             }
@@ -136,6 +163,7 @@ macro_rules! impl_float {
 
             /// Return the element type to use on GPU
             fn __expand_as_type(scope: &Scope) -> TypeHandle {
+                refuse_unsupported(scope, FloatKind::$kind);
                 <$ty>::get(scope.ctx()).into()
             }
 
