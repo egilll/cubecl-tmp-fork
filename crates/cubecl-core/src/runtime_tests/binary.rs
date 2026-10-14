@@ -897,6 +897,105 @@ pub fn test_self_div<R: Runtime>(client: Client) {
     assert_eq!(u32::from_bytes(&actual), &[1, 1, 1, 1]);
 }
 
+#[cube(launch)]
+fn kernel_midpoint(
+    unsigned: &[u32],
+    signed: &[i32],
+    float: &[f32],
+    out_unsigned: &mut [u32],
+    out_signed: &mut [i32],
+    out_float: &mut [f32],
+) {
+    let i = ABSOLUTE_POS;
+    if i < out_unsigned.len() {
+        out_unsigned[i] = u32::midpoint(unsigned[2 * i], unsigned[2 * i + 1]);
+        out_signed[i] = signed[2 * i].midpoint(signed[2 * i + 1]);
+        out_float[i] = f32::midpoint(float[2 * i], float[2 * i + 1]);
+    }
+}
+
+/// Midpoints agree with Rust's at the extremes, where the sum would overflow, and on rounding:
+/// down for unsigned integers, towards zero for signed ones.
+pub fn test_midpoint<R: Runtime>(client: Client) {
+    let unsigned = [u32::MAX, u32::MAX - 2, 1, 2, 0, 7, 10, 20];
+    let signed = [i32::MAX, i32::MAX - 2, -1, -2, i32::MIN, i32::MAX, -7, 2];
+    let float = [
+        f32::MAX,
+        f32::MAX,
+        -1.0,
+        2.0,
+        1.0e-3,
+        3.0e-3,
+        -f32::MAX,
+        f32::MAX,
+    ];
+    let pairs = unsigned.len() / 2;
+    let outputs = [
+        client.empty(pairs * size_of::<u32>()),
+        client.empty(pairs * size_of::<i32>()),
+        client.empty(pairs * size_of::<f32>()),
+    ];
+    unsafe {
+        kernel_midpoint::launch(
+            &client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(pairs as u32),
+            BufferArg::from_raw_parts(client.create_from_slice(u32::as_bytes(&unsigned)), 8),
+            BufferArg::from_raw_parts(client.create_from_slice(i32::as_bytes(&signed)), 8),
+            BufferArg::from_raw_parts(client.create_from_slice(f32::as_bytes(&float)), 8),
+            BufferArg::from_raw_parts(outputs[0].clone(), pairs),
+            BufferArg::from_raw_parts(outputs[1].clone(), pairs),
+            BufferArg::from_raw_parts(outputs[2].clone(), pairs),
+        );
+    }
+    let [out_unsigned, out_signed, out_float] =
+        outputs.map(|handle| client.read_one_unchecked(handle));
+    for i in 0..pairs {
+        let (a, b) = (2 * i, 2 * i + 1);
+        assert_eq!(
+            u32::from_bytes(&out_unsigned)[i],
+            unsigned[a].midpoint(unsigned[b])
+        );
+        assert_eq!(
+            i32::from_bytes(&out_signed)[i],
+            signed[a].midpoint(signed[b])
+        );
+        assert_eq!(f32::from_bytes(&out_float)[i], float[a].midpoint(float[b]));
+    }
+}
+
+#[cube(launch)]
+fn kernel_swap(values: &mut [u32]) {
+    if ABSOLUTE_POS == 0 {
+        let mut first = values[0];
+        let mut second = values[1];
+        core::mem::swap(&mut first, &mut second);
+        if first > second {
+            core::mem::swap(&mut first, &mut second);
+        }
+        values[0] = first;
+        values[1] = second;
+        values[2] = first + second;
+    }
+}
+
+/// A swap exchanges both values, on either branch and outside one.
+pub fn test_swap<R: Runtime>(client: Client) {
+    let handle = client.create_from_slice(u32::as_bytes(&[3u32, 5, 0]));
+    unsafe {
+        kernel_swap::launch(
+            &client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            BufferArg::from_raw_parts(handle.clone(), 3),
+        );
+    }
+    assert_eq!(
+        u32::from_bytes(&client.read_one_unchecked(handle)),
+        &[3, 5, 8]
+    );
+}
+
 #[allow(missing_docs)]
 #[macro_export]
 macro_rules! testgen_binary_untyped {
@@ -926,6 +1025,8 @@ macro_rules! testgen_binary_untyped {
             add_test!(test_powi_int);
             add_test!(test_signed_remainder);
             add_test!(test_self_div);
+            add_test!(test_midpoint);
+            add_test!(test_swap);
         }
     };
 }

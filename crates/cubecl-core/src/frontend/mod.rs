@@ -19,6 +19,7 @@ mod element;
 mod fallible;
 mod indexation;
 mod list;
+pub mod mem;
 mod operation;
 mod options;
 mod plane;

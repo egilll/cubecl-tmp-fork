@@ -125,6 +125,17 @@ impl Expression {
                     .map(|arg| Expression::from_expr(arg, context))
                     .collect::<Result<Vec<_>, _>>()?;
                 match *func {
+                    Expression::Path { path, qself: None } if is_mem_swap(&path) => {
+                        let mut path = crate::paths::frontend_path();
+                        path.segments.push(format_ident!("mem").into());
+                        path.segments.push(format_ident!("swap").into());
+                        Expression::FunctionCall {
+                            func: Box::new(Expression::Path { path, qself: None }),
+                            args,
+                            associated_type: None,
+                            span,
+                        }
+                    }
                     Expression::Path { path, .. } if is_intrinsic(&path) => {
                         Expression::CompilerIntrinsic { func: path, args }
                     }
@@ -685,4 +696,17 @@ mod tests {
         let expr: Expr = parse_quote!(-vectorization_of(x));
         assert!(Expression::from_expr(expr, &mut context).is_ok());
     }
+}
+
+/// `core::mem::swap`, however it is spelled: kernels call their own.
+fn is_mem_swap(path: &Path) -> bool {
+    let names: Vec<_> = path
+        .segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect();
+    matches!(
+        names.iter().map(String::as_str).collect::<Vec<_>>()[..],
+        ["core" | "std", "mem", "swap"] | ["mem", "swap"]
+    )
 }

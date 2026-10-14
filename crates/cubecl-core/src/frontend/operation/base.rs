@@ -143,3 +143,71 @@ impl<E: Int> NativeExpand<E> {
 pub fn div_ceil<E: Int>(a: E, b: E) -> E {
     (a + b - E::new(1)) / b
 }
+
+/// The midpoint of two values, as Rust's inherent `midpoint` computes it: without overflow,
+/// rounded towards zero for integers.
+pub trait Midpoint: CubePrimitive + CubeType<ExpandType: MidpointExpand<Self>> {
+    fn midpoint(self, _rhs: Self) -> Self {
+        crate::unexpanded!()
+    }
+
+    fn __expand_midpoint(
+        scope: &Scope,
+        a: NativeExpand<Self>,
+        b: NativeExpand<Self>,
+    ) -> NativeExpand<Self> {
+        a.__expand_midpoint_method(scope, b)
+    }
+
+    #[doc(hidden)]
+    fn __expand_native_midpoint(
+        scope: &Scope,
+        a: NativeExpand<Self>,
+        b: NativeExpand<Self>,
+    ) -> NativeExpand<Self>;
+}
+
+pub trait MidpointExpand<E: CubePrimitive> {
+    fn __expand_midpoint_method(self, scope: &Scope, rhs: Self) -> Self;
+}
+
+impl<E: Midpoint> MidpointExpand<E> for NativeExpand<E> {
+    fn __expand_midpoint_method(self, scope: &Scope, rhs: NativeExpand<E>) -> NativeExpand<E> {
+        E::__expand_native_midpoint(scope, self, rhs)
+    }
+}
+
+macro_rules! impl_midpoint {
+    ($function:ident; $($ty:ty),*) => {
+        $(
+            impl Midpoint for $ty {
+                fn __expand_native_midpoint(
+                    scope: &Scope,
+                    a: NativeExpand<Self>,
+                    b: NativeExpand<Self>,
+                ) -> NativeExpand<Self> {
+                    $function::expand::<$ty>(scope, a.into(), b.into())
+                }
+            }
+        )*
+    };
+}
+
+impl_midpoint!(midpoint_int; u8, u16, u32, u64, usize, i8, i16, i32, i64, isize);
+impl_midpoint!(midpoint_float; half::f16, half::bf16, crate::flex32, crate::tf32, f32, f64);
+
+/// Shared bits plus half the differing ones: the floor of the mean without forming the sum,
+/// then raised by one where a negative mean was rounded down.
+#[cube]
+fn midpoint_int<E: Int>(a: E, b: E) -> E {
+    let differing = a ^ b;
+    let floor = (a & b) + (differing >> E::new(1));
+    let rounded_down = floor < E::new(0) && (differing & E::new(1)) != E::new(0);
+    floor + select(rounded_down, E::new(1), E::new(0))
+}
+
+/// Halving is exact, so the sum of halves rounds as the halved sum would, and cannot overflow.
+#[cube]
+fn midpoint_float<F: Float>(a: F, b: F) -> F {
+    a * F::new(0.5) + b * F::new(0.5)
+}
