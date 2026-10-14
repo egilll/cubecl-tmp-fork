@@ -14,7 +14,10 @@ pub struct DeriveExpand {
 }
 
 pub fn generate_derive_expand(input: TokenStream, meta: TokenStream) -> syn::Result<TokenStream> {
-    let input: DeriveInput = parse2(input)?;
+    let mut input: DeriveInput = parse2(input)?;
+    if matches!(input.data, syn::Data::Struct(_)) {
+        input.attrs.push(parse_quote!(#[cube(foreign)]));
+    }
     let meta: Meta = parse_quote!(derive_expand(#meta));
     let derives = DeriveExpand::from_meta(&meta)?;
 

@@ -31,6 +31,7 @@ impl CubeTypeStruct {
             let expand_type_impl = self.expand_type_impl();
             let call_arg_impl = self.call_arg_impl();
             let tuple_constructor = self.tuple_constructor();
+            let named_constructor = self.named_constructor();
 
             quote! {
                 #expand_ty
@@ -39,6 +40,7 @@ impl CubeTypeStruct {
                 #expand_type_impl
                 #call_arg_impl
                 #tuple_constructor
+                #named_constructor
             }
         }
     }
@@ -47,7 +49,7 @@ impl CubeTypeStruct {
     /// path, so `Name(a, b)` in a kernel needs no import of the expand type
     /// and infers generics from its arguments as in Rust.
     fn tuple_constructor(&self) -> TokenStream {
-        if !self.tuple {
+        if !self.tuple || self.foreign.is_present() {
             return TokenStream::new();
         }
         let name = &self.ident;
@@ -91,6 +93,58 @@ impl CubeTypeStruct {
         }
     }
 
+    /// The expanded constructor of a struct literal, `Name { a, b }` in a
+    /// kernel, taking the fields in the order of their names so a literal
+    /// can pass them whatever order it writes them in. Like the tuple
+    /// constructor, it infers the struct's generics from its arguments.
+    fn named_constructor(&self) -> TokenStream {
+        if self.tuple || self.fields.is_empty() || self.foreign.is_present() {
+            return TokenStream::new();
+        }
+        let name = &self.ident;
+        let expand = self.name_expand.as_ref().unwrap();
+        let vis = &self.vis;
+        let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
+        let mut valued: Vec<_> = self
+            .fields
+            .iter()
+            .filter(|field| !field.is_marker())
+            .collect();
+        valued.sort_by_key(|field| field.ident.as_ref().unwrap().to_string());
+        let params = valued.iter().map(|field| {
+            let ident = field.ident.as_ref().unwrap();
+            let ty = &field.ty;
+            if field.comptime.is_present() {
+                quote![#ident: #ty]
+            } else if names_generic(ty, &self.generics) {
+                let expand_arg = frontend_type("ExpandArg");
+                quote![#ident: #expand_arg<#ty>]
+            } else {
+                let cube_type = prelude_type("CubeType");
+                quote![#ident: <#ty as #cube_type>::ExpandType]
+            }
+        });
+        let values = self.fields.iter().map(|field| {
+            let ident = field.ident.as_ref().unwrap();
+            if field.is_marker() {
+                quote![#ident: ::core::marker::PhantomData]
+            } else if !field.comptime.is_present() && names_generic(&field.ty, &self.generics) {
+                quote![#ident: #ident.into_inner()]
+            } else {
+                quote![#ident]
+            }
+        });
+        quote! {
+            impl #impl_generics #name #ty_generics #where_clause {
+                #[doc(hidden)]
+                #[allow(clippy::too_many_arguments)]
+                #vis fn __expand_named_constructor(#(#params),*) -> #expand #ty_generics {
+                    #expand { #(#values),* }
+                }
+            }
+        }
+    }
+
     fn declaration(
         &self,
         name: &Ident,
@@ -107,10 +161,7 @@ impl CubeTypeStruct {
     }
 
     fn expand_ty(&self) -> proc_macro2::TokenStream {
-        let expand_derives = match &self.derive {
-            Some(derives) => quote![#[#derives]],
-            None => quote![],
-        };
+        let (expand_derives, field_bounded) = self.expand_derives();
 
         let fields = self.fields.iter().map(TypeField::expand_field);
         let name = &self.name_expand;
@@ -121,7 +172,85 @@ impl CubeTypeStruct {
             fields.collect(),
             generics.where_clause.as_ref(),
         );
-        quote! { #expand_derives #declaration }
+        quote! { #expand_derives #declaration #field_bounded }
+    }
+
+    /// The expand type's derives. On a generic struct, `Clone` and `Copy` are
+    /// implemented bounded on the fields' expand types, which are what the
+    /// expand type holds; the standard derives would bound the type
+    /// parameters instead, so a struct over `R` would need `R: Copy` rather
+    /// than `R::ExpandType: Copy`.
+    fn expand_derives(&self) -> (TokenStream, TokenStream) {
+        let Some(meta) = &self.derive else {
+            return (TokenStream::new(), TokenStream::new());
+        };
+        let syn::Meta::List(list) = meta else {
+            return (quote![#[#meta]], TokenStream::new());
+        };
+        let Ok(paths) = list.parse_args_with(
+            syn::punctuated::Punctuated::<syn::Path, syn::Token![,]>::parse_terminated,
+        ) else {
+            return (quote![#[#meta]], TokenStream::new());
+        };
+        if self.generics.type_params().next().is_none() {
+            return (quote![#[#meta]], TokenStream::new());
+        }
+        let is =
+            |path: &syn::Path, name: &str| path.segments.last().is_some_and(|it| it.ident == name);
+        let clone = paths.iter().any(|path| is(path, "Clone"));
+        let copy = paths.iter().any(|path| is(path, "Copy"));
+        let rest: Vec<_> = paths
+            .iter()
+            .filter(|path| !is(path, "Clone") && !is(path, "Copy"))
+            .collect();
+        let derives = (!rest.is_empty())
+            .then(|| quote![#[derive(#(#rest),*)]])
+            .unwrap_or_default();
+
+        let cube_type = prelude_type("CubeType");
+        let held = |field: &TypeField| {
+            let ty = &field.ty;
+            if field.comptime.is_present() {
+                quote![#ty]
+            } else {
+                quote![<#ty as #cube_type>::ExpandType]
+            }
+        };
+        let name = self.name_expand.as_ref().unwrap();
+        let (generics_impl, generics_use, where_clause) = self.generics.split_for_impl();
+        let predicates = where_clause.map(|clause| {
+            let predicates = &clause.predicates;
+            quote![#predicates,]
+        });
+        let bounded = |bound: TokenStream| {
+            let fields = self.fields.iter().map(held);
+            quote![where #predicates #(#fields: #bound,)*]
+        };
+        let mut impls = TokenStream::new();
+        if clone {
+            let where_clause = bounded(quote![::core::clone::Clone]);
+            let members = self.fields.iter().map(TypeField::member);
+            let body = if self.tuple {
+                quote![Self(#(::core::clone::Clone::clone(&self.#members)),*)]
+            } else {
+                let values = self.fields.iter().map(TypeField::member);
+                quote![Self { #(#members: ::core::clone::Clone::clone(&self.#values)),* }]
+            };
+            impls.extend(quote! {
+                impl #generics_impl ::core::clone::Clone for #name #generics_use #where_clause {
+                    fn clone(&self) -> Self {
+                        #body
+                    }
+                }
+            });
+        }
+        if copy {
+            let where_clause = bounded(quote![::core::marker::Copy]);
+            impls.extend(quote! {
+                impl #generics_impl ::core::marker::Copy for #name #generics_use #where_clause {}
+            });
+        }
+        (derives, impls)
     }
 
     fn clone_expand(&self) -> proc_macro2::TokenStream {

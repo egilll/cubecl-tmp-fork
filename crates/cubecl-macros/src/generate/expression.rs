@@ -179,6 +179,13 @@ impl Expression {
             Expression::Keyword { name } => {
                 quote![#name::expand(scope)]
             }
+            // A binding of an untyped literal reads as the literal would, so
+            // `let k = 2.0; k * x` takes `x`'s type.
+            Expression::Variable(var) if var.is_const && var.is_literal => {
+                let name = &var.name;
+                let expand_elem = frontend_type("NativeExpand");
+                quote_spanned![name.span()=> #expand_elem::from_lit(scope, #name)]
+            }
             Expression::Variable(var) => {
                 if var.is_const {
                     let name = &var.name;
@@ -554,6 +561,7 @@ impl Expression {
                 }
             }
             Expression::StructInit { path, fields } => {
+                let fields_in = fields;
                 let cube_type = prelude_type("CubeType");
                 let tuple = !fields.is_empty()
                     && fields
@@ -571,7 +579,6 @@ impl Expression {
                         tuple_values(&valued, context)
                     })
                     .unwrap_or_default();
-                let fields = init_fields(fields, context);
                 let path_last = path.segments.last().unwrap();
                 let turbofish = &path_last.arguments;
                 // A tuple constructor calls the expanded constructor on the
@@ -582,6 +589,28 @@ impl Expression {
                 if tuple && path_last.ident != "Self" {
                     return quote![#path::__expand_tuple_constructor(#(#values),*)];
                 }
+                // A named literal calls the expanded constructor too, its
+                // fields passed in the order of their names.
+                let named = !fields_in.is_empty()
+                    && fields_in
+                        .iter()
+                        .all(|(member, _)| matches!(member, syn::Member::Named(_)));
+                if named && path_last.ident != "Self" {
+                    let mut valued: Vec<_> = fields_in
+                        .iter()
+                        .filter(|(_, value)| !value.is_phantom_marker())
+                        .collect();
+                    valued.sort_by_key(|(member, _)| match member {
+                        syn::Member::Named(ident) => ident.to_string(),
+                        syn::Member::Unnamed(_) => unreachable!("a named struct literal"),
+                    });
+                    let values = valued
+                        .into_iter()
+                        .map(|(_, value)| argument(value, context));
+                    let values: Vec<_> = values.collect();
+                    return quote![#path::__expand_named_constructor(#(#values),*)];
+                }
+                let fields = init_fields(fields, context);
 
                 let mut path_simplified = path.clone();
                 let mut parameters = Vec::new();
@@ -1011,7 +1040,10 @@ fn argument(value: &Expression, context: &mut Context) -> TokenStream {
         read_expand(value.to_tokens(context))
     } else {
         match value.as_const(context) {
-            Some(constant) if is_untyped_literal(&constant) => {
+            Some(constant)
+                if is_untyped_literal(&constant)
+                    || matches!(value, Expression::Variable(var) if var.is_literal) =>
+            {
                 let literal = frontend_type("LiteralArg");
                 quote_spanned![constant.span()=> #literal(#constant)]
             }
@@ -1071,7 +1103,7 @@ fn init_fields<'a>(
 }
 
 /// Whether `tokens` only combine numeric literals without a type suffix.
-fn is_untyped_literal(tokens: &TokenStream) -> bool {
+pub(crate) fn is_untyped_literal(tokens: &TokenStream) -> bool {
     fn literals(tokens: TokenStream, count: &mut usize) -> bool {
         tokens.into_iter().all(|token| match token {
             TokenTree::Literal(literal) => {

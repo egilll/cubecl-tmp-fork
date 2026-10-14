@@ -544,13 +544,15 @@ pub fn expand_kernel_ty(mut ty: Type, is_const: bool) -> syn::Result<Type> {
     }
 }
 
-/// Whether `ty` is one of `generics`' type parameters or a path through one,
-/// like `T` or `T::Elem`. Its expand type is then a projection, which Rust
-/// can't infer `T` from, so a parameter of the type is an `ExpandArg`.
+/// Whether `ty` is one of `generics`' type parameters, a path through one,
+/// like `T` or `T::Elem`, or a reference to either. Its expand type is then a
+/// projection, which Rust can't infer `T` from, so a parameter of the type is
+/// an `ExpandArg`.
 pub fn names_generic(ty: &Type, generics: &Generics) -> bool {
     match ty {
         Type::Group(group) => names_generic(&group.elem, generics),
         Type::Paren(paren) => names_generic(&paren.elem, generics),
+        Type::Reference(reference) => names_generic(&reference.elem, generics),
         Type::Path(path) if path.qself.is_some() => true,
         Type::Path(path) => path.path.segments.first().is_some_and(|first| {
             generics

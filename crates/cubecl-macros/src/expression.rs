@@ -248,6 +248,28 @@ impl Expression {
     /// Whether evaluating this expression has no observable effect. Used to skip
     /// short-circuit codegen for `||`/`&&`. Conservative: anything not known to
     /// be pure (function calls, indexing, ...) returns false.
+    /// An untyped numeric literal, possibly negated, whose type its uses
+    /// settle.
+    pub fn is_untyped_number(&self) -> bool {
+        match self {
+            Expression::Literal {
+                value: syn::Lit::Int(int),
+            } => int.suffix().is_empty(),
+            Expression::Literal {
+                value: syn::Lit::Float(float),
+            } => float.suffix().is_empty(),
+            Expression::Unary {
+                input,
+                operator: crate::operator::Operator::Neg,
+                ..
+            } => input.is_untyped_number(),
+            Expression::Verbatim { tokens, .. } => {
+                crate::generate::expression::is_untyped_literal(tokens)
+            }
+            _ => false,
+        }
+    }
+
     pub fn is_always_pure(&self) -> bool {
         match self {
             Expression::Literal { .. } => true,

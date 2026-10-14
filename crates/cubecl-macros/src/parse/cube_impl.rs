@@ -136,6 +136,9 @@ impl CubeImplItem {
     /// Create the method from the function and update the function body to
     /// point to the method's implementation.
     fn handle_method_expand(func_name_expand: Ident, func: &mut KernelFn) -> KernelFn {
+        // The receiver fixes the impl's generics; the arguments fix the
+        // method's own.
+        func.sig.take_expand_args(&Generics::default());
         let mut method_sig = func.sig.clone();
 
         method_sig.name = format_ident!("__expand_{}_method", func.sig.name);
@@ -158,7 +161,13 @@ impl CubeImplItem {
         param.name = Ident::new("this", param.span());
         param.mutability = Some(Token![mut](param.span()));
 
-        let args = func.sig.parameters.iter().skip(1).map(|param| &param.name);
+        let args = func.sig.parameters.iter().skip(1).map(|param| {
+            let name = &param.name;
+            match param.expand_arg {
+                true => quote![#name.into()],
+                false => quote![#name],
+            }
+        });
         let method_name = &method_sig.name;
 
         let call_generics = method_sig.call_generics();

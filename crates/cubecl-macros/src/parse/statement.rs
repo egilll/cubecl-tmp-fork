@@ -48,8 +48,15 @@ impl Statement {
                     let is_mut = mutability.is_some();
                     let is_const = init.as_ref().is_some_and(|init| init.is_const());
 
-                    let variable =
-                        context.push_variable(ident, ty, is_const && !is_mut, !is_ref && is_mut);
+                    let is_literal = ty.is_none()
+                        && !is_mut
+                        && !is_ref
+                        && init.as_deref().is_some_and(Expression::is_untyped_number);
+                    let variable = if is_literal {
+                        context.push_literal(ident)
+                    } else {
+                        context.push_variable(ident, ty, is_const && !is_mut, !is_ref && is_mut)
+                    };
                     Self::Local { variable, init }
                 }
             }

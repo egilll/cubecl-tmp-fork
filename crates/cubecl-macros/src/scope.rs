@@ -66,6 +66,7 @@ impl Context {
                 name,
                 ty: Some(ty),
                 is_const: false,
+                is_literal: false,
                 is_mut_owned: false,
                 is_keyword: true,
                 use_count: AtomicUsize::new(0).into(),
@@ -93,6 +94,7 @@ impl Context {
             name,
             ty,
             is_const,
+            is_literal: false,
             is_mut_owned,
             is_keyword: false,
             use_count: AtomicUsize::new(0).into(),
@@ -102,6 +104,20 @@ impl Context {
             .last_mut()
             .expect("Scopes must at least have root scope")
             .push(var.clone());
+        var
+    }
+
+    /// A variable bound to an untyped numeric literal, such as `let k = 2.0;`:
+    /// a constant whose type, like the literal's, is settled by its uses.
+    pub fn push_literal(&mut self, name: Ident) -> ManagedVar {
+        let mut var = self.push_variable(name, None, true, false);
+        var.is_literal = true;
+        self.scopes
+            .last_mut()
+            .expect("Scopes must at least have root scope")
+            .last_mut()
+            .expect("the variable just pushed")
+            .is_literal = true;
         var
     }
 
@@ -160,6 +176,8 @@ pub struct ManagedVar {
     pub name: Ident,
     pub ty: Option<Type>,
     pub is_const: bool,
+    /// Bound to an untyped numeric literal.
+    pub is_literal: bool,
     pub is_mut_owned: bool,
     pub is_keyword: bool,
     use_count: Rc<AtomicUsize>,
@@ -180,6 +198,7 @@ impl From<KernelParam> for ManagedVar {
             name: value.name,
             ty: Some(value.ty),
             is_const: value.is_const,
+            is_literal: false,
             is_keyword: false,
             use_count: AtomicUsize::new(0).into(),
             is_mut_owned: value.mutability.is_some(),

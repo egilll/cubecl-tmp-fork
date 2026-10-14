@@ -25,6 +25,9 @@ pub struct CubeTypeStruct {
     /// what only the kernel's own arguments carry, such as a tensor's
     /// metadata.
     pub no_call_arg: Flag,
+    /// `#[cube(foreign)]`: the declaration shadows a type of another crate,
+    /// as `derive_expand` writes, so it gets no inherent items.
+    pub foreign: Flag,
 }
 
 #[derive(FromField, Clone, Debug)]
