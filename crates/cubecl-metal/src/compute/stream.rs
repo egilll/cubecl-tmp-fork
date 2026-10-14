@@ -39,6 +39,9 @@ pub struct ActiveEncoder {
     pub inject_fault: bool,
     /// The dispatches it carries, for GPU-time accounting.
     pub cost: BatchCost,
+    /// The buffer ranges its dispatches bind, by buffer address and offset:
+    /// a range bound again adds nothing to the batch's bytes.
+    pub bound: std::collections::HashSet<(usize, u64)>,
 }
 
 /// A byte range of one `MTLBuffer`, keyed by the buffer's address.
@@ -374,6 +377,7 @@ impl MetalStream {
                 seq: self.batch_seq,
                 inject_fault: false,
                 cost: BatchCost::default(),
+                bound: std::collections::HashSet::new(),
             });
         }
 

@@ -600,7 +600,7 @@ impl Server for MetalServer {
             let mut resources = Vec::with_capacity(bindings.resources.len());
             let mut reads = Vec::with_capacity(bindings.resources.len() + 1);
             let mut writes = Vec::with_capacity(bindings.resources.len());
-            let mut total_buffer_bytes: usize = 0;
+            let mut ranges = Vec::with_capacity(bindings.resources.len());
             for (index, binding) in bindings.resources.iter().enumerate() {
                 let binding = match binding {
                     KernelResource::Buffer(binding) => binding,
@@ -611,7 +611,10 @@ impl Server for MetalServer {
                 let (resource, offset, size) = resolve_origin_resource(&mut resolved, binding)
                     .map_err(ServerError::Io)?;
 
-                total_buffer_bytes += binding.size_in_used() as usize;
+                ranges.push((
+                    (buffer_address(&resource), offset),
+                    binding.size_in_used() as usize,
+                ));
 
                 // Only the compiled kernel's answer is trusted to leave a
                 // buffer out: a caller's declaration that is wrong would be a
@@ -650,6 +653,13 @@ impl Server for MetalServer {
 
             let device = stream.device.clone();
             let active = stream.get_or_create_encoder();
+            // A batch holds what it binds until it completes: each range
+            // counts once however many of its dispatches bind it.
+            let fresh_bytes: usize = ranges
+                .into_iter()
+                .filter(|(key, _)| active.bound.insert(*key))
+                .map(|(_, bytes)| bytes)
+                .sum();
             let encoder = &active.encoder;
 
             if active.hazards.record(&reads, &writes) {
@@ -744,7 +754,7 @@ impl Server for MetalServer {
             }
 
             stream.batch_ops += 1;
-            stream.batch_bytes += total_buffer_bytes;
+            stream.batch_bytes += fresh_bytes;
             stream.note_writes(lost_on_fault);
             let estimate = stream.accounting.estimate(cost_key, cubes);
             stream.batch_estimate += estimate;
