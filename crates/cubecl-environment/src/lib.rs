@@ -1,3 +1,6 @@
+// Proving the database registry `Send` walks deep into the database
+// handle's types.
+#![recursion_limit = "256"]
 #![no_std]
 #![warn(missing_docs)]
 
