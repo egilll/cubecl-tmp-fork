@@ -789,6 +789,7 @@ impl Launch {
                 #phantom_data
             }
 
+            #[automatically_derived]
             impl #type_generics_names Clone for #name #impl_generics #where_generics {
                 fn clone(&self) -> Self {
                     Self {

@@ -389,6 +389,7 @@ fn shape(
             }
         }
 
+        #[automatically_derived]
         impl <#(#declared),*> ::core::clone::Clone for #shape_type #shape_where {
             fn clone(&self) -> Self {
                 Self {

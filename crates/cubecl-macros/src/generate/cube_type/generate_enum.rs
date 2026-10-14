@@ -458,6 +458,7 @@ impl CubeTypeEnum {
                 ),*
             }
 
+            #[automatically_derived]
             impl #generics_impl Clone for #name #generic_names #where_clause {
                 fn clone(&self) -> Self {
                     #body_clone

@@ -237,6 +237,7 @@ impl CubeTypeStruct {
                 quote![Self { #(#members: ::core::clone::Clone::clone(&self.#values)),* }]
             };
             impls.extend(quote! {
+                #[automatically_derived]
                 impl #generics_impl ::core::clone::Clone for #name #generics_use #where_clause {
                     fn clone(&self) -> Self {
                         #body
@@ -247,6 +248,7 @@ impl CubeTypeStruct {
         if copy {
             let where_clause = bounded(quote![::core::marker::Copy]);
             impls.extend(quote! {
+                #[automatically_derived]
                 impl #generics_impl ::core::marker::Copy for #name #generics_use #where_clause {}
             });
         }
@@ -296,6 +298,9 @@ impl CubeTypeStruct {
             let member = field.member();
             if field.is_marker() {
                 quote![#member: ::core::marker::PhantomData]
+            } else if field.ident.is_some() {
+                // Shorthand, since the binding takes the field's own name and span.
+                quote![#member]
             } else {
                 let binding = field.binding();
                 quote![#member: #binding]
@@ -395,6 +400,7 @@ impl CubeTypeStruct {
         quote! {
             #declaration
 
+            #[automatically_derived]
             impl #type_generics_names Clone for #name #impl_generics #where_clause {
                 fn clone(&self) -> Self {
                     Self {
