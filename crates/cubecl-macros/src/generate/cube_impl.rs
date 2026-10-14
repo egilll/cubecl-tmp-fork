@@ -19,7 +19,9 @@ impl CubeImpl {
         let fns_tokens = if self.expand_only {
             quote![]
         } else {
+            // As for functions, the host signatures do not decide how kernels pass values.
             quote! {
+                #[allow(clippy::trivially_copy_pass_by_ref, clippy::needless_pass_by_value)]
                 #unsafety impl #generics #struct_name #impl_where {
                     #(#items)*
                     #(

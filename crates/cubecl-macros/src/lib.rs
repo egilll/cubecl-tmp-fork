@@ -81,8 +81,15 @@ fn cube_impl(args: TokenStream, input: TokenStream) -> syn::Result<TokenStream> 
                 false => quote![],
             };
 
+            // How a kernel passes its values is decided on the device, not by the host
+            // signature's type sizes, which Clippy would otherwise judge.
             return Ok(TokenStream::from(quote! {
-                #[allow(dead_code, clippy::too_many_arguments)]
+                #[allow(
+                    dead_code,
+                    clippy::too_many_arguments,
+                    clippy::trivially_copy_pass_by_ref,
+                    clippy::needless_pass_by_value
+                )]
                 #extra_allow
                 #item
                 #kernel

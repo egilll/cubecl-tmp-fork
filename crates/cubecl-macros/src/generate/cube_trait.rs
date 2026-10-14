@@ -89,7 +89,7 @@ impl ToTokens for CubeTrait {
 
         let out = quote! {
             #(#attrs)*
-            #[allow(clippy::too_many_arguments)]
+            #[allow(clippy::too_many_arguments, clippy::trivially_copy_pass_by_ref, clippy::needless_pass_by_value)]
             #vis #unsafety trait #name #generics #colon #base_traits #where_clause {
                 #(#original_body)*
 
