@@ -211,3 +211,41 @@ fn midpoint_int<E: Int>(a: E, b: E) -> E {
 fn midpoint_float<F: Float>(a: F, b: F) -> F {
     a * F::new(0.5) + b * F::new(0.5)
 }
+
+/// Wrapping integer arithmetic, as Rust's inherent `wrapping_add`, `wrapping_sub` and
+/// `wrapping_mul` compute it. A kernel's integer arithmetic already wraps, so each is its plain
+/// operation there, and host code that shares the kernel's source runs Rust's own methods.
+pub trait WrappingExpand<E: Int> {
+    fn __expand_wrapping_add_method(self, scope: &Scope, rhs: Self) -> Self;
+    fn __expand_wrapping_sub_method(self, scope: &Scope, rhs: Self) -> Self;
+    fn __expand_wrapping_mul_method(self, scope: &Scope, rhs: Self) -> Self;
+}
+
+impl<E: Int> WrappingExpand<E> for NativeExpand<E> {
+    fn __expand_wrapping_add_method(self, scope: &Scope, rhs: NativeExpand<E>) -> NativeExpand<E> {
+        wrapping_add::expand::<E>(scope, self.into(), rhs.into())
+    }
+
+    fn __expand_wrapping_sub_method(self, scope: &Scope, rhs: NativeExpand<E>) -> NativeExpand<E> {
+        wrapping_sub::expand::<E>(scope, self.into(), rhs.into())
+    }
+
+    fn __expand_wrapping_mul_method(self, scope: &Scope, rhs: NativeExpand<E>) -> NativeExpand<E> {
+        wrapping_mul::expand::<E>(scope, self.into(), rhs.into())
+    }
+}
+
+#[cube]
+fn wrapping_add<E: Int>(a: E, b: E) -> E {
+    a + b
+}
+
+#[cube]
+fn wrapping_sub<E: Int>(a: E, b: E) -> E {
+    a - b
+}
+
+#[cube]
+fn wrapping_mul<E: Int>(a: E, b: E) -> E {
+    a * b
+}
