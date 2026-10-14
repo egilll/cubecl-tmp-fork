@@ -51,6 +51,18 @@ pub trait Real:
         let _ = x;
         cubecl::unexpanded!()
     }
+    /// `exp(x) − 1`, accurate where `x` is near zero and the difference
+    /// would cancel.
+    fn exp_m1(x: Self) -> Self {
+        let _ = x;
+        cubecl::unexpanded!()
+    }
+    /// `ln(1 + x)`, accurate where `x` is near zero and the sum would round
+    /// to one.
+    fn ln_1p(x: Self) -> Self {
+        let _ = x;
+        cubecl::unexpanded!()
+    }
     fn sin(x: Self) -> Self {
         let _ = x;
         cubecl::unexpanded!()
@@ -67,6 +79,8 @@ pub trait Real:
     fn __expand_constant(scope: &Scope, x: NativeExpand<f32>) -> Self::ExpandType;
     fn __expand_exp(scope: &Scope, x: Self::ExpandType) -> Self::ExpandType;
     fn __expand_ln(scope: &Scope, x: Self::ExpandType) -> Self::ExpandType;
+    fn __expand_exp_m1(scope: &Scope, x: Self::ExpandType) -> Self::ExpandType;
+    fn __expand_ln_1p(scope: &Scope, x: Self::ExpandType) -> Self::ExpandType;
     fn __expand_sin(scope: &Scope, x: Self::ExpandType) -> Self::ExpandType;
     fn __expand_cos(scope: &Scope, x: Self::ExpandType) -> Self::ExpandType;
     fn __expand_sqrt(scope: &Scope, x: Self::ExpandType) -> Self::ExpandType;
@@ -81,6 +95,12 @@ impl Real for f32 {
     }
     fn ln(x: Self) -> Self {
         x.ln()
+    }
+    fn exp_m1(x: Self) -> Self {
+        x.exp_m1()
+    }
+    fn ln_1p(x: Self) -> Self {
+        x.ln_1p()
     }
     fn sin(x: Self) -> Self {
         x.sin()
@@ -100,6 +120,12 @@ impl Real for f32 {
     }
     fn __expand_ln(scope: &Scope, x: NativeExpand<f32>) -> NativeExpand<f32> {
         <f32 as Log>::__expand_ln(scope, x)
+    }
+    fn __expand_exp_m1(scope: &Scope, x: NativeExpand<f32>) -> NativeExpand<f32> {
+        <f32 as Expm1>::__expand_exp_m1(scope, x)
+    }
+    fn __expand_ln_1p(scope: &Scope, x: NativeExpand<f32>) -> NativeExpand<f32> {
+        <f32 as Log1p>::__expand_log1p(scope, x)
     }
     fn __expand_sin(scope: &Scope, x: NativeExpand<f32>) -> NativeExpand<f32> {
         <f32 as Sin>::__expand_sin(scope, x)
@@ -124,6 +150,12 @@ impl Real for f64 {
     fn ln(x: Self) -> Self {
         x.ln()
     }
+    fn exp_m1(x: Self) -> Self {
+        x.exp_m1()
+    }
+    fn ln_1p(x: Self) -> Self {
+        x.ln_1p()
+    }
     fn sin(x: Self) -> Self {
         x.sin()
     }
@@ -142,6 +174,12 @@ impl Real for f64 {
     }
     fn __expand_ln(scope: &Scope, x: NativeExpand<f64>) -> NativeExpand<f64> {
         <f64 as Log>::__expand_ln(scope, x)
+    }
+    fn __expand_exp_m1(scope: &Scope, x: NativeExpand<f64>) -> NativeExpand<f64> {
+        <f64 as Expm1>::__expand_exp_m1(scope, x)
+    }
+    fn __expand_ln_1p(scope: &Scope, x: NativeExpand<f64>) -> NativeExpand<f64> {
+        <f64 as Log1p>::__expand_log1p(scope, x)
     }
     fn __expand_sin(scope: &Scope, x: NativeExpand<f64>) -> NativeExpand<f64> {
         <f64 as Sin>::__expand_sin(scope, x)
@@ -164,6 +202,12 @@ impl<N: Size> Real for Vector<f32, N> {
     }
     fn __expand_ln(scope: &Scope, x: Self::ExpandType) -> Self::ExpandType {
         <Self as Log>::__expand_ln(scope, x)
+    }
+    fn __expand_exp_m1(scope: &Scope, x: Self::ExpandType) -> Self::ExpandType {
+        <Self as Expm1>::__expand_exp_m1(scope, x)
+    }
+    fn __expand_ln_1p(scope: &Scope, x: Self::ExpandType) -> Self::ExpandType {
+        <Self as Log1p>::__expand_log1p(scope, x)
     }
     fn __expand_sin(scope: &Scope, x: Self::ExpandType) -> Self::ExpandType {
         <Self as Sin>::__expand_sin(scope, x)
@@ -297,6 +341,16 @@ fn dual_ln<N: Size>(x: Dual<N>) -> Dual<N> {
 }
 
 #[cube]
+fn dual_exp_m1<N: Size>(x: Dual<N>) -> Dual<N> {
+    x.chain(x.value.exp_m1(), x.value.exp())
+}
+
+#[cube]
+fn dual_ln_1p<N: Size>(x: Dual<N>) -> Dual<N> {
+    x.chain(x.value.log1p(), 1.0 / (1.0 + x.value))
+}
+
+#[cube]
 fn dual_sin<N: Size>(x: Dual<N>) -> Dual<N> {
     x.chain(x.value.sin(), x.value.cos())
 }
@@ -321,6 +375,12 @@ impl<N: Size> Real for Dual<N> {
     }
     fn __expand_ln(scope: &Scope, x: DualExpand<N>) -> DualExpand<N> {
         dual_ln::expand::<N>(scope, x)
+    }
+    fn __expand_exp_m1(scope: &Scope, x: DualExpand<N>) -> DualExpand<N> {
+        dual_exp_m1::expand::<N>(scope, x)
+    }
+    fn __expand_ln_1p(scope: &Scope, x: DualExpand<N>) -> DualExpand<N> {
+        dual_ln_1p::expand::<N>(scope, x)
     }
     fn __expand_sin(scope: &Scope, x: DualExpand<N>) -> DualExpand<N> {
         dual_sin::expand::<N>(scope, x)
@@ -347,5 +407,12 @@ mod tests {
         assert_eq!(hypotenuse(3.0f32, 4.0), 5.0);
         assert_eq!(hypotenuse(3.0f64, 4.0), 5.0);
         assert_eq!(<f64 as Real>::constant(0.5), 0.5);
+    }
+
+    #[test]
+    fn fused_forms_keep_small_arguments() {
+        assert_eq!(<f32 as Real>::exp_m1(1.0e-8), 1.0e-8);
+        assert_eq!(<f32 as Real>::ln_1p(1.0e-8), 1.0e-8);
+        assert_eq!(f32::exp(1.0e-8) - 1.0, 0.0);
     }
 }

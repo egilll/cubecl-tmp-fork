@@ -203,19 +203,47 @@ pub fn expand_dp4a_polyfill(scope: &Scope, a: Value, b: Value, c: Value) -> Valu
     dp4a_polyfill::expand::<SizeA>(scope, a.into(), b.into(), c.into()).value(scope)
 }
 
+/// The arguments below which [`expm1`] and [`log1p`] sum a series rather
+/// than subtract from or add to one. Beyond it the cancellation costs at
+/// most a couple of ulp.
+const SERIES_BOUND: f32 = 0.5;
+
+/// `ln(1 + x)` at full relative accuracy for small `x`, where forming
+/// `1 + x` would round `x` away. Below [`SERIES_BOUND`] it sums
+/// `2·atanh(s) = 2(s + s³/3 + s⁵/5 + …)` with `s = x / (2 + x)`, which needs
+/// no transcendental function and so keeps its accuracy where `log` is
+/// evaluated approximately; sixteen terms reach `f64`'s epsilon at the bound.
 #[cube]
-pub fn log1p<T: Float, N: Size>(input: Vector<T, N>) -> Vector<T, N> {
-    (input + Vector::one()).ln()
+pub fn log1p<T: Float, N: Size>(x: Vector<T, N>) -> Vector<T, N> {
+    let s = x / (Vector::new(T::new(2.0)) + x);
+    let s2 = s * s;
+    let mut sum = Vector::new(T::new(1.0 / 33.0));
+    #[unroll]
+    for k in 0..16 {
+        let odd = comptime![(31 - 2 * k) as f32];
+        sum = Vector::new(T::new(comptime![1.0 / odd])) + s2 * sum;
+    }
+    let series = Vector::new(T::new(2.0)) * s * sum;
+    let small = x.abs().less_than(&Vector::new(T::new(SERIES_BOUND)));
+    select_many(small, series, (x + Vector::one()).ln())
 }
 
+/// `exp(x) − 1` at full relative accuracy for small `x`, where `exp(x)`
+/// rounds to one. Below [`SERIES_BOUND`] it sums the Taylor series nested
+/// as `x(1 + x/2(1 + x/3(1 + …)))`, which needs no transcendental function;
+/// sixteen terms reach `f64`'s epsilon at the bound. Beyond it, `+∞` and
+/// `−1` follow from `exp` itself.
 #[cube]
 pub fn expm1<T: Float, N: Size>(x: Vector<T, N>) -> Vector<T, N> {
-    let sq = x * x;
-    let a = sq * Vector::new(T::new(0.5_f32));
-    let b = sq * x * Vector::new(T::new(1.0_f32 / 6.0_f32));
-    let taylor = x + a + b;
-    let is_small = x.abs().less_than(&Vector::new(T::new(1e-5_f32)));
-    select_many(is_small, taylor, x.exp() - Vector::one())
+    let mut nested = Vector::one();
+    #[unroll]
+    for k in 0..15 {
+        let order = comptime![(16 - k) as f32];
+        nested = Vector::one() + x * Vector::new(T::new(comptime![1.0 / order])) * nested;
+    }
+    let series = x * nested;
+    let small = x.abs().less_than(&Vector::new(T::new(SERIES_BOUND)));
+    select_many(small, series, x.exp() - Vector::one())
 }
 
 /// `powf` without any edge case handling. Useful as a common mapping for the backend version that

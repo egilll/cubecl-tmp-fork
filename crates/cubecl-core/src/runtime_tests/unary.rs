@@ -957,6 +957,42 @@ pub fn test_expm1_f32<R: Runtime>(client: Client) {
     }
 }
 
+/// `exp_m1` and `log1p` across the range where their unfused forms cancel,
+/// from below `f32`'s epsilon to order one, on both sides of zero.
+pub fn test_fused_logarithms_f32<R: Runtime>(client: Client) {
+    #[cube(launch_unchecked)]
+    fn test_function(input: &[f32], expm1: &mut [f32], log1p: &mut [f32]) {
+        if ABSOLUTE_POS < input.len() {
+            expm1[ABSOLUTE_POS] = input[ABSOLUTE_POS].exp_m1();
+            log1p[ABSOLUTE_POS] = input[ABSOLUTE_POS].log1p();
+        }
+    }
+
+    let input: alloc::vec::Vec<f32> = (0..32)
+        .map(|i| 10f32.powf(-8.0 + 0.25 * i as f32))
+        .flat_map(|x| [x, -x * 0.5])
+        .collect();
+    let bytes = input.len() * core::mem::size_of::<f32>();
+    let (expm1, log1p) = (client.empty(bytes), client.empty(bytes));
+    let input_handle = client.create_from_slice(f32::as_bytes(&input));
+    unsafe {
+        test_function::launch_unchecked(
+            &client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(input.len() as u32),
+            BufferArg::from_raw_parts(input_handle, input.len()),
+            BufferArg::from_raw_parts(expm1.clone(), input.len()),
+            BufferArg::from_raw_parts(log1p.clone(), input.len()),
+        )
+    };
+    let expm1 = client.read_one_unchecked(expm1);
+    let log1p = client.read_one_unchecked(log1p);
+    for (i, &x) in input.iter().enumerate() {
+        assert_f32_ulp_le(f32::from_bytes(&expm1)[i], x.exp_m1(), 4);
+        assert_f32_ulp_le(f32::from_bytes(&log1p)[i], x.ln_1p(), 4);
+    }
+}
+
 test_unary_impl_int_fixed!(test_count_ones, I, u32, Vector::count_ones, [
     {
         input_vectorization: 1,
@@ -1107,6 +1143,12 @@ macro_rules! testgen_unary {
             add_test!(test_trunc);
             add_test!(test_is_nan);
             add_test!(test_is_inf);
+
+            #[$crate::runtime_tests::test_log::test]
+            fn test_fused_logarithms_f32() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::unary::test_fused_logarithms_f32::<TestRuntime>(client);
+            }
 
             #[$crate::runtime_tests::test_log::test]
             fn test_expm1_f32() {

@@ -124,6 +124,62 @@ pub fn test_dual_derivatives<R: Runtime>(client: Client) {
     }
 }
 
+/// Small arguments, where `exp(x) − 1` and `ln(1 + x)` cancel.
+#[cube]
+fn fused<R: Real>(x: R, y: R) -> R {
+    R::exp_m1(x * y) + R::ln_1p(x)
+}
+
+#[cube(launch)]
+fn kernel_fused(input: &[f32], output: &mut [f32]) {
+    let i = ABSOLUTE_POS;
+    if i < input.len() / 2 {
+        let (x, y) = (input[2 * i], input[2 * i + 1]);
+        let dual = fused::<Dual<Const<2>>>(
+            Dual::<Const<2>>::variable(x, 0usize),
+            Dual::<Const<2>>::variable(y, 1usize),
+        );
+        output[4 * i] = fused::<f32>(x, y);
+        output[4 * i + 1] = dual.value;
+        output[4 * i + 2] = dual.tangent.extract(0usize);
+        output[4 * i + 3] = dual.tangent.extract(1usize);
+    }
+}
+
+/// `exp_m1` and `ln_1p` keep full relative accuracy at arguments where the
+/// unfused forms return zero, as values and through their derivatives.
+pub fn test_dual_fused<R: Runtime>(client: Client) {
+    let points: Vec<f32> = (0..16)
+        .flat_map(|i| [1.0e-7 * (i + 1) as f32, 0.25 + i as f32 * 0.1])
+        .collect();
+    let input = Buffer::create(&client, &points);
+    let output = Buffer::<f32>::empty(&client, 64);
+    kernel_fused::launch(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(16),
+        (&input).into(),
+        (&output).into(),
+    );
+    let output = output.read(&client).unwrap();
+    for i in 0..16 {
+        let (x, y) = (points[2 * i] as f64, points[2 * i + 1] as f64);
+        let value = (x * y).exp_m1() + x.ln_1p();
+        let dx = y * (x * y).exp() + 1.0 / (1.0 + x);
+        let dy = x * (x * y).exp();
+        let close =
+            |actual: f32, expected: f64| (actual as f64 - expected).abs() <= 1e-5 * expected.abs();
+        assert!(
+            close(output[4 * i], value),
+            "value {i}: {} vs {value}",
+            output[4 * i]
+        );
+        assert_eq!(output[4 * i], output[4 * i + 1], "f32 and dual values {i}");
+        assert!(close(output[4 * i + 2], dx), "d/dx {i}");
+        assert!(close(output[4 * i + 3], dy), "d/dy {i}");
+    }
+}
+
 #[macro_export]
 macro_rules! testgen_dual {
     () => {
@@ -134,6 +190,12 @@ macro_rules! testgen_dual {
             fn test_dual_derivatives() {
                 let client = TestRuntime::client(&Default::default());
                 cubecl_std::tests::dual::test_dual_derivatives::<TestRuntime>(client);
+            }
+
+            #[$crate::tests::test_log::test]
+            fn test_dual_fused() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_std::tests::dual::test_dual_fused::<TestRuntime>(client);
             }
 
             #[$crate::tests::test_log::test]
