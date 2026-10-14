@@ -248,7 +248,9 @@ impl Assign {
         };
         // Only a field that is itself a type parameter needs a bound: a
         // generic struct's own impls carry theirs, and a redundant bound on
-        // its expand type would shadow them and stop normalization.
+        // its expand type would shadow them and stop normalization. A
+        // parameter bounded as a primitive expands to `NativeExpand`, which
+        // assigns already.
         let params: Vec<_> = self
             .generics
             .type_params()
@@ -257,6 +259,7 @@ impl Assign {
         let fields = fields.into_iter().filter(|field| {
             matches!(&field.ty, syn::Type::Path(path)
                 if path.qself.is_none() && path.path.get_ident().is_some_and(|ident| params.contains(ident)))
+                && !crate::generate::primitive_generic(&field.ty, &self.generics)
         });
         bounded_where_clause(
             &self.generics,
