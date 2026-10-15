@@ -375,6 +375,10 @@ struct Options {
     ord: bool,
     packed: bool,
     lanes: bool,
+    /// The host orders the type with its own `Ord`, whose `min`, `max` and
+    /// `clamp` kernels then expand: no host `Ordered`, which would make
+    /// them ambiguous.
+    host_ord: bool,
     /// A representation no value uses: `Option<Self>` stores in one value.
     niche: Option<syn::Expr>,
 }
@@ -411,11 +415,14 @@ impl Options {
                     options.packed = true;
                 } else if meta.path.is_ident("lanes") {
                     options.lanes = true;
+                } else if meta.path.is_ident("host_ord") {
+                    options.host_ord = true;
+                    options.ord = true;
                 } else if meta.path.is_ident("niche") {
                     options.niche = Some(meta.value()?.parse()?);
                 } else {
                     return Err(meta.error(
-                        "expected `copy`, `eq`, `key`, `launch`, `lanes`, `niche`, `ord` or `packed`",
+                        "expected `copy`, `eq`, `host_ord`, `key`, `launch`, `lanes`, `niche`, `ord` or `packed`",
                     ));
                 }
                 Ok(())
@@ -509,6 +516,11 @@ impl Options {
                 parse_quote!(<#repr as #prelude::DeviceRepr>::Repr: #prelude::CubePartialOrd),
             ]);
             let (impl_generics, ty_generics, clause) = generics.split_for_impl();
+            let host_ordered = (!self.host_ord).then(|| {
+                quote! {
+                    impl #impl_generics #prelude::Ordered for #name #ty_generics #clause {}
+                }
+            });
             let ordering = quote![::core::cmp::Ordering];
             let methods = ["lt", "le", "gt", "ge"].map(|op| {
                 let method = format_ident!("__expand_{op}_method");
@@ -543,7 +555,7 @@ impl Options {
 
                 impl #impl_generics #prelude::OrderedRepr for #name #ty_generics #clause {}
 
-                impl #impl_generics #prelude::Ordered for #name #ty_generics #clause {}
+                #host_ordered
 
                 impl #impl_generics #prelude::OrderedExpand for #expanded #ty_generics #clause {
                     type Value = #name #ty_generics;
