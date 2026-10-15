@@ -8,6 +8,7 @@ mod sequence;
 mod shared_memory;
 pub mod slice;
 mod storage;
+mod table;
 mod tensor;
 mod vector;
 
@@ -20,5 +21,6 @@ pub use sequence::*;
 pub use shared_memory::*;
 pub use slice::*;
 pub use storage::*;
+pub use table::*;
 pub use tensor::*;
 pub use vector::*;

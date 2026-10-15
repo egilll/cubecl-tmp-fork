@@ -540,7 +540,13 @@ impl Expression {
                 if let Some(constant) = self.as_const(context) {
                     constant
                 } else {
-                    let elements = elements.iter().map(|it| it.to_tokens(context));
+                    // A runtime tuple holds the expansion of its constant
+                    // elements too: `(id, Kind::A)`.
+                    let into_expand = prelude_type("IntoExpand");
+                    let elements = elements.iter().map(|it| match it.as_const(context) {
+                        Some(constant) => quote![#into_expand::into_expand(#constant, scope)],
+                        None => it.to_tokens(context),
+                    });
                     quote![(#(#elements,)*)]
                 }
             }

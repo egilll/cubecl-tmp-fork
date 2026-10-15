@@ -4,6 +4,7 @@ use syn::{
     Generics, Token, Type, WhereClause, parse_quote, punctuated::Punctuated, spanned::Spanned,
 };
 
+pub mod arena;
 pub mod asm;
 pub mod assign;
 pub mod autotune;
@@ -14,6 +15,7 @@ pub mod expression;
 pub mod into_runtime;
 pub mod kernel;
 pub mod launch;
+pub mod record;
 pub mod representation;
 pub mod resident;
 pub mod signature;

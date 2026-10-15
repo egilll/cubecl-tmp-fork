@@ -369,6 +369,28 @@ pub fn derive_resident(input: TokenStream) -> TokenStream {
         .into()
 }
 
+/// A struct of tables bound as one kernel argument: tables of one element
+/// share a buffer, so a kernel may take more tables than bindings. Generates
+/// `SArena` and `SData`, the host side.
+#[proc_macro_derive(Arena)]
+pub fn derive_arena(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    generate::arena::generate(&input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// A struct stored as the words of its fields, each a record itself: one
+/// word for a scalar, brand or kind, the words of a nested record. Implements
+/// `Words` (host) and `Record` (device).
+#[proc_macro_derive(Record)]
+pub fn derive_record(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    generate::record::generate(&input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
 #[proc_macro_derive(DeviceRepr, attributes(cube, expand, device_repr))]
 pub fn derive_device_repr(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);

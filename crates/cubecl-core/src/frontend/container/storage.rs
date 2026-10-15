@@ -60,6 +60,26 @@ impl<Q: DeviceRepr, K: StorageKey> Storage<Q, ReadWrite, K> {
     }
 }
 
+impl<Q: DeviceRepr, V: SliceVisibility, K: StorageKey> Storage<Q, V, K> {
+    /// The storage of `len` elements of `buffer` from element `at`: one
+    /// table of an arena, which shares the buffer.
+    #[doc(hidden)]
+    pub fn __expand_view(
+        scope: &Scope,
+        buffer: &SliceExpand<StorageElement<Q>>,
+        at: NativeExpand<usize>,
+        len: NativeExpand<usize>,
+    ) -> StorageExpand<Q, V, K> {
+        let list = buffer.__extract_list(scope);
+        StorageExpand {
+            inner: slice::from_raw_parts::<StorageElement<Q>>(scope, list, at, len)
+                .expand
+                .into(),
+            marker: PhantomData,
+        }
+    }
+}
+
 pub struct TypedBufferArg<Q: DeviceRepr> {
     inner: BufferArg,
     marker: PhantomData<Q>,
@@ -228,6 +248,26 @@ impl<Q: DeviceRepr<Layout = Native> + Send + Sync, K: StorageKey + Send + Sync> 
     fn expand(arg: &Self::CompilationArg, builder: &mut KernelBuilder) -> Self::ExpandType {
         AtomicStorageExpand {
             inner: <alloc::boxed::Box<[Atomic<Q::Repr>]>>::expand(arg, builder),
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<Q: DeviceRepr, K: StorageKey> AtomicStorage<Q, K> {
+    /// The storage of `len` elements of `buffer` from element `at`: one
+    /// table of an arena, which shares the buffer.
+    #[doc(hidden)]
+    pub fn __expand_view(
+        scope: &Scope,
+        buffer: &SliceExpand<Atomic<Q::Repr>>,
+        at: NativeExpand<usize>,
+        len: NativeExpand<usize>,
+    ) -> AtomicStorageExpand<Q, K> {
+        let list = buffer.__extract_list(scope);
+        AtomicStorageExpand {
+            inner: slice::from_raw_parts::<Atomic<Q::Repr>>(scope, list, at, len)
+                .expand
+                .into(),
             marker: PhantomData,
         }
     }
