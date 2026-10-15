@@ -723,7 +723,7 @@ impl Expression {
                     let discriminants = arms.iter().enumerate().map(|(i, (pat, _))| {
                         let name = variant_name(pat).expect("Already checked");
                         let ident = format_ident!("_disc_{i}");
-                        quote![let #ident = #expr.discriminant_of_value(#name);]
+                        quote![let #ident = __scrutinee.discriminant_of_value(#name);]
                     });
 
                     // Needed so type inference can actually work
@@ -731,10 +731,13 @@ impl Expression {
                     let cases = cases
                         .iter()
                         .map(|(disc, block)| quote![.case(scope, #disc, |scope, value| #block)]);
+                    // The scrutinee is evaluated once, as in Rust: it may have
+                    // effects, such as a call that writes to storage.
                     quote! {
                         {
+                            let __scrutinee = #expr;
                             #(#discriminants)*
-                            #branch::#match_(scope, #expr, #disc0, |scope, value| #block0)
+                            #branch::#match_(scope, __scrutinee, #disc0, |scope, value| #block0)
                                 #(#cases)*
                                 #default
                                 .finish(scope)

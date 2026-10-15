@@ -238,6 +238,37 @@ fn kernel_array_float_int(array: &mut ArrayFloatInt) {
     }
 }
 
+/// A scrutinee with an effect: it counts its own evaluations.
+#[cube]
+fn counted(counter: &mut [f32]) -> RuntimeEnumEmpty {
+    counter[1] += 1.0;
+    RuntimeEnumEmpty::new_B()
+}
+
+#[cube(launch_unchecked)]
+pub fn kernel_match_evaluates_once(output: &mut [f32]) {
+    match counted(output) {
+        RuntimeEnumEmpty::A => output[0] = 1.0,
+        RuntimeEnumEmpty::B => output[0] = 2.0,
+        RuntimeEnumEmpty::C => output[0] = 3.0,
+    }
+}
+
+/// A runtime match evaluates its scrutinee once.
+pub fn test_match_evaluates_once<R: Runtime>(client: Client) {
+    let array = client.create_from_slice(f32::as_bytes(&[0.0, 0.0]));
+    unsafe {
+        kernel_match_evaluates_once::launch_unchecked(
+            &client,
+            CubeCount::new_single(),
+            CubeDim::new_single(),
+            BufferArg::from_raw_parts(array.clone(), 2),
+        )
+    };
+    let bytes = client.read_one_unchecked(array);
+    assert_eq!(f32::from_bytes(&bytes), [2.0, 1.0]);
+}
+
 pub fn test_array_float_int<R: Runtime, T: Scalar + CubeElement>(client: &Client, expected: T) {
     let array = client.empty(core::mem::size_of::<T>());
 
@@ -378,6 +409,12 @@ macro_rules! testgen_enums {
                 cubecl_core::runtime_tests::enums::test_comptime_option_scalar::<TestRuntime>(
                     &client,
                 );
+            }
+
+            #[$crate::runtime_tests::test_log::test]
+            fn match_evaluates_once() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::enums::test_match_evaluates_once::<TestRuntime>(client);
             }
 
             #[$crate::runtime_tests::test_log::test]
