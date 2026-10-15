@@ -653,8 +653,25 @@ fn generate_enum(input: &DeriveInput) -> syn::Result<TokenStream> {
             impl #impl_generics ::core::marker::Copy for #expanded #ty_generics #clause {}
         }
     });
+    let key = options.key.then(|| {
+        quote! {
+            impl #impl_generics #prelude::StorageKey for #name #ty_generics #clause {
+                fn position(key: Self) -> usize {
+                    <Self as #prelude::DeviceRepr>::into_repr(key) as usize
+                }
+
+                fn __expand_position(
+                    scope: &#prelude::Scope,
+                    key: <Self as #prelude::CubeType>::ExpandType,
+                ) -> #prelude::NativeExpand<usize> {
+                    <usize as #prelude::Cast>::__expand_cast_from(scope, key.discriminant)
+                }
+            }
+        }
+    });
     Ok(quote! {
         #copy
+        #key
 
         impl #impl_generics #prelude::DeviceRepr for #name #ty_generics #clause {
             type Repr = i32;

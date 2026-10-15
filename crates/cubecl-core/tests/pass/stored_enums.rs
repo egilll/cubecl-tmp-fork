@@ -34,6 +34,20 @@ fn kernel(families: &mut Storage<Family>, out: &mut [f32]) {
     out[0] = rate(picked, 1.5);
 }
 
+/// An enum keys a table's axis by its discriminant.
+#[derive(CubeType, CubeTypeMut, IntoRuntime, DeviceRepr, Clone, Copy, PartialEq, Eq, Debug)]
+#[cube(runtime_variants)]
+#[device_repr(copy, eq, key)]
+enum Balance {
+    Felt,
+    Active,
+}
+
+#[cube(launch)]
+fn keyed(table: &mut Storage<f32, ReadWrite, Balance>) {
+    table.store(Balance::Active, 2.0);
+}
+
 fn main() {
     assert_eq!(Family::from_repr(Family::Fill.into_repr()), Family::Fill);
 }

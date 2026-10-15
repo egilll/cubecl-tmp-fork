@@ -81,8 +81,9 @@ impl IntoRuntime {
     /// A struct constant converts to its expansion like a scalar does, so it
     /// can be passed where a device function takes the struct.
     fn from_constant(&self) -> TokenStream {
-        let Data::Struct(struct_) = &self.data else {
-            return TokenStream::new();
+        let struct_ = match &self.data {
+            Data::Struct(struct_) => struct_,
+            Data::Enum(_) => return self.from_unit_variant(),
         };
         let cube_type = prelude_type("CubeType");
         let name = &self.ident;
@@ -123,6 +124,43 @@ impl IntoRuntime {
             impl #generics From<#name #generic_names> for #expand_arg<#name #generic_names>
             where #(#bounds,)*
             {
+                fn from(value: #name #generic_names) -> Self {
+                    #name_expand::from(value).into()
+                }
+            }
+        }
+    }
+
+    /// A unit variant of a runtime enum without values converts to its
+    /// expansion like a struct constant does: `table.store(Kind::A, x)`.
+    fn from_unit_variant(&self) -> TokenStream {
+        let Data::Enum(variants) = &self.data else {
+            return TokenStream::new();
+        };
+        if !self.runtime_variants.is_present()
+            || variants.iter().any(|v| v.fields.style != Style::Unit)
+        {
+            return TokenStream::new();
+        }
+        let name = &self.ident;
+        let name_expand = format_ident!("{}Expand", name);
+        let (generics, generic_names, where_clause) = self.generics.split_for_impl();
+        let expand_arg = frontend_type("ExpandArg");
+        let cube_enum = prelude_type("CubeEnum");
+        let arms = variants.iter().map(|v| {
+            let variant = &v.ident;
+            let variant_name = variant.to_string();
+            quote![#name::#variant => <#name_expand #generic_names as #cube_enum>::discriminant_of(#variant_name)]
+        });
+        quote! {
+            impl #generics From<#name #generic_names> for #name_expand #generic_names #where_clause {
+                fn from(value: #name #generic_names) -> Self {
+                    let discriminant: i32 = match value { #(#arms),* };
+                    Self { discriminant: discriminant.into(), value: () }
+                }
+            }
+
+            impl #generics From<#name #generic_names> for #expand_arg<#name #generic_names> #where_clause {
                 fn from(value: #name #generic_names) -> Self {
                     #name_expand::from(value).into()
                 }
