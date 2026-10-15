@@ -18,7 +18,7 @@ pub type BuildId = Option<&'static [u8]>;
 
 /// Pre-hashed build ID
 pub fn build_id_hash() -> StableHash {
-    StableHasher::hash_one(&buildid::build_id())
+    StableHasher::hash_one(&crate::build_id::build_id())
 }
 
 /// A store for `backend`'s compiled artifacts, or `None` when compilation
@@ -228,7 +228,7 @@ impl CompilationRecording {
 pub struct KernelCacheKey {
     /// Hash of the [kernel id](KernelId).
     pub id: StableHash,
-    /// Hash of the [build id](buildid::build_id).
+    /// Hash of the [build id](crate::build_id::build_id).
     pub build_id: StableHash,
 }
 

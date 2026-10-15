@@ -54,7 +54,6 @@ serde = { workspace = true, features = ["derive"] }
 smallvec = { workspace = true }
 
 foldhash = { workspace = true }
-buildid = { workspace = true }
 thiserror = { workspace = true }
 
 futures-util = { workspace = true, default-features = false }
@@ -84,3 +83,7 @@ name = "dynamic"
 [[bench]]
 harness = false
 name = "write_scope"
+
+# The build identity on platforms other than Apple's.
+[target.'cfg(not(target_vendor = "apple"))'.dependencies]
+buildid = { workspace = true }

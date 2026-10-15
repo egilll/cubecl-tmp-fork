@@ -1333,7 +1333,6 @@ dependencies = [
 name = "cubecl-runtime"
 version = "0.11.0-pre.4"
 dependencies = [
- "buildid",
  "bytemuck",
  "cfg-if",
  "cfg_aliases",

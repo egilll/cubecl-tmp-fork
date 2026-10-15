@@ -67,7 +67,6 @@ smallvec = { workspace = true }
 toml = { workspace = true, optional = true }
 
 foldhash = { workspace = true }
-buildid = { workspace = true }
 thiserror = { workspace = true }
 
 futures-util = { workspace = true, default-features = false }

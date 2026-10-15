@@ -56,6 +56,7 @@ pub mod driver;
 pub mod device_events;
 
 /// Compiler trait, and the compilation caches in front of one.
+pub mod build_id;
 pub mod compiler;
 /// Simple system profiling using timestamps.
 pub mod timestamp_profiler;
