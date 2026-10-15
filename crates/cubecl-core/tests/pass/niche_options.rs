@@ -20,6 +20,23 @@ fn optional(ids: &mut Storage<Option<CardId>>, out: &mut [u32]) {
     ids.store(4usize, Some(CardId(5)));
 }
 
+/// A pair whose second value is generic, built with `None`.
+#[derive(CubeType)]
+struct Ranked<I: CubeType> {
+    rank: f32,
+    index: I,
+}
+
+#[cube]
+fn best(ids: &Storage<Option<CardId>>) -> u32 {
+    let mut pick: Option<CardId> = None;
+    let ranked = Ranked { rank: 0.0, index: None };
+    if ranked.rank < 1.0 {
+        pick = ids.load(0usize);
+    }
+    if let Some(card) = pick { card.0 } else { 0u32 }
+}
+
 fn main() {
     assert_eq!(Option::<CardId>::from_repr(u32::MAX).map(|id| id.0), None);
     assert_eq!(Some(CardId(3)).into_repr(), 3);

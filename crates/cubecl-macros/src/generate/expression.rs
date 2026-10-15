@@ -777,7 +777,7 @@ impl Expression {
                     let block = match inner_pat(&pat) {
                         Some(inner) => {
                             quote! {{
-                                let #inner = #expr.runtime_value();
+                                let #inner = __value.runtime_value();
                                 #block
                             }}
                         }
@@ -800,9 +800,11 @@ impl Expression {
                         None => quote![#if_expand(scope, __cond, |scope| #block);],
                     };
 
+                    let native = frontend_type("NativeExpand");
                     quote! {{
-                        let __disc = #expr.discriminant_of_value(#name).into_runtime(scope);
-                        let __cond = #expr.discriminant().__expand_eq_method(scope, __disc);
+                        let __value = #expr;
+                        let __disc = #native::<i32>::from(__value.discriminant_of_value(#name));
+                        let __cond = __value.discriminant().__expand_eq_method(scope, &__disc);
 
                         #expand
                     }}

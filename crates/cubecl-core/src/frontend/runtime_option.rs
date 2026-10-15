@@ -793,6 +793,13 @@ impl<T: CubeType + Default + Into<T::ExpandType>> From<Option<T>> for OptionExpa
     }
 }
 
+/// A host option passed where a generic parameter takes an option.
+impl<T: CubeType + Default + Into<T::ExpandType>> From<Option<T>> for ExpandArg<Option<T>> {
+    fn from(value: Option<T>) -> Self {
+        OptionExpand::from(value).into()
+    }
+}
+
 /// `Some(value)` in a kernel.
 pub mod some {
     use super::*;

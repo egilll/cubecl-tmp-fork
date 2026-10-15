@@ -47,8 +47,10 @@ impl Statement {
                             .unwrap_or_else(|| init.to_tokens(context))
                     })
                 };
+                // A constant bound mutably is a runtime variable, so its
+                // annotation names the expansion, as a runtime value's does.
                 let ty = variable.ty.as_ref().map(|ty| {
-                    let ty = expand_kernel_ty(ty.clone(), is_const)
+                    let ty = expand_kernel_ty(ty.clone(), is_const && !is_mut)
                         .unwrap_or_else(|err| Type::Verbatim(err.into_compile_error()));
                     quote_spanned! {
                         ty.span()=> :#ty
