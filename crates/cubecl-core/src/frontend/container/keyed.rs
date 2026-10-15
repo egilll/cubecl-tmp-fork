@@ -14,6 +14,16 @@ pub trait Keys: CubeType + Send + Sync + 'static {
     fn offset(keys: Self, extents: &Self::Extents) -> usize;
 }
 
+/// The one value of a table without axes.
+#[cube]
+impl Keys for () {
+    type Extents = ();
+
+    fn offset(_keys: (), _extents: &()) -> usize {
+        0usize
+    }
+}
+
 #[cube]
 impl<A: StorageKey + Send + Sync> Keys for A {
     type Extents = ();
@@ -87,6 +97,24 @@ impl<Q: DeviceRepr, V: SliceVisibility, K: Keys> Table<Q, V, K> {
     pub fn load(&self, keys: K) -> Q {
         self.values.load(K::offset(keys, &self.extents))
     }
+
+    /// The elements the values are stored as, row-major.
+    pub fn elements(&self) -> &[StorageElement<Q>] {
+        self.values.elements()
+    }
+
+    /// Where `keys` falls among the table's values.
+    pub fn position(&self, keys: K) -> usize {
+        K::offset(keys, &self.extents)
+    }
+}
+
+#[cube]
+impl<Q: DeviceRepr, V: SliceVisibility> Table<Q, V, ()> {
+    /// The value of a table without axes.
+    pub fn get(&self) -> Q {
+        self.values.load(0usize)
+    }
 }
 
 #[cube]
@@ -94,6 +122,11 @@ impl<Q: DeviceRepr, K: Keys> Table<Q, ReadWrite, K> {
     pub fn store(&mut self, keys: K, value: Q) {
         let at = K::offset(keys, &self.extents);
         self.values.store(at, value);
+    }
+
+    /// The elements the values are stored as, row-major, to write.
+    pub fn elements_mut(&mut self) -> &mut [StorageElement<Q>] {
+        self.values.elements_mut()
     }
 }
 

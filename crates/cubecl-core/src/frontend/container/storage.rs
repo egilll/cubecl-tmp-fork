@@ -27,6 +27,11 @@ impl<Q: DeviceRepr, V: SliceVisibility, K: StorageKey> Storage<Q, V, K> {
     fn load_at(&self, position: usize) -> Q {
         Q::from_repr(Q::Layout::load_from(&self.inner, position))
     }
+
+    /// The elements the values are stored as.
+    pub fn elements(&self) -> &[StorageElement<Q>] {
+        &self.inner
+    }
 }
 
 #[cube]
@@ -53,6 +58,11 @@ impl<Q: DeviceRepr, K: StorageKey> Storage<Q, ReadWrite, K> {
         for position in 0..self.len() {
             self.store_at(position, table.load(keys.load_at(position)));
         }
+    }
+
+    /// The elements the values are stored as, to write.
+    pub fn elements_mut(&mut self) -> &mut [StorageElement<Q>] {
+        &mut self.inner
     }
 
     fn store_at(&mut self, position: usize, value: Q) {

@@ -185,6 +185,11 @@ pub struct ArenaCompilationArg {
 }
 
 impl ArenaArg {
+    /// The buffers the arena binds: one per element type.
+    pub fn buffers(&self) -> usize {
+        self.buffers.len()
+    }
+
     /// Registers the shared buffers, then each table's placement.
     pub fn register(self, launcher: &mut KernelLauncher) -> ArenaCompilationArg {
         let buffers = self
@@ -305,6 +310,24 @@ impl<'a, E: Copy + Default> ArenaSource<'a, E> {
             shape.iter().product::<usize>(),
             self.len(),
             "the shape must cover the table"
+        );
+        self.trailing = [0; 3];
+        self.trailing[..shape.len() - 1].copy_from_slice(&shape[1..]);
+        self.axes = shape.len();
+        self
+    }
+
+    /// The same words viewed as records of `words` words each, addressed by
+    /// `shape` (first axis first): the trailing extents count records.
+    pub fn records(mut self, shape: &[usize], words: usize) -> Self {
+        assert!(
+            (1..=4).contains(&shape.len()),
+            "a table has one to four axes"
+        );
+        assert_eq!(
+            shape.iter().product::<usize>() * words,
+            self.len(),
+            "the shape must cover the table's records"
         );
         self.trailing = [0; 3];
         self.trailing[..shape.len() - 1].copy_from_slice(&shape[1..]);
@@ -472,6 +495,7 @@ impl Arena {
         let mut shape = vec![placement.len / placement.trailing.iter().product::<usize>().max(1)];
         shape.extend(&placement.trailing);
         ArenaColumn {
+            root: whole.clone(),
             buffer: whole.slice(placement.at..placement.at + placement.len),
             shape,
             placement: placement.clone(),
@@ -516,6 +540,7 @@ impl Arena {
 /// One table's region of its arena's buffer, and its shape.
 #[derive(Clone)]
 pub struct ArenaColumn<E: CubeElement> {
+    root: Buffer<E>,
     buffer: Buffer<E>,
     shape: Vec<usize>,
     placement: ArenaPlacement,
@@ -525,6 +550,11 @@ impl<E: CubeElement> ArenaColumn<E> {
     /// The region's elements, sharing the arena's memory.
     pub fn buffer(&self) -> &Buffer<E> {
         &self.buffer
+    }
+
+    /// The whole shared buffer the region lies in, from element 0.
+    pub fn root(&self) -> &Buffer<E> {
+        &self.root
     }
 
     /// The table's shape, first axis first.

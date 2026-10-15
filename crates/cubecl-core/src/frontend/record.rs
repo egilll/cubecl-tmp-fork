@@ -222,6 +222,14 @@ impl<R: Record, V: SliceVisibility, K: Keys> RecordTable<R, V, K> {
 }
 
 #[cube]
+impl<R: Record, V: SliceVisibility> RecordTable<R, V, ()> {
+    /// The record of a table without axes.
+    pub fn get(&self) -> R {
+        R::load(&self.words, 0usize)
+    }
+}
+
+#[cube]
 impl<R: Record, K: Keys> RecordTable<R, ReadWrite, K> {
     pub fn store(&mut self, keys: K, value: R) {
         let at = K::offset(keys, &self.extents);
