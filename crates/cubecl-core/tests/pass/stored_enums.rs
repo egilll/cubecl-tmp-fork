@@ -48,6 +48,22 @@ fn keyed(table: &mut Storage<f32, ReadWrite, Balance>) {
     table.store(Balance::Active, 2.0);
 }
 
+/// An enum passed to a kernel as a scalar.
+#[derive(CubeType, CubeTypeMut, IntoRuntime, DeviceRepr, Clone, Copy, PartialEq, Eq, Debug)]
+#[cube(runtime_variants)]
+#[device_repr(copy, eq, launch)]
+enum Mode {
+    Off,
+    On,
+}
+
+#[cube(launch)]
+fn moded(mode: Mode, out: &mut [f32]) {
+    if mode == Mode::On {
+        out[0] = 1.0;
+    }
+}
+
 fn main() {
     assert_eq!(Family::from_repr(Family::Fill.into_repr()), Family::Fill);
 }

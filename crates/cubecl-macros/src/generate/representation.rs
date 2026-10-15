@@ -669,9 +669,32 @@ fn generate_enum(input: &DeriveInput) -> syn::Result<TokenStream> {
             }
         }
     });
+    // A scalar kernel argument: the host passes the variant, the kernel
+    // receives its discriminant.
+    let launch = options.launch.then(|| {
+        quote! {
+            #[automatically_derived]
+            impl #impl_generics #prelude::LaunchArg for #name #ty_generics #clause {
+                type RuntimeArg = Self;
+                type CompilationArg = <i32 as #prelude::LaunchArg>::CompilationArg;
+
+                fn register(arg: Self, launcher: &mut #prelude::KernelLauncher) -> Self::CompilationArg {
+                    <i32 as #prelude::LaunchArg>::register(<Self as #prelude::DeviceRepr>::into_repr(arg), launcher)
+                }
+
+                fn expand(
+                    arg: &Self::CompilationArg,
+                    builder: &mut #prelude::KernelBuilder,
+                ) -> <Self as #prelude::CubeType>::ExpandType {
+                    #expanded { discriminant: <i32 as #prelude::LaunchArg>::expand(arg, builder), value: () }
+                }
+            }
+        }
+    });
     Ok(quote! {
         #copy
         #key
+        #launch
 
         impl #impl_generics #prelude::DeviceRepr for #name #ty_generics #clause {
             type Repr = i32;
