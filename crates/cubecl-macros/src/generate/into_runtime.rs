@@ -19,10 +19,16 @@ impl ToTokens for IntoRuntime {
         let into_constant = frontend_type("IntoConstant");
         let cube_type = prelude_type("CubeType");
         let scope = prelude_type("Scope");
+        let runtime_assign = prelude_type("RuntimeAssign");
+        let assign = prelude_type("Assign");
 
         let name = &self.ident;
         let (generics, generic_names, _) = self.generics.split_for_impl();
         let where_clause = self.where_clause();
+        let where_predicates = where_clause.as_ref().map(|clause| {
+            let predicates = &clause.predicates;
+            quote![#predicates]
+        });
 
         let init = match &self.data {
             Data::Enum(_) if self.runtime_variants.is_present() => self.init_runtime_enum(),
@@ -43,6 +49,21 @@ impl ToTokens for IntoRuntime {
 
                 fn into_expand(self, scope: &#scope) -> Self::Expand {
                     self.__expand_runtime_method(scope)
+                }
+            }
+
+            // A constant is a value of its own in a kernel: `if c { CONSTANT } else { x }`
+            // makes a variable of its expansion. The bounds hold for types with a
+            // mutable expansion; written for all lifetimes they are checked at use.
+            impl #generics #runtime_assign for #name #generic_names
+            where
+                for<'__a> Self: Clone,
+                for<'__a> <Self as #cube_type>::ExpandType: #runtime_assign<Expand = <Self as #cube_type>::ExpandType> + #assign,
+                #where_predicates
+            {
+                fn init_mut(&self, scope: &#scope) -> Self::Expand {
+                    let value = #into_expand::into_expand(self.clone(), scope);
+                    #runtime_assign::init_mut(&value, scope)
                 }
             }
 

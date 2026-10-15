@@ -3,9 +3,15 @@ use proc_macro2::TokenStream;
 use quote::{ToTokens, format_ident, quote};
 use syn::{DeriveInput, parse_quote};
 
-use crate::{parse::cube_type::CubeTypeStruct, paths::prelude_type};
+use crate::{
+    parse::cube_type::{CubeTypeEnum, CubeTypeStruct, VariantKind},
+    paths::prelude_type,
+};
 
 pub fn generate(input: &DeriveInput) -> syn::Result<TokenStream> {
+    if matches!(input.data, syn::Data::Enum(_)) {
+        return generate_enum(input);
+    }
     if Options::parse(input)?.lanes {
         return generate_lanes(input);
     }
@@ -594,4 +600,88 @@ impl Options {
         }
         tokens
     }
+}
+
+/// A fieldless runtime enum stored as its discriminant, so tables can hold it
+/// as they hold an integer. Device loads trust the stored value; host reads
+/// check it.
+fn generate_enum(input: &DeriveInput) -> syn::Result<TokenStream> {
+    let parsed = CubeTypeEnum::from_derive_input(input)?;
+    if !parsed.runtime_variants
+        || parsed
+            .variants
+            .iter()
+            .any(|variant| !matches!(variant.kind, VariantKind::Empty))
+    {
+        return Err(syn::Error::new_spanned(
+            input,
+            "DeviceRepr on an enum requires `#[cube(runtime_variants)]` and variants without values",
+        ));
+    }
+    let options = Options::parse(input)?;
+    let prelude = crate::paths::prelude_path();
+    let name = &parsed.ident;
+    let expanded = &parsed.name_expand;
+    let (impl_generics, ty_generics, clause) = parsed.generics.split_for_impl();
+    let variants: Vec<_> = parsed.variants.iter().map(|v| &v.ident).collect();
+    let discriminants: Vec<_> = parsed.variants.iter().map(|v| v.discriminant).collect();
+    let equality = options.eq.then(|| {
+        let methods = ["eq", "ne"].map(|op| {
+            let method = format_ident!("__expand_{op}_method");
+            quote! {
+                fn #method(&self, scope: &#prelude::Scope, rhs: &Self) -> #prelude::NativeExpand<bool> {
+                    #prelude::PartialEqExpand::#method(&self.discriminant, scope, &rhs.discriminant)
+                }
+            }
+        });
+        quote! {
+            impl #impl_generics #prelude::PartialEqExpand for #expanded #ty_generics #clause {
+                #(#methods)*
+            }
+        }
+    });
+    let copy = options.copy.then(|| {
+        quote! {
+            #[automatically_derived]
+            impl #impl_generics ::core::clone::Clone for #expanded #ty_generics #clause {
+                fn clone(&self) -> Self {
+                    *self
+                }
+            }
+
+            #[automatically_derived]
+            impl #impl_generics ::core::marker::Copy for #expanded #ty_generics #clause {}
+        }
+    });
+    Ok(quote! {
+        #copy
+
+        impl #impl_generics #prelude::DeviceRepr for #name #ty_generics #clause {
+            type Repr = i32;
+            type Layout = #prelude::Native;
+
+            fn from_repr(value: i32) -> Self {
+                match value {
+                    #(#discriminants => #name::#variants,)*
+                    _ => ::core::panic!("`{}` has no variant {}", ::core::stringify!(#name), value),
+                }
+            }
+
+            fn into_repr(self) -> i32 {
+                match self {
+                    #(#name::#variants => #discriminants,)*
+                }
+            }
+
+            fn expand_from_repr(value: #prelude::NativeExpand<i32>) -> Self::ExpandType {
+                #expanded { discriminant: value, value: () }
+            }
+
+            fn expand_into_repr(value: Self::ExpandType) -> #prelude::NativeExpand<i32> {
+                value.discriminant
+            }
+        }
+
+        #equality
+    })
 }
