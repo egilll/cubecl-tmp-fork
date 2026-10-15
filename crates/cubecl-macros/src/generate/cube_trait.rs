@@ -159,7 +159,7 @@ impl CubeTrait {
                 #(#others)*
 
                 #(
-                    #[allow(clippy::too_many_arguments)]
+                    #[allow(clippy::too_many_arguments, unused_braces)]
                     #methods
                 )*
             }
