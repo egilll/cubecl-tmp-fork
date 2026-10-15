@@ -217,14 +217,14 @@ impl<R: Record, V: SliceVisibility, K: Keys> RecordTable<R, V, K> {
     }
 
     pub fn load(&self, keys: K) -> R {
-        R::load(&self.words, K::position(keys, &self.extents))
+        R::load(&self.words, K::offset(keys, &self.extents))
     }
 }
 
 #[cube]
 impl<R: Record, K: Keys> RecordTable<R, ReadWrite, K> {
     pub fn store(&mut self, keys: K, value: R) {
-        let at = K::position(keys, &self.extents);
+        let at = K::offset(keys, &self.extents);
         R::store(value, &mut self.words, at);
     }
 }

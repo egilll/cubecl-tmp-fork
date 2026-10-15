@@ -11,6 +11,7 @@
 //! from an `SData` of sources, one per table, and keeps each table's region
 //! as an [`ArenaColumn`] for reads and writes.
 
+use crate::frontend::keyed::{AtomicTable, Table};
 use alloc::{vec, vec::Vec};
 use core::any::TypeId;
 use core::marker::PhantomData;
@@ -45,7 +46,10 @@ impl Extents for (usize, usize) {
     const AXES: usize = 2;
 
     fn expand_extents(builder: &mut KernelBuilder) -> <Self as CubeType>::ExpandType {
-        (<usize as LaunchArg>::expand(&(), builder), <usize as LaunchArg>::expand(&(), builder))
+        (
+            <usize as LaunchArg>::expand(&(), builder),
+            <usize as LaunchArg>::expand(&(), builder),
+        )
     }
 }
 
@@ -64,7 +68,13 @@ pub trait ArenaTable: CubeType + Send + Sync + 'static {
     /// The kernel's element of the shared buffer.
     type Element: CubePrimitive;
     /// The element as the host writes and reads it.
-    type Host: CubeElement + CubePrimitive + LaunchArg<RuntimeArg = Self::Host> + Default + PartialEq + Send + Sync;
+    type Host: CubeElement
+        + CubePrimitive
+        + LaunchArg<RuntimeArg = Self::Host>
+        + Default
+        + PartialEq
+        + Send
+        + Sync;
     /// The extents of the axes after the first.
     type Extents: Extents;
 
@@ -81,7 +91,8 @@ pub trait ArenaTable: CubeType + Send + Sync + 'static {
 impl<Q: DeviceRepr + Send + Sync, V: SliceVisibility, K: Keys<Extents: Extents>> ArenaTable
     for Table<Q, V, K>
 where
-    StorageElement<Q>: CubeElement + LaunchArg<RuntimeArg = StorageElement<Q>> + Default + PartialEq + Send + Sync,
+    StorageElement<Q>:
+        CubeElement + LaunchArg<RuntimeArg = StorageElement<Q>> + Default + PartialEq + Send + Sync,
 {
     type Element = StorageElement<Q>;
     type Host = StorageElement<Q>;
@@ -117,9 +128,7 @@ where
     }
 }
 
-impl<R: Record, V: SliceVisibility, K: Keys<Extents: Extents>> ArenaTable
-    for RecordTable<R, V, K>
-{
+impl<R: Record, V: SliceVisibility, K: Keys<Extents: Extents>> ArenaTable for RecordTable<R, V, K> {
     type Element = u32;
     type Host = u32;
     type Extents = K::Extents;
@@ -161,7 +170,10 @@ pub struct ArenaPlacement {
 /// An arena as a kernel argument: its shared buffers and every table's
 /// placement, in declaration order.
 pub struct ArenaArg {
-    buffers: Vec<(BufferArg, fn(BufferArg, &mut KernelLauncher) -> BufferCompilationArg)>,
+    buffers: Vec<(
+        BufferArg,
+        fn(BufferArg, &mut KernelLauncher) -> BufferCompilationArg,
+    )>,
     tables: Vec<(usize, usize, usize, Vec<usize>)>,
 }
 
@@ -175,7 +187,11 @@ pub struct ArenaCompilationArg {
 impl ArenaArg {
     /// Registers the shared buffers, then each table's placement.
     pub fn register(self, launcher: &mut KernelLauncher) -> ArenaCompilationArg {
-        let buffers = self.buffers.into_iter().map(|(arg, register)| register(arg, launcher)).collect();
+        let buffers = self
+            .buffers
+            .into_iter()
+            .map(|(arg, register)| register(arg, launcher))
+            .collect();
         let mut tables = Vec::with_capacity(self.tables.len());
         for (buffer, at, len, trailing) in self.tables {
             <usize as LaunchArg>::register(at, launcher);
@@ -199,7 +215,11 @@ pub struct ArenaExpansion<'a> {
 
 impl<'a> ArenaExpansion<'a> {
     pub fn new(arg: &'a ArenaCompilationArg) -> Self {
-        Self { arg, buffers: vec![None; arg.buffers.len()], next: 0 }
+        Self {
+            arg,
+            buffers: vec![None; arg.buffers.len()],
+            next: 0,
+        }
     }
 
     /// The next table.
@@ -240,18 +260,33 @@ enum Content<'a, E> {
 impl<'a, E: Copy + Default> ArenaSource<'a, E> {
     /// `values`, as one axis.
     pub fn values(values: &'a [E]) -> Self {
-        Self { content: Content::Values(values), trailing: [0; 3], axes: 1 }
+        Self {
+            content: Content::Values(values),
+            trailing: [0; 3],
+            axes: 1,
+        }
     }
 
     /// `len` copies of `value`, as one axis.
     pub fn fill(value: E, len: usize) -> Self {
-        Self { content: Content::Fill(value, len), trailing: [0; 3], axes: 1 }
+        Self {
+            content: Content::Fill(value, len),
+            trailing: [0; 3],
+            axes: 1,
+        }
     }
 
     /// Copies of a block of elements up to `len`, as one axis.
     pub fn repeat(block: &'a [E], len: usize) -> Self {
-        assert!(!block.is_empty() && len.is_multiple_of(block.len()), "the block must divide the table");
-        Self { content: Content::Repeat(block, len), trailing: [0; 3], axes: 1 }
+        assert!(
+            !block.is_empty() && len.is_multiple_of(block.len()),
+            "the block must divide the table"
+        );
+        Self {
+            content: Content::Repeat(block, len),
+            trailing: [0; 3],
+            axes: 1,
+        }
     }
 
     /// Default elements of a shape.
@@ -262,8 +297,15 @@ impl<'a, E: Copy + Default> ArenaSource<'a, E> {
     /// The same contents viewed with `shape` (first axis first): up to four
     /// axes whose product is the length.
     pub fn shaped(mut self, shape: &[usize]) -> Self {
-        assert!((1..=4).contains(&shape.len()), "a table has one to four axes");
-        assert_eq!(shape.iter().product::<usize>(), self.len(), "the shape must cover the table");
+        assert!(
+            (1..=4).contains(&shape.len()),
+            "a table has one to four axes"
+        );
+        assert_eq!(
+            shape.iter().product::<usize>(),
+            self.len(),
+            "the shape must cover the table"
+        );
         self.trailing = [0; 3];
         self.trailing[..shape.len() - 1].copy_from_slice(&shape[1..]);
         self.axes = shape.len();
@@ -321,7 +363,11 @@ impl ArenaBuilder {
             "a table's source gives each axis after the first an extent"
         );
         let element = TypeId::of::<T::Element>();
-        let index = match self.buffers.iter().position(|buffer| buffer.element == element) {
+        let index = match self
+            .buffers
+            .iter()
+            .position(|buffer| buffer.element == element)
+        {
             Some(index) => index,
             None => {
                 self.buffers.push(Packing {
@@ -331,7 +377,9 @@ impl ArenaBuilder {
                     fills: Vec::new(),
                     any_values: false,
                     register: <[T::Element]>::register,
-                    binding: |handle, len| Buffer::<T::Host>::from_handle(handle.clone(), len).into(),
+                    binding: |handle, len| {
+                        Buffer::<T::Host>::from_handle(handle.clone(), len).into()
+                    },
                     fill: fill_region::<T::Host>,
                 });
                 self.buffers.len() - 1
@@ -364,7 +412,12 @@ impl ArenaBuilder {
                 packing.any_values = true;
             }
         }
-        self.tables.push(ArenaPlacement { buffer: index, at, len, trailing: source.trailing().to_vec() });
+        self.tables.push(ArenaPlacement {
+            buffer: index,
+            at,
+            len,
+            trailing: source.trailing().to_vec(),
+        });
     }
 
     /// The arena: each buffer uploaded when any of its tables has values,
@@ -387,10 +440,19 @@ impl ArenaBuilder {
                     }
                     handle
                 };
-                SharedBuffer { handle, len, element: packing.element, register: packing.register, binding: packing.binding }
+                SharedBuffer {
+                    handle,
+                    len,
+                    element: packing.element,
+                    register: packing.register,
+                    binding: packing.binding,
+                }
             })
             .collect();
-        Arena { buffers, tables: self.tables }
+        Arena {
+            buffers,
+            tables: self.tables,
+        }
     }
 }
 
@@ -409,7 +471,11 @@ impl Arena {
         let whole = Buffer::<E>::from_handle(buffer.handle.clone(), buffer.len);
         let mut shape = vec![placement.len / placement.trailing.iter().product::<usize>().max(1)];
         shape.extend(&placement.trailing);
-        ArenaColumn { buffer: whole.slice(placement.at..placement.at + placement.len), shape, placement: placement.clone() }
+        ArenaColumn {
+            buffer: whole.slice(placement.at..placement.at + placement.len),
+            shape,
+            placement: placement.clone(),
+        }
     }
 
     /// Where each table lies.
@@ -419,14 +485,30 @@ impl Arena {
 
     /// The shared buffers, as the bytes each holds.
     pub fn bytes(&self) -> usize {
-        self.buffers.iter().map(|buffer| buffer.handle.size_in_used() as usize).sum()
+        self.buffers
+            .iter()
+            .map(|buffer| buffer.handle.size_in_used() as usize)
+            .sum()
     }
 
     /// The arena as a kernel argument.
     pub fn arg(&self) -> ArenaArg {
         ArenaArg {
-            buffers: self.buffers.iter().map(|buffer| ((buffer.binding)(&buffer.handle, buffer.len), buffer.register)).collect(),
-            tables: self.tables.iter().map(|table| (table.buffer, table.at, table.len, table.trailing.clone())).collect(),
+            buffers: self
+                .buffers
+                .iter()
+                .map(|buffer| {
+                    (
+                        (buffer.binding)(&buffer.handle, buffer.len),
+                        buffer.register,
+                    )
+                })
+                .collect(),
+            tables: self
+                .tables
+                .iter()
+                .map(|table| (table.buffer, table.at, table.len, table.trailing.clone()))
+                .collect(),
         }
     }
 }
@@ -465,7 +547,10 @@ impl<E: CubeElement> ArenaColumn<E> {
 
 /// `out[i] = value` over a launch's units.
 #[cube(launch_unchecked)]
-fn fill_elements<E: CubePrimitive + LaunchArg<RuntimeArg = E> + Send + Sync>(out: &mut [E], value: E) {
+fn fill_elements<E: CubePrimitive + LaunchArg<RuntimeArg = E> + Send + Sync>(
+    out: &mut [E],
+    value: E,
+) {
     if ABSOLUTE_POS < out.len() {
         out[ABSOLUTE_POS] = value;
     }
@@ -485,7 +570,11 @@ fn fill_region<E: CubeElement + CubePrimitive + LaunchArg<RuntimeArg = E> + Send
     let value = E::from_bytes(value)[0];
     let lanes = 256usize;
     let cubes = len.div_ceil(lanes);
-    let (x, y) = if cubes <= 65_535 { (cubes, 1) } else { (65_535, cubes.div_ceil(65_535)) };
+    let (x, y) = if cubes <= 65_535 {
+        (cubes, 1)
+    } else {
+        (65_535, cubes.div_ceil(65_535))
+    };
     let region = Buffer::<E>::from_handle(handle.clone(), at + len).slice(at..at + len);
     // SAFETY: the kernel guards its index by the region's length.
     unsafe {

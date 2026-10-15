@@ -10,14 +10,15 @@ pub trait Keys: CubeType + Send + Sync + 'static {
     /// The extents of the axes after the first.
     type Extents: CubeType<ExpandType: Clone> + Clone + Send + Sync + 'static;
 
-    fn position(keys: Self, extents: &Self::Extents) -> usize;
+    /// Where `keys` falls among the table's values.
+    fn offset(keys: Self, extents: &Self::Extents) -> usize;
 }
 
 #[cube]
 impl<A: StorageKey + Send + Sync> Keys for A {
     type Extents = ();
 
-    fn position(keys: A, _extents: &()) -> usize {
+    fn offset(keys: A, _extents: &()) -> usize {
         A::position(keys)
     }
 }
@@ -26,7 +27,7 @@ impl<A: StorageKey + Send + Sync> Keys for A {
 impl<A: StorageKey + Send + Sync, B: StorageKey + Send + Sync> Keys for (A, B) {
     type Extents = usize;
 
-    fn position(keys: (A, B), extents: &usize) -> usize {
+    fn offset(keys: (A, B), extents: &usize) -> usize {
         A::position(keys.0) * *extents + B::position(keys.1)
     }
 }
@@ -37,7 +38,7 @@ impl<A: StorageKey + Send + Sync, B: StorageKey + Send + Sync, C: StorageKey + S
 {
     type Extents = (usize, usize);
 
-    fn position(keys: (A, B, C), extents: &(usize, usize)) -> usize {
+    fn offset(keys: (A, B, C), extents: &(usize, usize)) -> usize {
         (A::position(keys.0) * extents.0 + B::position(keys.1)) * extents.1 + C::position(keys.2)
     }
 }
@@ -52,9 +53,8 @@ impl<
 {
     type Extents = (usize, usize, usize);
 
-    fn position(keys: (A, B, C, D), extents: &(usize, usize, usize)) -> usize {
-        ((A::position(keys.0) * extents.0 + B::position(keys.1)) * extents.1
-            + C::position(keys.2))
+    fn offset(keys: (A, B, C, D), extents: &(usize, usize, usize)) -> usize {
+        ((A::position(keys.0) * extents.0 + B::position(keys.1)) * extents.1 + C::position(keys.2))
             * extents.2
             + D::position(keys.3)
     }
@@ -85,14 +85,14 @@ impl<Q: DeviceRepr, V: SliceVisibility, K: Keys> Table<Q, V, K> {
     }
 
     pub fn load(&self, keys: K) -> Q {
-        self.values.load(K::position(keys, &self.extents))
+        self.values.load(K::offset(keys, &self.extents))
     }
 }
 
 #[cube]
 impl<Q: DeviceRepr, K: Keys> Table<Q, ReadWrite, K> {
     pub fn store(&mut self, keys: K, value: Q) {
-        let at = K::position(keys, &self.extents);
+        let at = K::offset(keys, &self.extents);
         self.values.store(at, value);
     }
 }
@@ -133,16 +133,16 @@ impl<Q: DeviceRepr<Repr: CubePrimitive<Scalar: AtomicNumeric>>, K: Keys> AtomicT
     }
 
     pub fn load(&self, keys: K) -> Q {
-        self.values.load(K::position(keys, &self.extents))
+        self.values.load(K::offset(keys, &self.extents))
     }
 
     pub fn store(&self, keys: K, value: Q) {
-        self.values.store(K::position(keys, &self.extents), value);
+        self.values.store(K::offset(keys, &self.extents), value);
     }
 
     /// Stores `value`, returning the previous value.
     pub fn exchange(&self, keys: K, value: Q) -> Q {
-        self.values.exchange(K::position(keys, &self.extents), value)
+        self.values.exchange(K::offset(keys, &self.extents), value)
     }
 }
 
@@ -153,7 +153,7 @@ where
 {
     /// Adds `value`, returning the previous value.
     pub fn fetch_add(&self, keys: K, value: Q) -> Q {
-        self.values.fetch_add(K::position(keys, &self.extents), value)
+        self.values.fetch_add(K::offset(keys, &self.extents), value)
     }
 }
 
@@ -164,12 +164,12 @@ where
 {
     /// Keeps the smaller value, returning the previous value.
     pub fn fetch_min(&self, keys: K, value: Q) -> Q {
-        self.values.fetch_min(K::position(keys, &self.extents), value)
+        self.values.fetch_min(K::offset(keys, &self.extents), value)
     }
 
     /// Keeps the larger value, returning the previous value.
     pub fn fetch_max(&self, keys: K, value: Q) -> Q {
-        self.values.fetch_max(K::position(keys, &self.extents), value)
+        self.values.fetch_max(K::offset(keys, &self.extents), value)
     }
 }
 
@@ -181,7 +181,8 @@ where
     /// Stores `value` if the current value is `expected`, returning the
     /// previous value.
     pub fn compare_exchange_weak(&self, keys: K, expected: Q, value: Q) -> Q {
-        self.values.compare_exchange_weak(K::position(keys, &self.extents), expected, value)
+        self.values
+            .compare_exchange_weak(K::offset(keys, &self.extents), expected, value)
     }
 }
 

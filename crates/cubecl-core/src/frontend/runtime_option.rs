@@ -731,7 +731,9 @@ mod impls {
 /// A representation no valid value uses, so an [`Option`] of the type is
 /// stored in one value with absence as the niche, such as `u32::MAX` for an
 /// ID brand.
-pub trait Niche: DeviceRepr<Repr: PartialEq + IntoExpand<Expand = NativeExpand<Self::Repr>>> {
+pub trait Niche:
+    DeviceRepr<Repr: PartialEq + IntoExpand<Expand = NativeExpand<Self::Repr>>>
+{
     const NICHE: Self::Repr;
 }
 
@@ -761,7 +763,12 @@ impl<Q: Niche> DeviceRepr for Option<Q> {
     fn __expand_into_repr(scope: &Scope, value: OptionExpand<Q>) -> NativeExpand<Q::Repr> {
         let present = value.__expand_is_some_method(scope);
         let niche = Q::NICHE.into_expand(scope);
-        select::expand(scope, present, Q::__expand_into_repr(scope, value.value), niche)
+        select::expand(
+            scope,
+            present,
+            Q::__expand_into_repr(scope, value.value),
+            niche,
+        )
     }
 
     fn expand_from_repr(_value: NativeExpand<Q::Repr>) -> Self::ExpandType {
