@@ -690,7 +690,7 @@ mod impls {
         {
             match self {
                 Some(a) => match other {
-                    Some(b) => Option::Some((a, b)),
+                    Some(b) => Option::new_Some((a, b)),
                     None => Option::new_None(),
                 },
                 None => Option::new_None(),
@@ -724,6 +724,83 @@ mod impls {
                 Option::Some(value) => (Option::Some(value.0), Option::Some(value.1)),
                 Option::None => (Option::new_None(), Option::new_None()),
             }
+        }
+    }
+}
+
+/// A representation no valid value uses, so an [`Option`] of the type is
+/// stored in one value with absence as the niche, such as `u32::MAX` for an
+/// ID brand.
+pub trait Niche: DeviceRepr<Repr: PartialEq + IntoExpand<Expand = NativeExpand<Self::Repr>>> {
+    const NICHE: Self::Repr;
+}
+
+impl<Q: Niche> DeviceRepr for Option<Q> {
+    type Repr = Q::Repr;
+    type Layout = Q::Layout;
+
+    fn from_repr(value: Q::Repr) -> Self {
+        (value != Q::NICHE).then(|| Q::from_repr(value))
+    }
+
+    fn into_repr(self) -> Q::Repr {
+        self.map_or(Q::NICHE, Q::into_repr)
+    }
+
+    fn __expand_from_repr(scope: &Scope, value: NativeExpand<Q::Repr>) -> OptionExpand<Q> {
+        let niche = Q::NICHE.into_expand(scope);
+        let absent = value.__expand_eq_method(scope, &niche);
+        let none = NativeExpand::from(discriminant("None"));
+        let some = NativeExpand::from(discriminant("Some"));
+        OptionExpand {
+            discriminant: select::expand(scope, absent, none, some),
+            value: Q::__expand_from_repr(scope, value),
+        }
+    }
+
+    fn __expand_into_repr(scope: &Scope, value: OptionExpand<Q>) -> NativeExpand<Q::Repr> {
+        let present = value.__expand_is_some_method(scope);
+        let niche = Q::NICHE.into_expand(scope);
+        select::expand(scope, present, Q::__expand_into_repr(scope, value.value), niche)
+    }
+
+    fn expand_from_repr(_value: NativeExpand<Q::Repr>) -> Self::ExpandType {
+        panic!("an option converts within a scope")
+    }
+
+    fn expand_into_repr(_value: Self::ExpandType) -> NativeExpand<Q::Repr> {
+        panic!("an option converts within a scope")
+    }
+}
+
+impl<T: CubeType<ExpandType: Copy>> Clone for OptionExpand<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T: CubeType<ExpandType: Copy>> Copy for OptionExpand<T> {}
+
+/// A host option converts to its expansion like any constant does, so a kernel
+/// may pass `None` where it takes an option.
+impl<T: CubeType + Default + Into<T::ExpandType>> From<Option<T>> for OptionExpand<T> {
+    fn from(value: Option<T>) -> Self {
+        let variant = if value.is_some() { "Some" } else { "None" };
+        OptionExpand {
+            discriminant: discriminant(variant).into(),
+            value: value.unwrap_or_default().into(),
+        }
+    }
+}
+
+/// `Some(value)` in a kernel.
+pub mod some {
+    use super::*;
+
+    pub fn expand<T: CubeType>(_scope: &Scope, value: ExpandArg<T>) -> OptionExpand<T> {
+        OptionExpand {
+            discriminant: discriminant("Some").into(),
+            value: value.into_inner(),
         }
     }
 }

@@ -375,6 +375,8 @@ struct Options {
     ord: bool,
     packed: bool,
     lanes: bool,
+    /// A representation no value uses: `Option<Self>` stores in one value.
+    niche: Option<syn::Expr>,
 }
 
 struct Forwarded<'a> {
@@ -409,9 +411,11 @@ impl Options {
                     options.packed = true;
                 } else if meta.path.is_ident("lanes") {
                     options.lanes = true;
+                } else if meta.path.is_ident("niche") {
+                    options.niche = Some(meta.value()?.parse()?);
                 } else {
                     return Err(meta.error(
-                        "expected `copy`, `eq`, `key`, `launch`, `lanes`, `ord` or `packed`",
+                        "expected `copy`, `eq`, `key`, `launch`, `lanes`, `niche`, `ord` or `packed`",
                     ));
                 }
                 Ok(())
@@ -577,6 +581,14 @@ impl Options {
                             #(#markers: ::core::marker::PhantomData,)*
                         }
                     }
+                }
+            });
+        }
+        if let Some(niche) = &self.niche {
+            let (impl_generics, ty_generics, clause) = generics.split_for_impl();
+            tokens.extend(quote! {
+                impl #impl_generics #prelude::Niche for #name #ty_generics #clause {
+                    const NICHE: Self::Repr = #niche;
                 }
             });
         }

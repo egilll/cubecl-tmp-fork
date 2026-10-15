@@ -136,6 +136,16 @@ impl Expression {
                             span,
                         }
                     }
+                    Expression::Path { path, qself: None } if is_some_constructor(&path) => {
+                        let mut path = crate::paths::frontend_path();
+                        path.segments.push(format_ident!("some").into());
+                        Expression::FunctionCall {
+                            func: Box::new(Expression::Path { path, qself: None }),
+                            args,
+                            associated_type: None,
+                            span,
+                        }
+                    }
                     Expression::Path { path, .. } if is_intrinsic(&path) => {
                         Expression::CompilerIntrinsic { func: path, args }
                     }
@@ -699,6 +709,19 @@ mod tests {
 }
 
 /// `core::mem::swap`, however it is spelled: kernels call their own.
+/// `Some(value)`: the variant of the prelude's `Option`.
+fn is_some_constructor(path: &Path) -> bool {
+    let names: Vec<_> = path
+        .segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect();
+    matches!(
+        names.iter().map(String::as_str).collect::<Vec<_>>()[..],
+        ["Some"] | ["Option", "Some"] | ["core" | "std", "option", "Option", "Some"]
+    )
+}
+
 fn is_mem_swap(path: &Path) -> bool {
     let names: Vec<_> = path
         .segments
