@@ -303,9 +303,17 @@ impl Expression {
             } => {
                 let method = format_ident!("__expand_{method}_method");
                 let args = map_args(args, context);
-                let receiver = receiver
-                    .as_const(context)
-                    .unwrap_or_else(|| receiver.to_tokens(context));
+                // A constant item called with runtime arguments, such as
+                // `RANGE.locate(x)`, is called on its expansion.
+                let receiver = match receiver.as_ref() {
+                    Expression::Path { path, qself: None } if method != "__expand_runtime_method" => {
+                        let into_expand = prelude_type("IntoExpand");
+                        quote![#into_expand::into_expand(#path, scope)]
+                    }
+                    _ => receiver
+                        .as_const(context)
+                        .unwrap_or_else(|| receiver.to_tokens(context)),
+                };
                 let call = with_debug_call(
                     context,
                     *span,
