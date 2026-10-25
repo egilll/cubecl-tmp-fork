@@ -7,7 +7,7 @@ use cubecl_core::{
     ir::{
         AddressType, DeviceIdentity, DeviceProperties, ElemType, FloatKind, HardwareProperties,
         IntKind, MemoryDeviceProperties, TargetProperties, Type, UIntKind, VectorSize,
-        features::{AtomicUsage, Features, TypeUsage},
+        features::{AtomicUsage, Features, Plane, TypeUsage},
     },
     server::ServerUtilities,
     zspace::{Shape, Strides},
@@ -215,6 +215,10 @@ impl DeviceService for CpuServer {
         let mut device_props = DeviceProperties::new(
             Features {
                 unaligned_io: true,
+                // A plane is one unit: its operations exchange nothing, a
+                // vote counts only the unit that reaches it, and a plane
+                // barrier waits for no one.
+                plane: Plane::Ops | Plane::Sync | Plane::NonUniformControlFlow,
                 ..Default::default()
             },
             mem_properties.clone(),
