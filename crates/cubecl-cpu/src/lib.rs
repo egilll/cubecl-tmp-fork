@@ -20,6 +20,27 @@ mod tests {
     cubecl_std::testgen_quantized_view!(f32);
     cubecl_core::testgen_complex_validation!();
 
+    /// The CPU resolves a dynamic cube count on the host, before launching.
+    mod launch_dynamic_count {
+        use super::*;
+
+        #[test]
+        fn test_launch_dynamic_zero_cube_count() {
+            let client = TestRuntime::client(&Default::default());
+            cubecl_core::runtime_tests::launch::test_kernel_dynamic_zero_cube_count::<TestRuntime>(
+                client,
+            );
+        }
+
+        #[test]
+        fn test_launch_dynamic_cube_count_written_by_a_launch() {
+            let client = TestRuntime::client(&Default::default());
+            cubecl_core::runtime_tests::launch::test_kernel_dynamic_cube_count_written_by_a_launch::<
+                TestRuntime,
+            >(client);
+        }
+    }
+
     #[cube(launch_unchecked)]
     fn transcendentals<N: Size>(
         input: &[Vector<f32, N>],

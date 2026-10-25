@@ -132,6 +132,8 @@ impl CpuServer {
         let cube_count = match count {
             CubeCount::Static(x, y, z) => [x, y, z],
             CubeCount::Dynamic(binding) => {
+                // The launch that writes the count may still be queued.
+                self.scheduler.execute_streams(vec![binding.stream]);
                 let stream = self.scheduler.stream(&binding.stream);
                 let resource = stream
                     .memory_management

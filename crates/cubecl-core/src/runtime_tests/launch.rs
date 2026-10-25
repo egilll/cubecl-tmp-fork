@@ -44,6 +44,16 @@ pub fn kernel_without_generics(output: &mut [f32]) {
     }
 }
 
+/// Writes a cube count of one for a later dynamic launch.
+#[cube(launch)]
+pub fn kernel_write_cube_count(count: &mut [u32]) {
+    if UNIT_POS == 0 {
+        count[0] = 1;
+        count[1] = 1;
+        count[2] = 1;
+    }
+}
+
 #[cube(launch, address_type = "dynamic")]
 pub fn kernel_dynamic_addressing(output: &mut [f32]) {
     if UNIT_POS == 0 {
@@ -250,6 +260,31 @@ pub fn test_kernel_dynamic_zero_cube_count<R: Runtime>(client: Client) {
     let actual = f32::from_bytes(&actual);
 
     assert_eq!(actual, &[7.0, 8.0]);
+}
+
+pub fn test_kernel_dynamic_cube_count_written_by_a_launch<R: Runtime>(client: Client) {
+    // The launch that writes the count may still be queued when the dynamic
+    // launch resolves it, so resolving must run the count's writer first.
+    let handle = client.create_from_slice(f32::as_bytes(&[7.0, 8.0]));
+    let count = client.create_from_slice(u32::as_bytes(&[0, 0, 0]));
+
+    kernel_write_cube_count::launch(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(1),
+        unsafe { BufferArg::from_raw_parts(count.clone(), 3) },
+    );
+    kernel_without_generics::launch(
+        &client,
+        CubeCount::Dynamic(count.binding()),
+        CubeDim::new_1d(1),
+        unsafe { BufferArg::from_raw_parts(handle.clone(), 2) },
+    );
+
+    let actual = client.read_one_unchecked(handle);
+    let actual = f32::from_bytes(&actual);
+
+    assert_eq!(actual, &[5.0, 8.0]);
 }
 
 pub fn test_kernel_max_shared<R: Runtime>(client: Client) {
@@ -526,6 +561,14 @@ macro_rules! testgen_launch_dynamic_count {
             fn test_launch_dynamic_zero_cube_count() {
                 let client = TestRuntime::client(&Default::default());
                 cubecl_core::runtime_tests::launch::test_kernel_dynamic_zero_cube_count::<
+                    TestRuntime,
+                >(client);
+            }
+
+            #[$crate::runtime_tests::test_log::test]
+            fn test_launch_dynamic_cube_count_written_by_a_launch() {
+                let client = TestRuntime::client(&Default::default());
+                cubecl_core::runtime_tests::launch::test_kernel_dynamic_cube_count_written_by_a_launch::<
                     TestRuntime,
                 >(client);
             }
