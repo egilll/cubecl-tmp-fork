@@ -22,13 +22,6 @@ pub trait CtxPlaneDim: ContextExt {
     }
 }
 
-#[derive(Debug, Error)]
-#[error(
-    "plane operations need a plane of more than one unit, which the CPU target does not have; \
-     a runtime that lowers them here has advertised `Plane::Ops` it cannot honour"
-)]
-pub struct PlaneOpsUnsupported;
-
 /// Target plane primitives with defaults for derived operations.
 pub trait PlaneLowering {
     /// Lane index within the plane.
@@ -134,13 +127,13 @@ pub trait PlaneLowering {
     }
 }
 
-fn lowering(ctx: &Context) -> Option<Box<dyn PlaneLowering>> {
+fn lowering(ctx: &Context) -> Box<dyn PlaneLowering> {
     match ctx.target() {
         #[cfg(feature = "amdgpu")]
-        LlvmTarget::AmdGpu => Some(Box::new(crate::amdgpu::plane::AmdGpuPlane)),
+        LlvmTarget::AmdGpu => Box::new(crate::amdgpu::plane::AmdGpuPlane),
         #[cfg(feature = "nvptx")]
-        LlvmTarget::Nvptx => Some(Box::new(crate::nvptx::plane::NvptxPlane)),
-        LlvmTarget::Cpu => None,
+        LlvmTarget::Nvptx => Box::new(crate::nvptx::plane::NvptxPlane),
+        LlvmTarget::Cpu => Box::new(crate::cpu::plane::CpuPlane),
     }
 }
 
@@ -154,9 +147,7 @@ macro_rules! lower_plane_op {
                 rewriter: &mut DialectConversionRewriter,
                 operands_info: &OperandsInfo,
             ) -> Result<()> {
-                let Some($lowering) = lowering(ctx) else {
-                    return input_err!(self.loc(ctx), PlaneOpsUnsupported);
-                };
+                let $lowering = lowering(ctx);
                 let $this = self;
                 let $ctx = ctx;
                 let $rw = rewriter;
@@ -239,7 +230,7 @@ lower_plane_op!(BallotOp, |op, lowering, ctx, rw, info| {
     let mask = lowering.ballot_mask(ctx, rw, input);
 
     let i32_ty = i32_ty(ctx);
-    let words = ctx.plane_dim() / 32;
+    let words = ctx.plane_dim().div_ceil(32);
     let vec_ty = LlvmVectorType::get(ctx, i32_ty, 4, VectorTypeKind::Fixed).into();
 
     let zero = insert_i32_const(ctx, rw, 0);
@@ -253,6 +244,9 @@ lower_plane_op!(BallotOp, |op, lowering, ctx, rw, info| {
         };
         let low = if ctx.plane_dim() == 32 {
             shifted
+        } else if ctx.plane_dim() < 32 {
+            let zext = llvm::ZExtOp::new_with_nneg(ctx, shifted, i32_ty, false);
+            insert(ctx, rw, &zext)
         } else {
             let trunc = llvm::TruncOp::new(ctx, shifted, i32_ty);
             insert(ctx, rw, &trunc)

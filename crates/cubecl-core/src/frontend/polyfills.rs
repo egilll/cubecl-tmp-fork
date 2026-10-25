@@ -445,6 +445,21 @@ pub mod plane {
         }
     }
 
+    /// A reduction or inclusive scan over a plane of one unit.
+    #[cube]
+    pub fn plane_single<T: Scalar, N: Size>(val: Vector<T, N>) -> Vector<T, N> {
+        val
+    }
+
+    /// An exclusive scan over a plane of one unit: the operation's identity.
+    #[cube]
+    pub fn plane_single_exclusive<T: Numeric, N: Size>(
+        _val: Vector<T, N>,
+        #[comptime] default: i64,
+    ) -> Vector<T, N> {
+        Vector::new(T::from_int(default))
+    }
+
     #[cube]
     fn plane_dim_checked() -> u32 {
         min(PLANE_DIM, CUBE_DIM) as u32

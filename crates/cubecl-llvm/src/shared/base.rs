@@ -6,8 +6,9 @@ use crate::nvptx::{
     codegen::{MetadataParams, NvptxEntry},
     ptx_version::PtxVersion,
 };
+use crate::shared::plane::CtxPlaneDim;
 #[cfg(any(feature = "amdgpu", feature = "nvptx"))]
-use crate::shared::{plane::CtxPlaneDim, shared_memory::CtxSharedMemory};
+use crate::shared::shared_memory::CtxSharedMemory;
 use crate::{
     cpu::{
         abi::CpuLowering,
@@ -252,6 +253,7 @@ impl PlironCompiler {
         let mut ctx = kernel.body.into_context().expect("Should be owned scope");
 
         ctx.set_target(LlvmTarget::Cpu);
+        ctx.set_plane_dim(1);
         let alignment = options.cpu_buffer_alignment.unwrap_or(1);
         assert!(alignment.is_power_of_two());
         ctx.set_aux_ty(crate::target::CpuBufferAlignment(alignment));

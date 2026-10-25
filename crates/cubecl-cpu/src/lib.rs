@@ -41,6 +41,83 @@ mod tests {
         }
     }
 
+    /// Every plane operation, in a cube of four units: on the CPU each unit
+    /// is a plane of its own.
+    #[cube(launch)]
+    fn plane_operations(
+        input: &[f32],
+        floats: &mut [f32],
+        votes: &mut [f32],
+        ballots: &mut [Vector<u32, Const<4>>],
+    ) {
+        let unit = UNIT_POS;
+        let x = input[unit];
+        let at = unit * 11;
+        floats[at] = plane_sum(x);
+        floats[at + 1] = plane_inclusive_sum(x);
+        floats[at + 2] = plane_exclusive_sum(x);
+        floats[at + 3] = plane_prod(x);
+        floats[at + 4] = plane_inclusive_prod(x);
+        floats[at + 5] = plane_exclusive_prod(x);
+        floats[at + 6] = plane_max(x);
+        floats[at + 7] = plane_min(x);
+        floats[at + 8] = plane_broadcast(x, 0u32);
+        floats[at + 9] = plane_shuffle(x, 0u32) + plane_shuffle_xor(x, 1u32);
+        floats[at + 10] = plane_shuffle_up(x, 1u32) + plane_shuffle_down(x, 1u32);
+        let odd = unit % 2 == 1;
+        votes[unit * 3] = f32::cast_from(plane_all(odd));
+        votes[unit * 3 + 1] = f32::cast_from(plane_any(odd));
+        votes[unit * 3 + 2] = f32::cast_from(plane_elect());
+        ballots[unit] = Vector::cast_from(plane_ballot(odd));
+    }
+
+    #[test]
+    fn plane_operations_see_one_unit() {
+        let client = TestRuntime::client(&Default::default());
+        assert_eq!(client.properties().hardware.plane_size_max, 1);
+        let input = [2.0f32, 3.0, 5.0, 7.0];
+        let floats = client.empty(4 * 11 * size_of::<f32>());
+        let votes = client.empty(4 * 3 * size_of::<f32>());
+        let ballots = client.empty(4 * 4 * size_of::<u32>());
+        plane_operations::launch(
+            &client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(4),
+            unsafe {
+                BufferArg::from_raw_parts(client.create_from_slice(f32::as_bytes(&input)), 4)
+            },
+            unsafe { BufferArg::from_raw_parts(floats.clone(), 4 * 11) },
+            unsafe { BufferArg::from_raw_parts(votes.clone(), 4 * 3) },
+            unsafe { BufferArg::from_raw_parts(ballots.clone(), 4) },
+        );
+        let floats = client.read_one_unchecked(floats);
+        let votes = client.read_one_unchecked(votes);
+        let ballots = client.read_one_unchecked(ballots);
+        let (floats, votes, ballots) = (
+            f32::from_bytes(&floats),
+            f32::from_bytes(&votes),
+            u32::from_bytes(&ballots),
+        );
+        for (unit, &x) in input.iter().enumerate() {
+            let odd = (unit % 2) as f32;
+            assert_eq!(
+                &floats[unit * 11..(unit + 1) * 11],
+                &[x, x, 0.0, x, x, 1.0, x, x, x, 2.0 * x, 2.0 * x],
+                "unit {unit}: reductions and inclusive scans are the value, exclusive scans the identity, shuffles the unit's own value"
+            );
+            assert_eq!(
+                &votes[unit * 3..(unit + 1) * 3],
+                &[odd, odd, 1.0],
+                "unit {unit}: votes are the unit's own, and it is elected"
+            );
+            assert_eq!(
+                &ballots[unit * 4..(unit + 1) * 4],
+                &[unit as u32 % 2, 0, 0, 0],
+                "unit {unit}: a ballot is the unit's bit"
+            );
+        }
+    }
+
     #[cube(launch_unchecked)]
     fn transcendentals<N: Size>(
         input: &[Vector<f32, N>],
