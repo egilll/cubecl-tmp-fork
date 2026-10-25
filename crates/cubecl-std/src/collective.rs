@@ -10,9 +10,10 @@ use cubecl::prelude::*;
 use cubecl_core as cubecl;
 
 /// The scratch a cube collective needs: one entry per subgroup of a cube of
-/// `units` units, at the narrowest subgroup a backend reports (4 units).
+/// `units` units, at the narrowest subgroup a backend reports (one unit, on
+/// the CPU).
 pub const fn subgroups(units: usize) -> usize {
-    units.div_ceil(4)
+    units
 }
 
 /// A value collectives can move: a brand over a primitive, copied freely.

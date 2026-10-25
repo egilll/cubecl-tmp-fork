@@ -37,7 +37,8 @@ fn kernel_collectives(ranks: &[f32], output: &mut [f32]) {
 }
 
 /// Every unit of a 128-unit cube receives the sum and the best offer
-/// (ties to the lower index), and its subgroup's OR.
+/// (ties to the lower index), and its subgroup's OR, however wide the
+/// device's subgroups are.
 pub fn test_collectives<R: Runtime>(client: Client) {
     let ranks: Vec<f32> = (0..128)
         .map(|i| {
@@ -57,13 +58,16 @@ pub fn test_collectives<R: Runtime>(client: Client) {
         (&input).into(),
         (&output).into(),
     );
+    let plane = (client.properties().hardware.plane_size_max as usize).min(128);
     let output = output.read(&client).unwrap();
     let total: f32 = ranks.iter().sum();
-    for unit in output.chunks(4) {
+    for (position, unit) in output.chunks(4).enumerate() {
+        let first = position - position % plane;
+        let bits = (first..first + plane).fold(0u32, |bits, u| bits | 1 << (u % 8));
         assert!((unit[0] - total).abs() < 1e-2 * total.abs());
         assert_eq!(unit[1], 500.0);
         assert_eq!(unit[2], 17.0, "ties go to the lower index");
-        assert_eq!(unit[3], 255.0);
+        assert_eq!(unit[3], bits as f32);
     }
 }
 
