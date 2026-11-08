@@ -123,14 +123,14 @@ impl CpuStream {
                 buffer.resource_mut().write().copy_from_slice(&data);
             }
             ScheduleTask::Execute {
-                pliron_engine,
+                executable,
                 bindings,
                 cube_dim,
                 cube_count,
                 ..
             } => {
                 let calls = self.threadpool.lock().execute_data(
-                    pliron_engine,
+                    executable,
                     bindings,
                     cube_dim,
                     cube_count,

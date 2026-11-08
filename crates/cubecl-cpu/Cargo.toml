@@ -18,38 +18,43 @@ workspace = true
 [features]
 default = [
     "std",
+    "jit",
     "cubecl-server/default",
     "cubecl-common/default",
     "cubecl-core/default",
-    "cubecl-llvm/default",
+    "cubecl-llvm?/default",
 ]
+# Compiles kernels at run time with LLVM. Without it, only kernels compiled ahead of time and
+# registered with `compute::precompiled::register` run, and the build needs no LLVM.
+jit = ["dep:cubecl-llvm"]
 
-pliron-dump = ["cubecl-llvm/pliron-dump"]
+pliron-dump = ["cubecl-llvm?/pliron-dump"]
 persistence = ["cubecl-server/persistence"]
 std = [
     "cubecl-server/std",
     "cubecl-common/std",
     "cubecl-core/std",
-    "cubecl-llvm/std",
+    "cubecl-llvm?/std",
 ]
 
 tracing = [
     "cubecl-server/tracing",
     "cubecl-common/tracing",
     "cubecl-core/tracing",
-    "cubecl-llvm/tracing",
+    "cubecl-llvm?/tracing",
 ]
 
 
 [dependencies]
 cubecl-common = { path = "../cubecl-common", version = "=0.11.0-pre.4", default-features = false, features = [
     "std",
+    "hash",
 ] }
 cubecl-core = { path = "../cubecl-core", version = "=0.11.0-pre.4", default-features = false, features = [
     "std",
 ] }
 cubecl-environment = { path = "../cubecl-environment", version = "=0.11.0-pre.4", default-features = false }
-cubecl-llvm = { path = "../cubecl-llvm", version = "=0.11.0-pre.4", default-features = false }
+cubecl-llvm = { path = "../cubecl-llvm", version = "=0.11.0-pre.4", default-features = false, optional = true }
 cubecl-server = { path = "../cubecl-server", version = "=0.11.0-pre.4", default-features = false, features = [
     "std",
     "storage-bytes",

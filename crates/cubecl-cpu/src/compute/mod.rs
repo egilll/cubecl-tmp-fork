@@ -1,4 +1,8 @@
 pub mod affinity;
+#[cfg(feature = "jit")]
+pub(crate) mod census;
+pub mod executable;
+pub mod precompiled;
 pub mod server;
 pub mod threadpool;
 

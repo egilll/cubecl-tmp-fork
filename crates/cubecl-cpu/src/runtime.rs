@@ -12,7 +12,6 @@ use cubecl_core::{
     server::ServerUtilities,
     zspace::{Shape, Strides},
 };
-use cubecl_llvm::PlironCompiler;
 use cubecl_server::{
     allocator::ContiguousMemoryLayoutPolicy,
     config::{CubeClRuntimeConfig, RuntimeConfig, compilation::F16Evaluation},
@@ -32,7 +31,17 @@ pub struct RuntimeOptions {
 #[derive(Debug, Clone)]
 pub struct CpuRuntime;
 
-pub type CpuCompiler = PlironCompiler;
+#[cfg(feature = "jit")]
+pub type CpuCompiler = cubecl_llvm::PlironCompiler;
+
+/// Whether kernels must be the same on every machine: when they were compiled ahead of time, or
+/// are being recorded to be (`CUBECL_CPU_CENSUS`). The device then reports fixed properties, so
+/// that no kernel's IR depends on the host it is traced on.
+fn portable() -> bool {
+    !cfg!(feature = "jit")
+        || crate::compute::precompiled::registered().is_some()
+        || std::env::var_os("CUBECL_CPU_CENSUS").is_some()
+}
 
 fn register_supported_types(props: &mut DeviceProperties) {
     props.register_address_type(AddressType::U32);
@@ -167,10 +176,15 @@ impl DeviceService for CpuServer {
             .unwrap_or(system.total_memory()) as usize;
         let logger = cubecl_environment::sync::Arc::new(ServerLogger::default());
 
-        let available_parallelism = std::thread::available_parallelism()
-            .expect("Can't get available parallelism on this platform")
-            .get();
-        let available_parallelism = available_parallelism as u32;
+        let portable = portable();
+        let total_memory = if portable { 2 << 30 } else { total_memory };
+        let available_parallelism = if portable {
+            1
+        } else {
+            std::thread::available_parallelism()
+                .expect("Can't get available parallelism on this platform")
+                .get() as u32
+        };
         // One thread runs every unit of a cube, so cubes may be as wide as on a GPU.
         let max_units_per_cube = MAX_UNITS_PER_CUBE;
         let max_cube_dim = (MAX_UNITS_PER_CUBE, MAX_UNITS_PER_CUBE, 64);
@@ -181,12 +195,23 @@ impl DeviceService for CpuServer {
         // so the L1d size is its honest CPU analogue — reporting the L2
         // measured ~2.5x worse on decode gemv, stages outgrowing what stays
         // resident. GPU-like floor when the topology cannot be read.
-        let max_shared_memory_size = affinity::l1d_cache_size().unwrap_or(64 * 1024);
+        let max_shared_memory_size = match portable {
+            true => 64 * 1024,
+            false => affinity::l1d_cache_size().unwrap_or(64 * 1024),
+        };
         let f16_evaluation = CubeClRuntimeConfig::get()
             .compilation
             .f16_evaluation
-            .unwrap_or_else(|| F16Evaluation::for_native_f16(host_has_f16_arithmetic()));
-        let vector_registers = host_vector_registers();
+            .unwrap_or_else(|| {
+                F16Evaluation::for_native_f16(!portable && host_has_f16_arithmetic())
+            });
+        let vector_registers = match portable {
+            true => HostVectorRegisters {
+                width: 128,
+                count: None,
+            },
+            false => host_vector_registers(),
+        };
         let load_width = vector_registers.width;
         let topology = HardwareProperties {
             load_width,
@@ -197,7 +222,11 @@ impl DeviceService for CpuServer {
             max_shared_memory_size,
             max_cube_count,
             num_cpu_cores: Some(available_parallelism as u32),
-            last_level_cache_size: affinity::llc_cache_size(),
+            last_level_cache_size: if portable {
+                None
+            } else {
+                affinity::llc_cache_size()
+            },
             max_units_per_cube,
             max_cube_dim,
             num_streaming_multiprocessors: None,

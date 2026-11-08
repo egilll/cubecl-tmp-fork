@@ -1,28 +1,19 @@
-use std::fmt::Debug;
-use std::sync::Arc;
+use cubecl_core::CubeDim;
 
-use cubecl_server::kernel::CompiledKernel;
+use crate::compute::executable::Executable;
 
-use cubecl_llvm::PlironCompiler;
-
-/// A compiled cpu kernel.
+/// A kernel compiled for the CPU, and the cube dimension it was compiled for.
+#[derive(Clone)]
 pub struct CpuKernel {
-    pub(crate) mlir: Arc<CompiledKernel<PlironCompiler>>,
+    pub(crate) executable: Executable,
+    pub(crate) cube_dim: CubeDim,
+    pub(crate) name: String,
 }
 
-impl CpuKernel {
-    pub fn new(kernel: CompiledKernel<PlironCompiler>) -> Self {
-        Self {
-            mlir: Arc::new(kernel),
-        }
-    }
-}
-
-impl Debug for CpuKernel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for CpuKernel {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("CpuKernel")
-            .field("entrypoint_name", &self.mlir.entrypoint_name)
-            .field("debug_name", &self.mlir.debug_name)
+            .field("name", &self.name)
             .finish()
     }
 }

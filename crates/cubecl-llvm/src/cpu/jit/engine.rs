@@ -20,7 +20,7 @@ use std::{
 
 /// Kernel ABI: buffer pointers, cube count x/y/z, the linear range of cubes the call runs, the
 /// range of units of each cube it runs, metadata.
-type KernelFn = extern "C" fn(*mut *mut c_void, u32, u32, u32, u64, u64, u32, u32, *mut u64);
+pub type KernelFn = extern "C" fn(*mut *mut c_void, u32, u32, u32, u64, u64, u32, u32, *mut u64);
 
 /// Resources and scheduling required for a launch.
 #[derive(Clone, Debug, Default)]
@@ -87,6 +87,11 @@ impl PlironEngine {
     pub fn unoptimized_ir(ctx: &Context, module: ModuleOp) -> pliron::result::Result<String> {
         let llvm_ctx = LLVMContext::default();
         Ok(to_llvm_ir::convert_module(ctx, &llvm_ctx, module)?.to_string())
+    }
+
+    /// The compiled entry point. It stays valid while this engine, or a clone of it, lives.
+    pub fn entry(&self) -> KernelFn {
+        self.0.func
     }
 
     pub fn requirements(&self) -> &KernelRequirements {

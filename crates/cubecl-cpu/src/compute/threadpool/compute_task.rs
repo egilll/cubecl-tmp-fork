@@ -2,15 +2,15 @@ use std::sync::{Arc, atomic::AtomicU64};
 
 use crossbeam_utils::CachePadded;
 
-use cubecl_llvm::{PlironData, PlironEngine};
+use crate::compute::executable::{Call, Executable};
 
 use crate::compute::threadpool::ThreadTask;
 
-pub struct ComputeTask {
-    pub pliron_engine: PlironEngine,
-    pub pliron_data: PlironData,
-    pub next_counter_step: u64,
-    pub atomic_counter: Arc<CachePadded<AtomicU64>>,
+pub(crate) struct ComputeTask {
+    pub(crate) executable: Executable,
+    pub(crate) call: Call,
+    pub(crate) next_counter_step: u64,
+    pub(crate) atomic_counter: Arc<CachePadded<AtomicU64>>,
 }
 
 impl ThreadTask for ComputeTask {
@@ -23,7 +23,7 @@ impl ThreadTask for ComputeTask {
 
 impl ComputeTask {
     pub fn compute(&mut self) {
-        self.pliron_engine.run_kernel(&mut self.pliron_data);
+        self.executable.run(&self.call);
         self.atomic_counter
             .fetch_add(1, std::sync::atomic::Ordering::Release);
     }

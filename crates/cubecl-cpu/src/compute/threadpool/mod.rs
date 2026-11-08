@@ -5,9 +5,8 @@ use std::{
     sync::{Arc, OnceLock, atomic::AtomicU64},
 };
 
-use cubecl_llvm::{PlironData, PlironEngine};
-
 use crate::compute::{
+    executable::{Call, Executable, Launch},
     schedule::BindingsResource,
     threadpool::{
         compute_task::ComputeTask,
@@ -15,8 +14,8 @@ use crate::compute::{
     },
 };
 
-pub mod compute_task;
-pub mod scheduler;
+pub(crate) mod compute_task;
+pub(crate) mod scheduler;
 
 trait ThreadTask {
     fn is_ready(&self) -> bool;
@@ -29,13 +28,14 @@ static INSTANCE: OnceLock<spin::Mutex<Threadpool>> = OnceLock::new();
 /// A single kernel runner is currently used for all kernels.
 /// To register work, you have to use the execution queue.
 pub struct Threadpool {
-    scheduler: Scheduler,
+    /// The worker threads; none in a browser, where every call runs on the caller's thread.
+    scheduler: Option<Scheduler>,
 }
 
 impl Threadpool {
     fn init() -> Self {
-        let scheduler = Scheduler::new(SchedulerVariant::Dispatcher);
-
+        let scheduler =
+            (!cfg!(target_arch = "wasm32")).then(|| Scheduler::new(SchedulerVariant::Dispatcher));
         Self { scheduler }
     }
 
@@ -47,14 +47,14 @@ impl Threadpool {
     /// Queues a launch as calls over ranges of its cubes, and returns how many.
     pub fn execute_data(
         &mut self,
-        pliron_engine: PlironEngine,
+        executable: Executable,
         bindings: BindingsResource,
         cube_dim: CubeDim,
         cube_count: [u32; 3],
         next_counter_step: u64,
         atomic_counter: &Arc<CachePadded<AtomicU64>>,
     ) -> u64 {
-        let whole_cubes = pliron_engine.requirements().whole_cubes;
+        let whole_cubes = executable.whole_cubes();
 
         let BindingsResource { resources, info } = bindings;
         let buffer_ptrs: Vec<*mut std::ffi::c_void> = resources
@@ -69,23 +69,40 @@ impl Threadpool {
             .into_iter()
             .map(|resource| Box::new(resource) as Box<dyn std::any::Any + Send>)
             .collect();
-        let launch = PlironData::new(buffer_ptrs, info.data, cube_count, keepalive);
+        let launch = Arc::new(Launch {
+            buffer_ptrs,
+            metadata: info.data,
+            _keepalive: keepalive,
+        });
 
         let calls = calls(
             cube_count.iter().map(|&count| u64::from(count)).product(),
             cube_dim.num_elems(),
             whole_cubes,
-            self.scheduler.workers() * CALLS_PER_WORKER,
+            self.scheduler
+                .as_ref()
+                .map_or(1, |scheduler| scheduler.workers() * CALLS_PER_WORKER),
         );
         let tasks = calls.len() as u64;
         for (i, (cubes, units)) in calls.into_iter().enumerate() {
             let compute_task = ComputeTask {
-                pliron_engine: pliron_engine.clone(),
-                pliron_data: launch.call(cubes, units),
+                executable: executable.clone(),
+                call: Call {
+                    shared: launch.clone(),
+                    cube_count,
+                    cubes,
+                    units,
+                },
                 next_counter_step,
                 atomic_counter: Arc::clone(atomic_counter),
             };
-            self.scheduler.send(i, compute_task);
+            match &mut self.scheduler {
+                Some(scheduler) => scheduler.send(i, compute_task),
+                None => {
+                    let mut task = compute_task;
+                    task.compute();
+                }
+            }
         }
         tasks
     }

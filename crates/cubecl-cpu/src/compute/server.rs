@@ -1,12 +1,12 @@
-use cubecl_llvm::PlironOptions;
 use cubecl_server::memory_management::relocation::RelocatingStreams;
 
-use crate::{
-    CpuCompiler,
-    compute::{
-        cpu_kernel::CpuKernel,
-        schedule::{BindingsResource, ScheduleTask, ScheduledCpuBackend},
-    },
+use crate::compute::{
+    cpu_kernel::CpuKernel,
+    schedule::{BindingsResource, ScheduleTask, ScheduledCpuBackend},
+};
+use crate::compute::{
+    executable::Executable,
+    precompiled::{self, kernel_key},
 };
 use cubecl_common::{bytes::Bytes, profile::ProfileDuration};
 use cubecl_core::server::ServerStorage;
@@ -26,7 +26,7 @@ use cubecl_server::{
     config::{CubeClRuntimeConfig, RuntimeConfig, compilation::F16Evaluation},
     dry_run::LaunchMode,
     id::KernelId,
-    kernel::{CompiledKernel, CubeKernel},
+    kernel::CubeKernel,
     logging::ServerLogger,
     memory_management::{ManagedMemoryHandle, MemoryAllocationMode},
     storage::{BytesStorage, ComputeStorage, ManagedResource},
@@ -40,7 +40,7 @@ pub struct CpuServer {
     scheduler: SchedulerMultiStream<ScheduledCpuBackend>,
     utilities: Arc<ServerUtilities>,
     compilation_cache: HashMap<(KernelId, u32), CpuKernel>,
-    compilation_options: PlironOptions,
+    f16_evaluation: F16Evaluation,
     // A buffer that can be used to store stream id without extra allocations.
     streams_pool: Vec<StreamId>,
 }
@@ -85,10 +85,7 @@ impl CpuServer {
             scheduler,
             utilities,
             compilation_cache: HashMap::new(),
-            compilation_options: PlironOptions {
-                f16_evaluation,
-                ..Default::default()
-            },
+            f16_evaluation,
             streams_pool: Vec::new(),
         }
     }
@@ -165,16 +162,66 @@ impl CpuServer {
             return Ok(());
         }
         let (definition, define_micros) = cubecl_core::define_kernel_timed(kernel)?;
+        let cube_dim = definition.settings.cube_dim.into();
+        let key = kernel_key(
+            &definition,
+            &format!("{:?} align {alignment}", self.f16_evaluation),
+        );
+        let executable = match precompiled::registered() {
+            Some(_) => precompiled::find(&key).ok_or_else(|| CompilationError::Generic {
+                reason: format!(
+                    "the kernel `{}` ({key}) was not compiled ahead of time: the census missed it",
+                    kernel.name()
+                ),
+                backtrace: BackTrace::capture(),
+            })?,
+            None => self.compile_jit(kernel, definition, define_micros, alignment, &key)?,
+        };
+        self.compilation_cache.insert(
+            kernel_id,
+            CpuKernel {
+                executable,
+                cube_dim,
+                name: kernel.name().to_string(),
+            },
+        );
+        Ok(())
+    }
+
+    /// Compiles `kernel` with LLVM, recording it in the census when one is being taken.
+    #[cfg(feature = "jit")]
+    fn compile_jit(
+        &mut self,
+        kernel: &dyn CubeKernel,
+        definition: cubecl_server::kernel::KernelDefinition,
+        define_micros: u64,
+        alignment: u32,
+        key: &str,
+    ) -> Result<Executable, CompilationError> {
+        use cubecl_llvm::PlironOptions;
         let options = PlironOptions {
             cpu_buffer_alignment: Some(alignment),
-            ..self.compilation_options.clone()
+            f16_evaluation: self.f16_evaluation,
+            ..Default::default()
         };
-        let mut compiled =
-            CompiledKernel::compile(kernel, definition, &mut CpuCompiler::default(), &options)?;
+        if let Some(directory) = crate::compute::census::directory() {
+            crate::compute::census::record(
+                &directory,
+                key,
+                cubecl_core::define_kernel(kernel)?,
+                &options,
+            );
+        }
+        let mut compiled = cubecl_server::kernel::CompiledKernel::compile(
+            kernel,
+            definition,
+            &mut crate::CpuCompiler::default(),
+            &options,
+        )?;
         compiled.stats.define_micros = Some(define_micros);
         // The executable artifact here is the JIT engine the compiler built,
         // not the text. A precompiled kernel brings text and no engine.
-        if compiled.repr.is_none() {
+        let Some(repr) = compiled.repr.clone() else {
             return Err(CompilationError::Generic {
                 reason: format!(
                     "the CPU runtime cannot load the precompiled kernel `{}`: it runs compiled IR, not source text",
@@ -182,11 +229,34 @@ impl CpuServer {
                 ),
                 backtrace: BackTrace::capture(),
             });
-        }
+        };
         compiled.log(&self.utilities.logger);
-        self.compilation_cache
-            .insert(kernel_id, CpuKernel::new(compiled));
-        Ok(())
+        let engine = repr.expect_jit();
+        Ok(Executable::new(
+            engine.entry(),
+            engine.requirements().whole_cubes,
+            std::sync::Arc::from(engine.buffer_io()),
+            Some(std::sync::Arc::new(engine)),
+        ))
+    }
+
+    /// Without LLVM, only precompiled kernels run.
+    #[cfg(not(feature = "jit"))]
+    fn compile_jit(
+        &mut self,
+        kernel: &dyn CubeKernel,
+        _definition: cubecl_server::kernel::KernelDefinition,
+        _define_micros: u64,
+        _alignment: u32,
+        key: &str,
+    ) -> Result<Executable, CompilationError> {
+        Err(CompilationError::Generic {
+            reason: format!(
+                "the kernel `{}` ({key}) cannot run: no kernels were compiled ahead of time, and this build has no compiler",
+                kernel.name()
+            ),
+            backtrace: BackTrace::capture(),
+        })
     }
 
     fn prepare_task_inner(
@@ -201,20 +271,11 @@ impl CpuServer {
             .get_mut(&kernel_id)
             .expect("compiled before the write scope was entered");
 
-        let cube_dim = kernel.mlir.cube_dim;
-
-        let mlir_engine = kernel
-            .mlir
-            .repr
-            .clone()
-            .expect("compile_only refuses a kernel without a representation")
-            .expect_jit();
-
         let task = ScheduleTask::Execute {
             stream_id,
-            pliron_engine: mlir_engine,
+            executable: kernel.executable.clone(),
             bindings,
-            cube_dim,
+            cube_dim: kernel.cube_dim,
             cube_count,
         };
 
@@ -443,7 +504,7 @@ impl Server for CpuServer {
         let io = self
             .compilation_cache
             .get(&cache_key)
-            .and_then(|kernel| kernel.mlir.io.clone());
+            .map(|kernel| kernel.executable.io().to_vec());
 
         // The scope claims what the launch writes until the body proves the
         // work enqueued, so a failure — or a panic — anywhere in it leaves a

@@ -64,6 +64,8 @@ tracing = [
 # Runtimes. A kernel library depends on this crate with none of them on and
 # compiles against no runtime at all; a binary turns on the ones it links.
 cpu = ["cubecl-cpu"]
+# The CPU runtime with its run-time compiler (LLVM); without it, kernels compiled ahead of time.
+cpu-jit = ["cpu", "cubecl-cpu/jit"]
 cuda = ["cubecl-cuda"]
 cuda-cpp = ["cubecl-cuda?/cpp"]
 cuda-ptx-wmma = ["cubecl-cuda?/ptx-wmma"]
