@@ -6,7 +6,7 @@ use crate::compute::executable::{Call, Executable};
 
 use crate::compute::threadpool::ThreadTask;
 
-pub(crate) struct ComputeTask {
+pub struct ComputeTask {
     pub(crate) executable: Executable,
     pub(crate) call: Call,
     pub(crate) next_counter_step: u64,

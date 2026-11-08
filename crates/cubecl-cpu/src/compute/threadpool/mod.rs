@@ -14,8 +14,8 @@ use crate::compute::{
     },
 };
 
-pub(crate) mod compute_task;
-pub(crate) mod scheduler;
+pub mod compute_task;
+pub mod scheduler;
 
 trait ThreadTask {
     fn is_ready(&self) -> bool;

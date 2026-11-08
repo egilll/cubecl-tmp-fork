@@ -52,9 +52,16 @@ pub(crate) fn find(key: &str) -> Option<Executable> {
 /// What identifies a kernel across builds and targets: its traced IR, its settings and how it is
 /// compiled, hashed from their text, so that no field's width depends on the target.
 pub fn kernel_key(definition: &KernelDefinition, compilation: &str) -> String {
-    let text = format!(
+    let text = key_text(definition, compilation);
+    format!("{:032x}", StableHasher::const_hash(text.as_bytes()))
+}
+
+/// What [`kernel_key`] hashes. The kernel's generated name is left out: its suffix hashes a type
+/// identity, which differs between targets.
+fn key_text(definition: &KernelDefinition, compilation: &str) -> String {
+    format!(
         "{}\n{:?}\n{:?}\n{compilation}",
         definition.body, definition.info, definition.settings
-    );
-    format!("{:032x}", StableHasher::const_hash(text.as_bytes()))
+    )
+    .replace(&definition.settings.kernel_name, "kernel")
 }
