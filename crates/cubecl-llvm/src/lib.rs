@@ -18,5 +18,5 @@ pub use cpu::jit::engine::{KernelRequirements, PlironEngine};
 pub use shared::AmdGpuModule;
 #[cfg(feature = "nvptx")]
 pub use shared::NvptxModule;
-pub use shared::{PlironArtifact, PlironCompiler, PlironOptions};
+pub use shared::{CpuIr, PlironArtifact, PlironCompiler, PlironOptions};
 pub use target::LlvmTarget;

@@ -61,18 +61,7 @@ impl PlironEngine {
         });
 
         let llvm_ctx = LLVMContext::default();
-        let llvm_module = to_llvm_ir::convert_module(ctx, &llvm_ctx, module)?;
-        #[cfg(feature = "pliron-dump")]
-        if let Some(dir) = ir_dump_path(kernel_name) {
-            let _ = std::fs::write(dir.join("llvm.ll"), llvm_module.to_string());
-        }
-
-        let llvm_module = optimize(llvm_module, &llvm_ctx, kernel_name)
-            .unwrap_or_else(|err| panic!("LLVM optimization failed for '{kernel_name}': {err}"));
-        #[cfg(feature = "pliron-dump")]
-        if let Some(dir) = ir_dump_path(kernel_name) {
-            let _ = std::fs::write(dir.join("llvm.opt.ll"), llvm_module.to_string());
-        }
+        let llvm_module = optimized_module(ctx, &llvm_ctx, module, kernel_name)?;
 
         let lljit = LLVMLLJIT::new_with_default_builder().expect("failed to create LLJIT");
         lljit
@@ -90,6 +79,14 @@ impl PlironEngine {
             io,
             _lljit: lljit,
         })))
+    }
+
+    /// The kernel's LLVM IR before optimization, without a target. Optimization depends on the
+    /// target's data layout (pointer width, for one), so a kernel compiled ahead of time is
+    /// optimized for each target from this.
+    pub fn unoptimized_ir(ctx: &Context, module: ModuleOp) -> pliron::result::Result<String> {
+        let llvm_ctx = LLVMContext::default();
+        Ok(to_llvm_ir::convert_module(ctx, &llvm_ctx, module)?.to_string())
     }
 
     pub fn requirements(&self) -> &KernelRequirements {
@@ -132,6 +129,27 @@ pub(crate) fn ir_dump_path(kernel_name: &str) -> Option<std::path::PathBuf> {
     let path = std::path::Path::new(&dir).join(kernel_name);
     std::fs::create_dir_all(&path).ok()?;
     Some(path)
+}
+
+fn optimized_module(
+    ctx: &Context,
+    llvm_ctx: &LLVMContext,
+    module: ModuleOp,
+    kernel_name: &str,
+) -> pliron::result::Result<LLVMModule> {
+    let llvm_module = to_llvm_ir::convert_module(ctx, llvm_ctx, module)?;
+    #[cfg(feature = "pliron-dump")]
+    if let Some(dir) = ir_dump_path(kernel_name) {
+        let _ = std::fs::write(dir.join("llvm.ll"), llvm_module.to_string());
+    }
+
+    let llvm_module = optimize(llvm_module, llvm_ctx, kernel_name)
+        .unwrap_or_else(|err| panic!("LLVM optimization failed for '{kernel_name}': {err}"));
+    #[cfg(feature = "pliron-dump")]
+    if let Some(dir) = ir_dump_path(kernel_name) {
+        let _ = std::fs::write(dir.join("llvm.opt.ll"), llvm_module.to_string());
+    }
+    Ok(llvm_module)
 }
 
 /// Optimization pipeline for JIT compilation.

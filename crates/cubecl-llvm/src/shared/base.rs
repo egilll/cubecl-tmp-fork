@@ -117,6 +117,18 @@ pub struct NvptxModule {
     pub io: Vec<BufferIOAttr>,
 }
 
+/// A CPU kernel lowered to LLVM IR, before any target is chosen.
+#[derive(Clone, Debug)]
+pub struct CpuIr {
+    /// The entry point's symbol.
+    pub name: String,
+    /// LLVM IR text, to be optimized for each target.
+    pub llvm: String,
+    pub requirements: KernelRequirements,
+    /// Buffer access modes in binding order.
+    pub io: Vec<BufferIOAttr>,
+}
+
 /// Compiled kernel artifact.
 #[derive(Clone)]
 pub enum PlironArtifact {
@@ -241,6 +253,37 @@ impl PlironCompiler {
                 )?))
             }
         }
+    }
+
+    /// A CPU kernel's LLVM IR, without a target and not yet optimized, for compiling ahead of
+    /// time.
+    pub fn cpu_ir(
+        kernel: KernelDefinition,
+        options: &PlironOptions,
+    ) -> Result<CpuIr, CompilationError> {
+        let name = kernel.settings.kernel_name.clone();
+        let module = kernel.body.state().module;
+        let ir = KernelIr::of(&kernel);
+        let mut ctx = kernel.body.into_context().expect("Should be owned scope");
+        ctx.set_target(LlvmTarget::Cpu);
+        ctx.set_plane_dim(1);
+        let alignment = options.cpu_buffer_alignment.unwrap_or(1);
+        assert!(alignment.is_power_of_two());
+        ctx.set_aux_ty(crate::target::CpuBufferAlignment(alignment));
+        ctx.set_grid_constants(false);
+        let lowering = CpuLowering::new(options.f16_evaluation);
+        let io = lower(&mut ctx, &ir, &lowering)?;
+        let requirements = KernelRequirements {
+            whole_cubes: ctx.aux_ty::<WholeCubes>().0,
+        };
+        let llvm = PlironEngine::unoptimized_ir(&ctx, module)
+            .map_err(|err| generic(format!("converting to LLVM IR: {err}")))?;
+        Ok(CpuIr {
+            name,
+            llvm,
+            requirements,
+            io,
+        })
     }
 
     fn compile_cpu(
